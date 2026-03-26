@@ -7,7 +7,7 @@
 #include <cstdio>
 
 // Forward-declared in sequential_executor.cpp (Sub0Pipeline::Headless).
-namespace sub0pipeline { std::unique_ptr<IExecutor> make_sequential_executor(); }
+namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
 
 int main()
 {
@@ -22,7 +22,7 @@ int main()
     b.succeed(a);
     c.succeed(b);
 
-    auto exec   = make_sequential_executor();
+    auto exec   = makeSequentialExecutor();
     auto result = pipeline.run(*exec);
 
     if (result) {

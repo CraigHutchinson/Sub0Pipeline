@@ -4,6 +4,7 @@
 // status values seen for success and failure.
 
 #include <sub0pipeline/sub0pipeline.hpp>
+#include "test_helpers.hpp"
 #include "doctest.h"
 
 #include <string>
@@ -12,19 +13,6 @@
 using namespace sub0pipeline;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-class InlineExecutor final : public IExecutor
-{
-public:
-    void dispatch(std::string_view, std::function<void()> fn,
-                  std::function<void()> oc, int, uint8_t, uint32_t) override
-    {
-        fn();
-        if (oc) oc();
-    }
-    void wait_all() override {}
-    [[nodiscard]] int concurrency() const noexcept override { return 1; }
-};
 
 struct ObserverEntry
 {
@@ -37,14 +25,14 @@ struct ObserverEntry
 class RecordingObserver final : public IObserver
 {
 public:
-    void on_start(std::string_view name) override
+    void onStart(std::string_view jobName) override
     {
-        entries_.push_back({std::string{name}, true, {}, 0.0f});
+        entries_.push_back({std::string{jobName}, true, {}, 0.0f});
     }
 
-    void on_finish(std::string_view name, JobStatus status, float progress) override
+    void onFinish(std::string_view jobName, JobStatus status, float progress) override
     {
-        entries_.push_back({std::string{name}, false, status, progress});
+        entries_.push_back({std::string{jobName}, false, status, progress});
     }
 
     [[nodiscard]] const std::vector<ObserverEntry>& entries() const { return entries_; }
@@ -152,4 +140,27 @@ TEST_CASE("Observer: start fired before finish for each job")
             CHECK(foundStart);
         }
     }
+}
+
+TEST_CASE("Observer: kSkipped status reported for downstream of required failure")
+{
+    Pipeline       pipeline;
+    InlineExecutor exec;
+    RecordingObserver obs;
+
+    auto req = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("required");
+
+    auto dep = pipeline.emplace([] {}).name("dependent");
+    dep.succeed(req);
+
+    (void)pipeline.run(exec, &obs);
+
+    bool sawSkipped = false;
+    for (const auto& e : obs.entries()) {
+        if (!e.isStart && e.name == "dependent" && e.status == JobStatus::kSkipped)
+            sawSkipped = true;
+    }
+    CHECK(sawSkipped);
 }

@@ -17,13 +17,13 @@ public:
     void dispatch(
         std::string_view              /*name*/,
         std::function<void()>         fn,
-        std::function<void()>         on_complete,
-        int                           /*core*/,
+        std::function<void()>         onComplete,
+        int                           /*coreAffinity*/,
         uint8_t                       /*priority*/,
-        uint32_t                      /*stack_bytes*/) override
+        uint32_t                      /*stackBytes*/) override
     {
         fn();
-        if (on_complete) on_complete();
+        if (onComplete) onComplete();
     }
 
     void wait_all() override
@@ -35,7 +35,7 @@ public:
 };
 
 /** @return A SequentialExecutor that runs all jobs inline (no threads). */
-std::unique_ptr<IExecutor> make_sequential_executor()
+std::unique_ptr<IExecutor> makeSequentialExecutor()
 {
     return std::make_unique<SequentialExecutor>();
 }

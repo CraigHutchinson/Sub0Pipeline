@@ -3,6 +3,7 @@
 // Tests for required/optional failure propagation and dependent-job skipping.
 
 #include <sub0pipeline/sub0pipeline.hpp>
+#include "test_helpers.hpp"
 #include "doctest.h"
 
 #include <algorithm>
@@ -10,24 +11,6 @@
 #include <vector>
 
 using namespace sub0pipeline;
-
-// ── Inline sequential executor ────────────────────────────────────────────────
-
-class InlineExecutor final : public IExecutor
-{
-public:
-    void dispatch(
-        std::string_view,
-        std::function<void()>  fn,
-        std::function<void()>  on_complete,
-        int, uint8_t, uint32_t) override
-    {
-        fn();
-        if (on_complete) on_complete();
-    }
-    void wait_all() override {}
-    [[nodiscard]] int concurrency() const noexcept override { return 1; }
-};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Required job failures

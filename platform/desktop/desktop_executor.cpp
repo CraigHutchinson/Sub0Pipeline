@@ -21,14 +21,14 @@ public:
     void dispatch(
         std::string_view              /*name*/,
         std::function<void()>         fn,
-        std::function<void()>         on_complete,
-        int                           /*core*/,
+        std::function<void()>         onComplete,
+        int                           /*coreAffinity*/,
         uint8_t                       /*priority*/,
-        uint32_t                      /*stack_bytes*/) override
+        uint32_t                      /*stackBytes*/) override
     {
         inFlight_.fetch_add(1U, std::memory_order_relaxed);
         std::lock_guard lk{mtx_};
-        threads_.emplace_back([this, fn = std::move(fn), oc = std::move(on_complete)]
+        threads_.emplace_back([this, fn = std::move(fn), oc = std::move(onComplete)]
         {
             fn();
             if (oc) oc();
@@ -77,7 +77,7 @@ private:
 };
 
 /** @return A DesktopExecutor backed by std::thread (one thread per job). */
-std::unique_ptr<IExecutor> make_desktop_executor()
+std::unique_ptr<IExecutor> makeDesktopExecutor()
 {
     return std::make_unique<DesktopExecutor>();
 }

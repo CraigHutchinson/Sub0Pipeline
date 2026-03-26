@@ -22,14 +22,14 @@ public:
     void dispatch(
         std::string_view              name,
         std::function<void()>         fn,
-        std::function<void()>         on_complete,
+        std::function<void()>         onComplete,
         int                           /*core*/,
         uint8_t                       /*priority*/,
         uint32_t                      /*stack_bytes*/) override
     {
         order_.emplace_back(name);  // capture BEFORE execution
         fn();
-        if (on_complete) on_complete();
+        if (onComplete) onComplete();
     }
 
     void wait_all() override {}
@@ -215,14 +215,14 @@ TEST_CASE("Pipeline: succeed chaining — C after A and B")
 
 TEST_CASE("Pipeline: large linear chain N=100")
 {
-    constexpr int N = 100;
+    constexpr int cN = 100;
     Pipeline          pipeline;
     RecordingExecutor exec;
     int               counter = 0;
 
     std::vector<Job> jobs;
-    jobs.reserve(N);
-    for (int i = 0; i < N; ++i) {
+    jobs.reserve(cN);
+    for (int i = 0; i < cN; ++i) {
         auto j = pipeline.emplace([&] { ++counter; }).name("job_" + std::to_string(i));
         if (!jobs.empty()) j.succeed(jobs.back());
         jobs.push_back(j);
@@ -230,18 +230,18 @@ TEST_CASE("Pipeline: large linear chain N=100")
 
     auto result = pipeline.run(exec);
     REQUIRE(result.has_value());
-    CHECK(counter == N);
+    CHECK(counter == cN);
 }
 
 TEST_CASE("Pipeline: wide fan-out N=50")
 {
-    constexpr int N = 50;
+    constexpr int cN = 50;
     Pipeline          pipeline;
     RecordingExecutor exec;
     int               counter = 0;
 
     auto root = pipeline.emplace([] {}).name("root");
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < cN; ++i) {
         pipeline.emplace([&] { ++counter; })
             .name("leaf_" + std::to_string(i))
             .succeed(root);
@@ -249,19 +249,19 @@ TEST_CASE("Pipeline: wide fan-out N=50")
 
     auto result = pipeline.run(exec);
     REQUIRE(result.has_value());
-    CHECK(counter == N);
+    CHECK(counter == cN);
 }
 
 TEST_CASE("Pipeline: wide fan-in N=50")
 {
-    constexpr int N = 50;
+    constexpr int cN = 50;
     Pipeline          pipeline;
     RecordingExecutor exec;
     bool              sinkRan = false;
 
     std::vector<Job> leaves;
-    leaves.reserve(N);
-    for (int i = 0; i < N; ++i) {
+    leaves.reserve(cN);
+    for (int i = 0; i < cN; ++i) {
         leaves.push_back(pipeline.emplace([] {}).name("leaf_" + std::to_string(i)));
     }
 
@@ -285,4 +285,45 @@ TEST_CASE("Pipeline: dump_text does not crash")
     b.succeed(a);
     // Output goes to stdout — just verify no crash.
     pipeline.dump_text();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// status() queries
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("Pipeline: status() is kPending before run()")
+{
+    Pipeline pipeline;
+    auto a = pipeline.emplace([] {}).name("A");
+    CHECK(pipeline.status(a) == JobStatus::kPending);
+}
+
+TEST_CASE("Pipeline: status() is kDone after successful run()")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+    auto a = pipeline.emplace([] {}).name("A");
+    auto b = pipeline.emplace([] {}).name("B");
+    b.succeed(a);
+    (void)pipeline.run(exec);
+    CHECK(pipeline.status(a) == JobStatus::kDone);
+    CHECK(pipeline.status(b) == JobStatus::kDone);
+}
+
+TEST_CASE("Pipeline: status() is kFailed for optional failed job")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+    auto a = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("A").optional();
+    (void)pipeline.run(exec);
+    CHECK(pipeline.status(a) == JobStatus::kFailed);
+}
+
+TEST_CASE("Pipeline: invalid job handle returns kPending from status()")
+{
+    Pipeline pipeline;
+    Job invalid;
+    CHECK(pipeline.status(invalid) == JobStatus::kPending);
 }

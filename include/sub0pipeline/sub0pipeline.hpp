@@ -10,7 +10,7 @@
 // Design principles:
 //   - Graph-as-value: the DAG is a first-class inspectable object
 //   - Builder pattern: fluent .precede()/.name() chaining on Job handles
-//   - Observer hooks: pluggable on_start/on_finish (profiling, boot screen)
+//   - Observer hooks: pluggable onStart/onFinish (profiling, boot screen)
 //   - Platform-injectable executor: FreeRTOS tasks / std::thread / sequential
 //   - Zero-overhead when jobs are constexpr-declared
 //
@@ -21,7 +21,7 @@
 //   auto network = boot.emplace([] { return network_init(); }).name("network").timeout(10s);
 //   auto storage = boot.emplace([] { return storage_init(); }).name("storage");
 //   storage.succeed(nvs);   // storage depends on nvs
-//   // display and network have no dependency — run in parallel
+//   // display and network have no mutual dependency — run in parallel
 //   boot.run(executor, &observer);
 //
 #pragma once
@@ -66,7 +66,7 @@ public:
     constexpr Job() noexcept = default;
 
     /** Set a human-readable name (used in tracing and boot screen). */
-    Job& name(std::string_view n) noexcept;
+    Job& name(std::string_view n);
 
     /** Set maximum execution time before the job is considered timed out. */
     Job& timeout(std::chrono::milliseconds t) noexcept;
@@ -90,19 +90,21 @@ public:
      * @brief Declare that this job runs AFTER @p other completes.
      * @param other  The predecessor job.
      * @return *this for chaining.
+     * @note May allocate (push_back on predecessor/successor vectors).
      */
-    Job& succeed(Job other) noexcept;
+    Job& succeed(Job other);
 
     /**
      * @brief Declare that @p other runs AFTER this job completes.
      * @param other  The successor job.
      * @return *this for chaining.
+     * @note May allocate (push_back on predecessor/successor vectors).
      */
-    Job& precede(Job other) noexcept;
+    Job& precede(Job other);
 
     /** Variadic: this job runs after all listed jobs complete. */
     template< typename... Jobs >
-    Job& succeed(Job first, Jobs... rest) noexcept
+    Job& succeed(Job first, Jobs... rest)
     {
         succeed(first);
         if constexpr (sizeof...(rest) > 0) succeed(rest...);
@@ -111,7 +113,7 @@ public:
 
     /** Variadic: all listed jobs run after this job completes. */
     template< typename... Jobs >
-    Job& precede(Job first, Jobs... rest) noexcept
+    Job& precede(Job first, Jobs... rest)
     {
         precede(first);
         if constexpr (sizeof...(rest) > 0) precede(rest...);
@@ -132,7 +134,7 @@ private:
 
     static constexpr uint32_t cInvalid = UINT32_MAX; ///< Sentinel for invalid handle.
 
-    uint32_t   idx_{cInvalid};    ///< Index into Pipeline::Impl::nodes_.
+    uint32_t   idx_{cInvalid};     ///< Index into Pipeline::Impl::nodes_.
     Pipeline*  pipeline_{nullptr}; ///< Back-pointer to owning pipeline.
 
     constexpr explicit Job(uint32_t idx, Pipeline* p) noexcept
@@ -162,8 +164,9 @@ enum class JobStatus : uint8_t
  * FreeRTOS (ESP32-P4), std::thread (desktop), or inline (headless/tests).
  *
  * Contract:
- *   - dispatch() MUST eventually call on_complete() from any context.
- *   - wait_all() MUST NOT return until all dispatched callbacks have fired.
+ *   - dispatch() MUST increment its in-flight counter before returning.
+ *   - dispatch() MUST eventually call onComplete() from the dispatched context.
+ *   - wait_all() MUST NOT return until all dispatched onComplete() calls have fired.
  */
 class IExecutor
 {
@@ -174,20 +177,20 @@ public:
      * @brief Dispatch a job for asynchronous execution.
      * @param name         Human-readable label (for logging).
      * @param fn           The job function to execute.
-     * @param on_complete  Callback fired when fn returns (required).
-     * @param core_affinity CPU core hint (-1 = any).
+     * @param onComplete   Callback fired when fn returns (required by contract).
+     * @param coreAffinity CPU core hint (-1 = any).
      * @param priority     Scheduling priority (1–24).
-     * @param stack_bytes  Stack allocation for embedded targets.
+     * @param stackBytes   Stack allocation for embedded targets.
      */
     virtual void dispatch(
         std::string_view              name,
         std::function<void()>         fn,
-        std::function<void()>         on_complete,
-        int                           core_affinity,
+        std::function<void()>         onComplete,
+        int                           coreAffinity,
         uint8_t                       priority,
-        uint32_t                      stack_bytes = 4096U) = 0;
+        uint32_t                      stackBytes = 4096U) = 0;
 
-    /** Block until all previously dispatched jobs have called on_complete(). */
+    /** Block until all previously dispatched jobs have called onComplete(). */
     virtual void wait_all() = 0;
 
     /** @return Number of parallel execution slots (cores / thread pool size). */
@@ -207,19 +210,19 @@ public:
     virtual ~IObserver() = default;
 
     /** Called just before a job starts executing. */
-    virtual void on_start(std::string_view job_name) = 0;
+    virtual void onStart(std::string_view jobName) = 0;
 
     /**
-     * @brief Called when a job completes (success or failure).
-     * @param job_name  The job's name.
+     * @brief Called when a job completes (any terminal status).
+     * @param jobName   The job's name.
      * @param status    Final status (kDone, kFailed, kSkipped, kTimedOut).
      * @param progress  Fraction of total jobs completed (0.0–1.0).
      */
-    virtual void on_finish(std::string_view job_name, JobStatus status, float progress) = 0;
+    virtual void onFinish(std::string_view jobName, JobStatus status, float progress) = 0;
 
     /** Called when a dependency edge is traversed (for Gantt chart arrows). */
-    virtual void on_dependency([[maybe_unused]] std::string_view from,
-                               [[maybe_unused]] std::string_view to) {}
+    virtual void onDependency([[maybe_unused]] std::string_view from,
+                              [[maybe_unused]] std::string_view to) {}
 };
 
 // ── Tick job ──────────────────────────────────────────────────────────────────
@@ -243,6 +246,9 @@ struct TickJob
  *
  * Thread safety: the build phase (emplace/succeed/precede) is single-threaded.
  * After run() completes, status() and name() are safe to call from any thread.
+ *
+ * Post-move state: after a move, the Pipeline is empty but valid; calling
+ * emplace() on a moved-from Pipeline recreates the internal state.
  */
 class Pipeline
 {
@@ -261,15 +267,17 @@ public:
      * @brief Add a job that returns std::expected<void, PipelineError>.
      * @param fn  The job function.
      * @return    A Job handle for setting name, timeouts, and dependencies.
+     * @note      The returned handle should not be discarded if dependencies
+     *            or metadata need to be set.
      */
-    Job emplace(std::function<std::expected<void, PipelineError>()> fn);
+    [[nodiscard]] Job emplace(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
      * @brief Add a void-returning job (always succeeds).
      * @param fn  The job function.
      * @return    A Job handle for setting name, timeouts, and dependencies.
      */
-    Job emplace_void(std::function<void()> fn);
+    [[nodiscard]] Job emplace_void(std::function<void()> fn);
 
     /**
      * @brief Convenience overload: add a void-returning lambda.
@@ -279,7 +287,7 @@ public:
      */
     template< typename F >
         requires std::invocable<F> && std::same_as<std::invoke_result_t<F>, void>
-    Job emplace(F&& f)
+    [[nodiscard]] Job emplace(F&& f)
     {
         return emplace_void(std::forward<F>(f));
     }
@@ -317,7 +325,7 @@ public:
      * Uses Kahn's algorithm to detect cycles. Called automatically by run(),
      * but can be called explicitly during the build phase.
      *
-     * @return std::expected<void, PipelineError::kCyclicDependency> on cycle.
+     * @return std::unexpected(PipelineError::kCyclicDependency) on cycle.
      */
     [[nodiscard]] auto validate() const -> std::expected<void, PipelineError>;
 
@@ -337,10 +345,17 @@ public:
 
     // ── On-demand jobs ────────────────────────────────────────────────────
 
-    /** Register a job that can be triggered by an event post-boot. */
-    Job add_on_demand(std::function<std::expected<void, PipelineError>()> fn);
+    /**
+     * @brief Register a job that can be triggered by an event post-boot.
+     * @note trigger() is currently a stub; the returned Job is not yet
+     *       connected to the event-dispatch mechanism.
+     */
+    [[nodiscard]] Job add_on_demand(std::function<std::expected<void, PipelineError>()> fn);
 
-    /** Trigger an on-demand job. Safe to call from any task or ISR. */
+    /**
+     * @brief Trigger an on-demand job. Safe to call from any task or ISR.
+     * @note Currently a stub — see PLATFORM_ROADMAP.md.
+     */
     void trigger(Job j);
 
     // ── Diagnostics ───────────────────────────────────────────────────────

@@ -28,23 +28,25 @@ public:
         uint8_t                       /*priority*/,
         uint32_t                      /*stack_bytes*/) override
     {
+        inFlight_.fetch_add(1, std::memory_order_relaxed);
         std::lock_guard lk{mtx_};
-        threads_.emplace_back([fn = std::move(fn), oc = std::move(on_complete)]
+        threads_.emplace_back([this, fn = std::move(fn), oc = std::move(on_complete)]
         {
             fn();
             if (oc) oc();
+            inFlight_.fetch_sub(1, std::memory_order_relaxed);
         });
     }
 
     void wait_all() override
     {
         // Drain loop: successor jobs may be dispatched during execution, so keep
-        // joining until all threads are exhausted.
+        // joining until all threads are exhausted and inFlight_ reaches zero.
         while (true) {
             std::vector<std::thread> batch;
             {
                 std::lock_guard lk{mtx_};
-                if (threads_.empty()) break;
+                if (threads_.empty() && inFlight_.load(std::memory_order_relaxed) == 0) break;
                 batch = std::move(threads_);
             }
             for (auto& t : batch) {
@@ -56,8 +58,9 @@ public:
     [[nodiscard]] int concurrency() const noexcept override { return 2; }
 
 private:
-    std::mutex               mtx_;
-    std::vector<std::thread> threads_;
+    std::mutex                mtx_;
+    std::vector<std::thread>  threads_;
+    std::atomic<uint32_t>     inFlight_{0};
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -89,10 +92,10 @@ TEST_CASE("Concurrent: wide fan-out stress N=50 with real threads")
     Pipeline           pipeline;
     std::atomic<int>   counter{0};
     ThreadPoolExecutor exec;
-    constexpr int      N = 50;
+    constexpr int      cN = 50;
 
     auto root = pipeline.emplace([&] { counter.fetch_add(1, std::memory_order_relaxed); }).name("root");
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < cN; ++i) {
         pipeline.emplace([&] { counter.fetch_add(1, std::memory_order_relaxed); })
             .name("task_" + std::to_string(i))
             .succeed(root);
@@ -100,14 +103,14 @@ TEST_CASE("Concurrent: wide fan-out stress N=50 with real threads")
 
     auto result = pipeline.run(exec);
     REQUIRE(result.has_value());
-    CHECK(counter.load() == N + 1);
+    CHECK(counter.load() == cN + 1);
 }
 
 TEST_CASE("Concurrent: DesktopExecutor smoke test — sequential pipeline succeeds")
 {
     // Requires Sub0Pipeline_Desktop to be linked.
     // Declared in desktop_executor.cpp.
-    std::unique_ptr<IExecutor> exec = make_desktop_executor();
+    std::unique_ptr<IExecutor> exec = makeDesktopExecutor();
     REQUIRE(exec != nullptr);
 
     Pipeline pipeline;

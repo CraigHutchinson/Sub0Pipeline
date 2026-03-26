@@ -9,13 +9,13 @@
 #include <sub0pipeline/sub0pipeline.hpp>
 #include <cstdio>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> make_sequential_executor(); }
+namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
 
 using namespace sub0pipeline;
 
 int main()
 {
-    auto exec = make_sequential_executor();
+    auto exec = makeSequentialExecutor();
 
     // ── Boot pipeline ─────────────────────────────────────────────────────────
     Pipeline boot;
