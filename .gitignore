@@ -1,0 +1,9 @@
+build/
+build-debug/
+build-ci/
+build-asan/
+.cache/
+*.user
+*.suo
+.vs/
+CMakeUserPresets.json

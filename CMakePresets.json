@@ -1,0 +1,137 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Default (Release)",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "ON",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "ON",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug",
+            "binaryDir": "${sourceDir}/build-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "ON",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "OFF",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            }
+        },
+        {
+            "name": "ci-msvc",
+            "displayName": "CI - MSVC",
+            "binaryDir": "${sourceDir}/build-ci",
+            "cacheVariables": {
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "ON",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "OFF",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "ci-asan",
+            "displayName": "CI - ASan/UBSan",
+            "binaryDir": "${sourceDir}/build-asan",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "OFF",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "OFF",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "ci-unix",
+            "displayName": "CI - GCC/Clang",
+            "binaryDir": "${sourceDir}/build-ci",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "ON",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "OFF",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "configurePreset": "default",
+            "configuration": "Release"
+        },
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "ci-msvc",
+            "configurePreset": "ci-msvc",
+            "configuration": "Release"
+        },
+        {
+            "name": "ci-unix",
+            "configurePreset": "ci-unix"
+        },
+        {
+            "name": "ci-asan",
+            "configurePreset": "ci-asan"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "default",
+            "configurePreset": "default",
+            "configuration": "Release",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "configuration": "Debug",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ci-msvc",
+            "configurePreset": "ci-msvc",
+            "configuration": "Release",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ci-unix",
+            "configurePreset": "ci-unix",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ci-asan",
+            "configurePreset": "ci-asan",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

@@ -1,0 +1,29 @@
+#!/bin/bash
+# Pre-push hook: runs tests before allowing push
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+echo "Running tests before push..."
+
+# Configure if build directory doesn't exist
+if [ ! -d "build" ]; then
+    echo "Build directory not found, configuring..."
+    cmake --preset default
+fi
+
+# Build
+cmake --build --preset default --config Release 2>&1 | tail -5
+if [ $? -ne 0 ]; then
+    echo "BUILD FAILED - push aborted."
+    exit 1
+fi
+
+# Test
+ctest --preset default 2>&1
+if [ $? -ne 0 ]; then
+    echo "TESTS FAILED - push aborted."
+    exit 1
+fi
+
+echo "All tests passed."

@@ -1,0 +1,10 @@
+# Auto-detect text files and normalise to LF in the repo
+* text=auto eol=lf
+
+# Force shell scripts to LF (must be LF to run on Linux/macOS CI)
+*.sh text eol=lf
+.githooks/* text eol=lf
+
+# Binary — never convert
+tests/vendor/doctest.h   binary
+tests/vendor/nanobench.h binary

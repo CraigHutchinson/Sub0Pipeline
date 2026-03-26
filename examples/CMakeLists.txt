@@ -1,0 +1,4 @@
+add_subdirectory(minimal_pipeline)
+add_subdirectory(boot_sequence)
+add_subdirectory(parallel_tasks)
+add_subdirectory(on_demand_jobs)

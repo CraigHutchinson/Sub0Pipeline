@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ci-unix
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+      - name: Build
+        run: cmake --build --preset ci-unix
+      - name: Test
+        run: ctest --preset ci-unix
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ci-msvc
+      - name: Build
+        run: cmake --build --preset ci-msvc
+      - name: Test
+        run: ctest --preset ci-msvc
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ci-unix
+      - name: Build
+        run: cmake --build --preset ci-unix
+      - name: Test
+        run: ctest --preset ci-unix
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (ASan + UBSan)
+        run: cmake --preset ci-asan
+        env:
+          CC: gcc
+          CXX: g++
+      - name: Build
+        run: cmake --build --preset ci-asan
+      - name: Test
+        run: ctest --preset ci-asan
