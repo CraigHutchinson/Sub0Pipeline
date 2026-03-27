@@ -8,7 +8,6 @@
 // Compare with examples/boot_sequence/main.cpp — same pipeline, expressed
 // three different ways.
 
-#define SUB0PIPELINE_ENABLE_DSL 1
 #include <sub0pipeline/dsl.hpp>
 
 #include <chrono>

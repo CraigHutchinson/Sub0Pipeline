@@ -20,7 +20,7 @@ boot >> "nvs"_job(nvs_init)
 - **Structured binding capture** — `auto [a, b, c] = pipe >> specs` gives you handles to every job
 - **220 ns per 4-job diamond** — Sub-microsecond DAG dispatch overhead
 - **Platform-injectable executors** — Same pipeline code runs on ESP32-P4 (FreeRTOS), desktop (std::thread), and bare-metal (sequential)
-- **Zero-overhead when you don't need it** — The DSL is opt-in via `SUB0PIPELINE_ENABLE_DSL`. The core API works without it.
+- **Zero-overhead when you don't need it** — The DSL lives in its own namespace and header. Just `#include <sub0pipeline/dsl.hpp>` to use it.
 - **C++23** — `std::expected` error handling, concepts, structured bindings
 
 Part of the **Sub0** C++ library family.
@@ -53,7 +53,6 @@ auto result = boot.run(*exec);    // returns std::expected<void, PipelineError>
 ### DSL Extension
 
 ```cpp
-#define SUB0PIPELINE_ENABLE_DSL 1
 #include <sub0pipeline/dsl.hpp>
 using namespace sub0pipeline::dsl;
 
@@ -210,7 +209,6 @@ ctest --preset default          # Run tests
 | `SUB0PIPELINE_BUILD_EXAMPLES` | `OFF` | Build examples |
 | `SUB0PIPELINE_BUILD_BENCHMARKS` | `OFF` | Build nanobench benchmarks |
 | `SUB0PIPELINE_PLATFORM_DESKTOP` | `ON` | Build `DesktopExecutor` (std::thread) |
-| `SUB0PIPELINE_ENABLE_DSL` | `OFF` | Enable operator DSL extension + tests |
 
 ---
 
@@ -220,10 +218,6 @@ ctest --preset default          # Run tests
 # As a subdirectory
 add_subdirectory(Sub0Pipeline)
 target_link_libraries(MyApp PRIVATE Sub0Pipeline::Sub0Pipeline Sub0Pipeline::Desktop)
-
-# With DSL
-target_link_libraries(MyApp PRIVATE Sub0Pipeline::DSL Sub0Pipeline::Desktop)
-# SUB0PIPELINE_ENABLE_DSL is defined automatically by the DSL target
 
 # Via find_package (after install)
 find_package(Sub0Pipeline REQUIRED)

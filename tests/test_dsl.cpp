@@ -4,7 +4,6 @@
 // JobSpecGroup, and inline pipe syntax.
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#define SUB0PIPELINE_ENABLE_DSL 1
 
 #include <sub0pipeline/dsl.hpp>
 #include "doctest.h"

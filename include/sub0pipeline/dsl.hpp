@@ -9,13 +9,8 @@
 //   using namespace sub0pipeline::dsl;
 // activates operators, the UDL, and helper types.
 //
-// Guard: all content is inside #if SUB0PIPELINE_ENABLE_DSL.
-// Including this header without the flag compiles cleanly but does nothing.
-//
 // Usage:
-//   #define SUB0PIPELINE_ENABLE_DSL 1
 //   #include <sub0pipeline/dsl.hpp>
-//
 //   using namespace sub0pipeline::dsl;
 //   Pipeline boot;
 //   boot >> "nvs"_job(nvs_init)
@@ -33,8 +28,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#if SUB0PIPELINE_ENABLE_DSL
 
 namespace sub0pipeline::dsl {
 
@@ -489,5 +482,3 @@ auto operator+(JobSpecGroup<Fs...> const& lhs, JobSpec<F> rhs)
 }
 
 } // namespace sub0pipeline::dsl
-
-#endif // SUB0PIPELINE_ENABLE_DSL
