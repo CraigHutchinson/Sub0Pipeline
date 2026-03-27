@@ -385,26 +385,45 @@ TEST_CASE("Emplaced root >> inline specs >> emplaced sink")
 // Pipeline >> JobSpecGroup (parallel emplace)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("pipe >> a+b+c: returns JobTuple with structured bindings")
+TEST_CASE("pipe >> a+b+c: returns JobTuple with correct bindings, no deps between them")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
 
     auto [a, b, c] = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {});
 
+    // All bindings are valid and correctly named
     CHECK(a.valid());
     CHECK(b.valid());
     CHECK(c.valid());
     CHECK(pipe.name(a) == "A");
     CHECK(pipe.name(b) == "B");
     CHECK(pipe.name(c) == "C");
-    CHECK(pipe.size() == 3U);
 
-    (void)pipe.run(exec);
+    // Each binding is a distinct job
+    CHECK_FALSE(a == b);
+    CHECK_FALSE(b == c);
+    CHECK_FALSE(a == c);
+
+    // All belong to the same pipeline
+    CHECK(a.pipeline() == &pipe);
+    CHECK(b.pipeline() == &pipe);
+    CHECK(c.pipeline() == &pipe);
+
+    CHECK(pipe.size() == 3U);
+    CHECK(pipe.validate().has_value());
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
     CHECK(exec.order().size() == 3U);
+
+    // All jobs completed
+    CHECK(pipe.status(a) == JobStatus::kDone);
+    CHECK(pipe.status(b) == JobStatus::kDone);
+    CHECK(pipe.status(c) == JobStatus::kDone);
 }
 
-TEST_CASE("auto [a,b,c] = pipe >> specs >> sink: capture + wire to sink")
+TEST_CASE("auto [a,b,c] = pipe >> specs >> sink: all wired to sink")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
@@ -412,17 +431,40 @@ TEST_CASE("auto [a,b,c] = pipe >> specs >> sink: capture + wire to sink")
     auto sink = pipe.emplace("sink"_job([] {}));
     auto [a, b, c] = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {}) >> sink;
 
+    // Verify all bindings
     CHECK(pipe.name(a) == "A");
     CHECK(pipe.name(b) == "B");
     CHECK(pipe.name(c) == "C");
+    CHECK_FALSE(a == b);
+    CHECK_FALSE(b == c);
 
-    (void)pipe.run(exec);
+    CHECK(pipe.size() == 4U);
+    CHECK(pipe.validate().has_value());
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+
     const auto& order = exec.order();
     REQUIRE(order.size() == 4U);
+
+    // sink must run after ALL of A, B, C
+    auto sinkPos = std::find(order.begin(), order.end(), "sink") - order.begin();
+    auto aPos    = std::find(order.begin(), order.end(), "A")    - order.begin();
+    auto bPos    = std::find(order.begin(), order.end(), "B")    - order.begin();
+    auto cPos    = std::find(order.begin(), order.end(), "C")    - order.begin();
+    CHECK(sinkPos > aPos);
+    CHECK(sinkPos > bPos);
+    CHECK(sinkPos > cPos);
     CHECK(order.back() == "sink");
+
+    // All kDone
+    CHECK(pipe.status(a)    == JobStatus::kDone);
+    CHECK(pipe.status(b)    == JobStatus::kDone);
+    CHECK(pipe.status(c)    == JobStatus::kDone);
+    CHECK(pipe.status(sink) == JobStatus::kDone);
 }
 
-TEST_CASE("pipe >> a+b+c >> d+e+f >> sink: layered pipeline with chain")
+TEST_CASE("pipe >> a+b+c >> d+e+f >> sink: two-layer chain, full verification")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
@@ -433,32 +475,59 @@ TEST_CASE("pipe >> a+b+c >> d+e+f >> sink: layered pipeline with chain")
                          >> "D"_job([] {}) + "E"_job([] {}) + "F"_job([] {})
                          >> sink;
 
-    // Destructure layers
+    // Destructure and verify ALL bindings
     auto [a, b, c] = l1;
     auto [d, e, f] = l2;
     CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(b) == "B");
+    CHECK(pipe.name(c) == "C");
     CHECK(pipe.name(d) == "D");
+    CHECK(pipe.name(e) == "E");
+    CHECK(pipe.name(f) == "F");
 
-    (void)pipe.run(exec);
+    // All distinct
+    CHECK_FALSE(a == b); CHECK_FALSE(a == c); CHECK_FALSE(a == d);
+    CHECK_FALSE(b == c); CHECK_FALSE(b == e);
+    CHECK_FALSE(d == e); CHECK_FALSE(d == f); CHECK_FALSE(e == f);
+
+    CHECK(pipe.size() == 7U);
+    CHECK(pipe.validate().has_value());
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+
     const auto& order = exec.order();
     REQUIRE(order.size() == 7U);
+
+    auto pos = [&](const std::string& name) {
+        return std::find(order.begin(), order.end(), name) - order.begin();
+    };
+
+    // Layer 1 (A,B,C) must ALL come before EVERY job in layer 2 (D,E,F)
+    // This verifies the cross-product dependency wiring
+    CHECK(pos("A") < pos("D"));  CHECK(pos("A") < pos("E"));  CHECK(pos("A") < pos("F"));
+    CHECK(pos("B") < pos("D"));  CHECK(pos("B") < pos("E"));  CHECK(pos("B") < pos("F"));
+    CHECK(pos("C") < pos("D"));  CHECK(pos("C") < pos("E"));  CHECK(pos("C") < pos("F"));
+
+    // Layer 2 must ALL come before sink
+    CHECK(pos("D") < pos("sink"));
+    CHECK(pos("E") < pos("sink"));
+    CHECK(pos("F") < pos("sink"));
+
+    // Sink is last
     CHECK(order.back() == "sink");
 
-    // All of A,B,C must come before all of D,E,F
-    auto maxLayer1 = std::max({
-        std::find(order.begin(), order.end(), "A") - order.begin(),
-        std::find(order.begin(), order.end(), "B") - order.begin(),
-        std::find(order.begin(), order.end(), "C") - order.begin()
-    });
-    auto minLayer2 = std::min({
-        std::find(order.begin(), order.end(), "D") - order.begin(),
-        std::find(order.begin(), order.end(), "E") - order.begin(),
-        std::find(order.begin(), order.end(), "F") - order.begin()
-    });
-    CHECK(maxLayer1 < minLayer2);
+    // All kDone
+    CHECK(pipe.status(a)    == JobStatus::kDone);
+    CHECK(pipe.status(b)    == JobStatus::kDone);
+    CHECK(pipe.status(c)    == JobStatus::kDone);
+    CHECK(pipe.status(d)    == JobStatus::kDone);
+    CHECK(pipe.status(e)    == JobStatus::kDone);
+    CHECK(pipe.status(f)    == JobStatus::kDone);
+    CHECK(pipe.status(sink) == JobStatus::kDone);
 }
 
-TEST_CASE("pipe >> a+b+c >> d+e+f: two layers, no sink, chain capture")
+TEST_CASE("pipe >> a+b+c >> d+e+f: two layers without sink, full verification")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
@@ -466,29 +535,40 @@ TEST_CASE("pipe >> a+b+c >> d+e+f: two layers, no sink, chain capture")
     auto [l1, l2] = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {})
                          >> "D"_job([] {}) + "E"_job([] {}) + "F"_job([] {});
 
+    // Verify ALL bindings
     auto [a, b, c] = l1;
     auto [d, e, f] = l2;
     CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(b) == "B");
+    CHECK(pipe.name(c) == "C");
+    CHECK(pipe.name(d) == "D");
+    CHECK(pipe.name(e) == "E");
     CHECK(pipe.name(f) == "F");
 
-    (void)pipe.run(exec);
+    CHECK(pipe.size() == 6U);
+    CHECK(pipe.validate().has_value());
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+
     const auto& order = exec.order();
     REQUIRE(order.size() == 6U);
 
-    auto maxLayer1 = std::max({
-        std::find(order.begin(), order.end(), "A") - order.begin(),
-        std::find(order.begin(), order.end(), "B") - order.begin(),
-        std::find(order.begin(), order.end(), "C") - order.begin()
-    });
-    auto minLayer2 = std::min({
-        std::find(order.begin(), order.end(), "D") - order.begin(),
-        std::find(order.begin(), order.end(), "E") - order.begin(),
-        std::find(order.begin(), order.end(), "F") - order.begin()
-    });
-    CHECK(maxLayer1 < minLayer2);
+    auto pos = [&](const std::string& name) {
+        return std::find(order.begin(), order.end(), name) - order.begin();
+    };
+
+    // Full cross-product: every L1 job before every L2 job
+    CHECK(pos("A") < pos("D"));  CHECK(pos("A") < pos("E"));  CHECK(pos("A") < pos("F"));
+    CHECK(pos("B") < pos("D"));  CHECK(pos("B") < pos("E"));  CHECK(pos("B") < pos("F"));
+    CHECK(pos("C") < pos("D"));  CHECK(pos("C") < pos("E"));  CHECK(pos("C") < pos("F"));
+
+    // All kDone
+    for (auto j : {a, b, c, d, e, f})
+        CHECK(pipe.status(j) == JobStatus::kDone);
 }
 
-TEST_CASE("Three-layer chain: pipe >> l1 >> l2 >> l3 >> sink")
+TEST_CASE("Three-layer chain: pipe >> l1 >> l2 >> l3 >> sink, full verification")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
@@ -500,34 +580,53 @@ TEST_CASE("Three-layer chain: pipe >> l1 >> l2 >> l3 >> sink")
                               >> "E"_job([] {}) + "F"_job([] {})
                               >> sink;
 
+    // Verify ALL bindings across all layers
     auto [a, b] = l1;
     auto [c, d] = l2;
     auto [e, f] = l3;
     CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(b) == "B");
     CHECK(pipe.name(c) == "C");
+    CHECK(pipe.name(d) == "D");
     CHECK(pipe.name(e) == "E");
-    CHECK(pipe.size() == 7U);
+    CHECK(pipe.name(f) == "F");
 
-    (void)pipe.run(exec);
+    // All distinct
+    CHECK_FALSE(a == b); CHECK_FALSE(a == c); CHECK_FALSE(a == d);
+    CHECK_FALSE(a == e); CHECK_FALSE(a == f);
+    CHECK_FALSE(c == d); CHECK_FALSE(e == f);
+
+    CHECK(pipe.size() == 7U);
+    CHECK(pipe.validate().has_value());
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+
     const auto& order = exec.order();
     REQUIRE(order.size() == 7U);
+
+    auto pos = [&](const std::string& name) {
+        return std::find(order.begin(), order.end(), name) - order.begin();
+    };
+
+    // L1 (A,B) before ALL of L2 (C,D) — cross-product
+    CHECK(pos("A") < pos("C"));  CHECK(pos("A") < pos("D"));
+    CHECK(pos("B") < pos("C"));  CHECK(pos("B") < pos("D"));
+
+    // L2 (C,D) before ALL of L3 (E,F) — cross-product
+    CHECK(pos("C") < pos("E"));  CHECK(pos("C") < pos("F"));
+    CHECK(pos("D") < pos("E"));  CHECK(pos("D") < pos("F"));
+
+    // L3 (E,F) before sink
+    CHECK(pos("E") < pos("sink"));
+    CHECK(pos("F") < pos("sink"));
+
+    // Sink is last
     CHECK(order.back() == "sink");
 
-    // Verify layer ordering: l1 < l2 < l3 < sink
-    auto maxL1 = std::max(
-        std::find(order.begin(), order.end(), "A") - order.begin(),
-        std::find(order.begin(), order.end(), "B") - order.begin());
-    auto minL2 = std::min(
-        std::find(order.begin(), order.end(), "C") - order.begin(),
-        std::find(order.begin(), order.end(), "D") - order.begin());
-    auto maxL2 = std::max(
-        std::find(order.begin(), order.end(), "C") - order.begin(),
-        std::find(order.begin(), order.end(), "D") - order.begin());
-    auto minL3 = std::min(
-        std::find(order.begin(), order.end(), "E") - order.begin(),
-        std::find(order.begin(), order.end(), "F") - order.begin());
-    CHECK(maxL1 < minL2);
-    CHECK(maxL2 < minL3);
+    // All kDone
+    for (auto j : {a, b, c, d, e, f, sink})
+        CHECK(pipe.status(j) == JobStatus::kDone);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
