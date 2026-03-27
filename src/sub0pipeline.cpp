@@ -159,6 +159,48 @@ Job& Job::precede(Job other)
     return *this;
 }
 
+// ── Job dependency on JobGroup ────────────────────────────────────────────────
+
+Job& Job::succeed(JobGroup const& group)
+{
+    for (auto j : group.jobs()) succeed(j);
+    return *this;
+}
+
+Job& Job::precede(JobGroup const& group)
+{
+    for (auto j : group.jobs()) precede(j);
+    return *this;
+}
+
+// ── JobGroup methods ─────────────────────────────────────────────────────────
+
+JobGroup& JobGroup::succeed(Job other)
+{
+    for (auto& j : jobs_) j.succeed(other);
+    return *this;
+}
+
+JobGroup& JobGroup::succeed(JobGroup const& other)
+{
+    for (auto& j : jobs_)
+        for (auto o : other.jobs()) j.succeed(o);
+    return *this;
+}
+
+JobGroup& JobGroup::precede(Job other)
+{
+    for (auto& j : jobs_) j.precede(other);
+    return *this;
+}
+
+JobGroup& JobGroup::precede(JobGroup const& other)
+{
+    for (auto& j : jobs_)
+        for (auto o : other.jobs()) j.precede(o);
+    return *this;
+}
+
 // ── Pipeline lifecycle ────────────────────────────────────────────────────────
 
 Pipeline::Pipeline() : impl_{std::make_unique<Impl>()} {}

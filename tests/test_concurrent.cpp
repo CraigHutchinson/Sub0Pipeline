@@ -13,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
+
 using namespace sub0pipeline;
 
 // ── Thread-pool executor (one thread per dispatched job) ──────────────────────

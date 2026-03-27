@@ -33,6 +33,7 @@
 #include <functional>
 #include <memory>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -50,6 +51,9 @@ enum class PipelineError : uint8_t
     kDuplicateJob,      ///< Job was added more than once.
     kUnknownJob,        ///< Operation on an invalid Job handle.
 };
+
+// Forward declarations for cross-references.
+class Pipeline;
 
 // ── Job handle ────────────────────────────────────────────────────────────────
 
@@ -128,6 +132,15 @@ public:
 
     /** @return true if both handles refer to the same job node. */
     [[nodiscard]] constexpr bool operator==(Job other) const noexcept { return idx_ == other.idx_; }
+
+    /** @return pointer to the owning Pipeline (nullptr if default-constructed). */
+    [[nodiscard]] constexpr Pipeline* pipeline() const noexcept { return pipeline_; }
+
+    /** Declare that this job runs AFTER every job in @p group. */
+    Job& succeed(class JobGroup const& group);
+
+    /** Declare that every job in @p group runs AFTER this job. */
+    Job& precede(class JobGroup const& group);
 
 private:
     friend class Pipeline;
@@ -358,6 +371,33 @@ public:
      */
     void trigger(Job j);
 
+    // ── Generic emplace (concept-based extension point) ─────────────────
+
+    /**
+     * @brief Emplace a job described by a spec object with a .build() method.
+     *
+     * Accepts any type satisfying: `spec.build(Pipeline&) -> Job`.
+     * This is the extension point used by the DSL's JobSpec type.
+     */
+    template<typename Spec>
+        requires requires(Spec& s, Pipeline& p) { { s.build(p) } -> std::same_as<Job>; }
+    [[nodiscard]] Job emplace(Spec&& spec)
+    {
+        return std::forward<Spec>(spec).build(*this);
+    }
+
+    /**
+     * @brief Multi-emplace returning a tuple for structured bindings.
+     * @example auto [a, b, c] = pipe.emplace(specA, specB, specC);
+     */
+    template<typename... Specs>
+        requires (sizeof...(Specs) > 1)
+              && (requires(Specs& s, Pipeline& p) { { s.build(p) } -> std::same_as<Job>; } && ...)
+    [[nodiscard]] auto emplace(Specs&&... specs)
+    {
+        return std::tuple{std::forward<Specs>(specs).build(*this)...};
+    }
+
     // ── Diagnostics ───────────────────────────────────────────────────────
 
     /** Emit DAG structure as trace events (Perfetto Gantt chart). */
@@ -376,5 +416,76 @@ private:
     Node&       node(uint32_t idx);
     const Node& node(uint32_t idx) const;
 };
+
+// ── JobGroup ────────────────────────────────────────────────────────────────
+
+/**
+ * @brief A named group of parallel Job handles.
+ *
+ * Provides .succeed() and .precede() that delegate to every member,
+ * allowing a group to be wired as a single unit in dependency expressions.
+ * Created via parallel() or DSL operator+.
+ */
+class JobGroup
+{
+public:
+    JobGroup() = default;
+
+    /** Construct from two jobs. */
+    explicit JobGroup(Job first, Job second)
+        : jobs_{first, second} {}
+
+    /** Add a job to the group. Returns *this for chaining. */
+    JobGroup& add(Job j) { jobs_.push_back(j); return *this; }
+
+    /** Every job in this group runs AFTER @p other. */
+    JobGroup& succeed(Job other);
+
+    /** Every job in this group runs AFTER every job in @p other. */
+    JobGroup& succeed(JobGroup const& other);
+
+    /** Variadic: every job in this group runs AFTER all listed jobs. */
+    template<typename... Jobs>
+    JobGroup& succeed(Job first, Jobs... rest)
+    {
+        succeed(first);
+        if constexpr (sizeof...(rest) > 0) succeed(rest...);
+        return *this;
+    }
+
+    /** Every job in @p other runs AFTER every job in this group. */
+    JobGroup& precede(Job other);
+
+    /** Every job in @p other group runs AFTER every job in this group. */
+    JobGroup& precede(JobGroup const& other);
+
+    /** Variadic: all listed jobs run AFTER every job in this group. */
+    template<typename... Jobs>
+    JobGroup& precede(Job first, Jobs... rest)
+    {
+        precede(first);
+        if constexpr (sizeof...(rest) > 0) precede(rest...);
+        return *this;
+    }
+
+    /** Read-only view of member jobs. */
+    [[nodiscard]] const std::vector<Job>& jobs() const noexcept { return jobs_; }
+
+private:
+    std::vector<Job> jobs_;
+};
+
+/**
+ * @brief Create a group of parallel jobs.
+ * @example auto io = parallel(display, network, audio);
+ */
+template<typename... Jobs_t>
+    requires (std::same_as<std::remove_cvref_t<Jobs_t>, Job> && ...)
+[[nodiscard]] JobGroup parallel(Jobs_t... jobs)
+{
+    JobGroup g;
+    (g.add(jobs), ...);
+    return g;
+}
 
 } // namespace sub0pipeline

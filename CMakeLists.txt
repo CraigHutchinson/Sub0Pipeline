@@ -13,6 +13,7 @@ option(SUB0PIPELINE_BUILD_TESTING  "Build unit-tests"   ON)
 option(SUB0PIPELINE_BUILD_EXAMPLES "Build examples"     OFF)
 option(SUB0PIPELINE_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(SUB0PIPELINE_PLATFORM_DESKTOP  "Build DesktopExecutor (std::thread)" ON)
+option(SUB0PIPELINE_ENABLE_DSL       "Enable operator-overloading DSL extension" OFF)
 
 if(SUB0PIPELINE_BUILD_TESTING AND NOT IS_SUBPROJECT)
     enable_testing()
@@ -51,6 +52,13 @@ endif()
 
 add_subdirectory(platform/headless)
 
+# ── DSL extension (header-only, opt-in) ──────────────────────────────────────
+
+add_library(Sub0Pipeline_DSL INTERFACE)
+add_library(Sub0Pipeline::DSL ALIAS Sub0Pipeline_DSL)
+target_link_libraries(Sub0Pipeline_DSL INTERFACE Sub0Pipeline::Sub0Pipeline)
+target_compile_definitions(Sub0Pipeline_DSL INTERFACE SUB0PIPELINE_ENABLE_DSL=1)
+
 # ── Install ───────────────────────────────────────────────────────────────────
 
 if(NOT IS_SUBPROJECT)
@@ -75,6 +83,7 @@ if(NOT IS_SUBPROJECT)
     install(
         TARGETS
             Sub0Pipeline
+            Sub0Pipeline_DSL
         EXPORT
             Sub0PipelineTargets
         DESTINATION

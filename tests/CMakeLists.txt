@@ -26,6 +26,20 @@ target_compile_features(Sub0Pipeline_Tests PRIVATE cxx_std_23)
 
 add_test(NAME Sub0Pipeline_Tests COMMAND Sub0Pipeline_Tests)
 
+# ── DSL tests ─────────────────────────────────────────────────────────────────
+
+if(SUB0PIPELINE_ENABLE_DSL)
+    add_executable(Sub0Pipeline_DslTests test_dsl.cpp)
+    target_link_libraries(Sub0Pipeline_DslTests
+        PRIVATE Sub0Pipeline::DSL Sub0Pipeline::Headless
+    )
+    target_include_directories(Sub0Pipeline_DslTests
+        PRIVATE "${VENDOR_DIR}"
+    )
+    target_compile_features(Sub0Pipeline_DslTests PRIVATE cxx_std_23)
+    add_test(NAME Sub0Pipeline_DslTests COMMAND Sub0Pipeline_DslTests)
+endif()
+
 # ── Benchmarks (not run by ctest — run manually) ──────────────────────────────
 
 if(SUB0PIPELINE_BUILD_BENCHMARKS)

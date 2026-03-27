@@ -327,3 +327,160 @@ TEST_CASE("Pipeline: invalid job handle returns kPending from status()")
     Job invalid;
     CHECK(pipeline.status(invalid) == JobStatus::kPending);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// JobGroup / parallel()
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("parallel: creates JobGroup with correct member count")
+{
+    Pipeline pipeline;
+    auto a = pipeline.emplace([] {}).name("A");
+    auto b = pipeline.emplace([] {}).name("B");
+    auto c = pipeline.emplace([] {}).name("C");
+
+    auto group = parallel(a, b, c);
+    CHECK(group.jobs().size() == 3U);
+}
+
+TEST_CASE("JobGroup::succeed wires all members after a single job")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto root = pipeline.emplace([] {}).name("root");
+    auto a    = pipeline.emplace([] {}).name("A");
+    auto b    = pipeline.emplace([] {}).name("B");
+
+    auto group = parallel(a, b);
+    group.succeed(root);  // both A and B depend on root
+
+    (void)pipeline.run(exec);
+    const auto& order = exec.order();
+    auto rootPos = std::find(order.begin(), order.end(), "root") - order.begin();
+    auto aPos    = std::find(order.begin(), order.end(), "A")    - order.begin();
+    auto bPos    = std::find(order.begin(), order.end(), "B")    - order.begin();
+    CHECK(aPos > rootPos);
+    CHECK(bPos > rootPos);
+}
+
+TEST_CASE("JobGroup::precede wires all members before a single job")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto a    = pipeline.emplace([] {}).name("A");
+    auto b    = pipeline.emplace([] {}).name("B");
+    auto sink = pipeline.emplace([] {}).name("sink");
+
+    auto group = parallel(a, b);
+    group.precede(sink);  // sink depends on both A and B
+
+    (void)pipeline.run(exec);
+    const auto& order = exec.order();
+    auto sinkPos = std::find(order.begin(), order.end(), "sink") - order.begin();
+    auto aPos    = std::find(order.begin(), order.end(), "A")    - order.begin();
+    auto bPos    = std::find(order.begin(), order.end(), "B")    - order.begin();
+    CHECK(sinkPos > aPos);
+    CHECK(sinkPos > bPos);
+}
+
+TEST_CASE("Job::succeed(JobGroup) wires job after all group members")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto a    = pipeline.emplace([] {}).name("A");
+    auto b    = pipeline.emplace([] {}).name("B");
+    auto sink = pipeline.emplace([] {}).name("sink");
+
+    auto group = parallel(a, b);
+    sink.succeed(group);
+
+    (void)pipeline.run(exec);
+    const auto& order = exec.order();
+    auto sinkPos = std::find(order.begin(), order.end(), "sink") - order.begin();
+    auto aPos    = std::find(order.begin(), order.end(), "A")    - order.begin();
+    auto bPos    = std::find(order.begin(), order.end(), "B")    - order.begin();
+    CHECK(sinkPos > aPos);
+    CHECK(sinkPos > bPos);
+}
+
+TEST_CASE("Job::precede(JobGroup) wires job before all group members")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto root = pipeline.emplace([] {}).name("root");
+    auto a    = pipeline.emplace([] {}).name("A");
+    auto b    = pipeline.emplace([] {}).name("B");
+
+    auto group = parallel(a, b);
+    root.precede(group);
+
+    (void)pipeline.run(exec);
+    const auto& order = exec.order();
+    auto rootPos = std::find(order.begin(), order.end(), "root") - order.begin();
+    auto aPos    = std::find(order.begin(), order.end(), "A")    - order.begin();
+    auto bPos    = std::find(order.begin(), order.end(), "B")    - order.begin();
+    CHECK(aPos > rootPos);
+    CHECK(bPos > rootPos);
+}
+
+TEST_CASE("Job::pipeline() returns owning pipeline")
+{
+    Pipeline pipeline;
+    auto a = pipeline.emplace([] {}).name("A");
+    CHECK(a.pipeline() == &pipeline);
+}
+
+TEST_CASE("Job::pipeline() returns nullptr for default job")
+{
+    Job j;
+    CHECK(j.pipeline() == nullptr);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Generic emplace(Spec)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+namespace {
+struct TestSpec
+{
+    std::string nameStr;
+    Job build(Pipeline& p) { return p.emplace([] {}).name(nameStr); }
+};
+} // namespace
+
+TEST_CASE("Pipeline: emplace(Spec) accepts buildable type")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto j = pipeline.emplace(TestSpec{"hello"});
+    CHECK(j.valid());
+    CHECK(pipeline.name(j) == "hello");
+
+    (void)pipeline.run(exec);
+    CHECK(pipeline.status(j) == JobStatus::kDone);
+}
+
+TEST_CASE("Pipeline: emplace(Spec, Spec) returns tuple for structured bindings")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto [a, b, c] = pipeline.emplace(
+        TestSpec{"A"},
+        TestSpec{"B"},
+        TestSpec{"C"}
+    );
+
+    CHECK(a.valid());
+    CHECK(b.valid());
+    CHECK(c.valid());
+    CHECK(pipeline.name(a) == "A");
+    CHECK(pipeline.name(b) == "B");
+    CHECK(pipeline.name(c) == "C");
+    CHECK(pipeline.size() == 3U);
+}
