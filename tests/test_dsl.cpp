@@ -16,6 +16,7 @@
 using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;
 using namespace std::chrono_literals;
+using namespace std::string_literals;
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ public:
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 
     [[nodiscard]] const std::vector<std::string>& order() const { return order_; }
+    void clear() { order_.clear(); }
 
 private:
     std::vector<std::string> order_;
@@ -649,4 +651,255 @@ TEST_CASE("DSL operators compose with .name() / .timeout() / .optional()")
     CHECK(order[0] == "sensor");
     CHECK(order[1] == "proc");
     CHECK(order[2] == "log");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DSL edge cases
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("Long pipe chain via DSL (20 >> operators)")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    // Build: pipe >> j0 >> j1 >> ... >> j19
+    Job prev;
+    for (int i = 0; i < 20; ++i) {
+        auto spec = ("j" + std::to_string(i) + ""s);
+        auto j = pipe.emplace(job([] {}));
+        j.name(spec);
+        if (prev.valid()) prev >> j;
+        prev = j;
+    }
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+    CHECK(exec.order().size() == 20U);
+
+    // Verify strict sequential order
+    for (int i = 0; i < 20; ++i)
+        CHECK(exec.order()[static_cast<std::size_t>(i)] == "j" + std::to_string(i));
+}
+
+TEST_CASE("Inline pipe chain 10 deep")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    pipe >> "j0"_job([] {}) >> "j1"_job([] {}) >> "j2"_job([] {})
+         >> "j3"_job([] {}) >> "j4"_job([] {}) >> "j5"_job([] {})
+         >> "j6"_job([] {}) >> "j7"_job([] {}) >> "j8"_job([] {})
+         >> "j9"_job([] {});
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+    CHECK(exec.order().size() == 10U);
+    CHECK(exec.order().front() == "j0");
+    CHECK(exec.order().back() == "j9");
+    for (int i = 0; i < 9; ++i) {
+        auto pos_i  = std::find(exec.order().begin(), exec.order().end(), "j" + std::to_string(i)) - exec.order().begin();
+        auto pos_i1 = std::find(exec.order().begin(), exec.order().end(), "j" + std::to_string(i + 1)) - exec.order().begin();
+        CHECK(pos_i < pos_i1);
+    }
+}
+
+TEST_CASE("pipe >> single spec returns Job directly (not JobTuple)")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    // Pipeline >> JobSpec returns Job, not JobTuple<1>
+    auto j = pipe >> "solo"_job([] {});
+    static_assert(std::same_as<decltype(j), Job>);
+
+    CHECK(j.valid());
+    CHECK(pipe.name(j) == "solo");
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+    CHECK(pipe.status(j) == JobStatus::kDone);
+}
+
+TEST_CASE("Mixed-size layers: 2 → 3 → sink via chain")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    auto sink = pipe.emplace("sink"_job([] {}));
+
+    auto [l1, l2] = pipe >> "A"_job([] {}) + "B"_job([] {})
+                         >> "C"_job([] {}) + "D"_job([] {}) + "E"_job([] {})
+                         >> sink;
+
+    // Layer 1 has 2 jobs
+    auto [a, b] = l1;
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(b) == "B");
+
+    // Layer 2 has 3 jobs
+    auto [c, d, e] = l2;
+    CHECK(pipe.name(c) == "C");
+    CHECK(pipe.name(d) == "D");
+    CHECK(pipe.name(e) == "E");
+
+    CHECK(pipe.size() == 6U);
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+
+    const auto& order = exec.order();
+    auto pos = [&](const std::string& name) {
+        return std::find(order.begin(), order.end(), name) - order.begin();
+    };
+
+    // {A,B} before {C,D,E} — all 6 cross-product edges
+    CHECK(pos("A") < pos("C"));  CHECK(pos("A") < pos("D"));  CHECK(pos("A") < pos("E"));
+    CHECK(pos("B") < pos("C"));  CHECK(pos("B") < pos("D"));  CHECK(pos("B") < pos("E"));
+    // {C,D,E} before sink
+    CHECK(pos("C") < pos("sink"));
+    CHECK(pos("D") < pos("sink"));
+    CHECK(pos("E") < pos("sink"));
+}
+
+TEST_CASE("Nested JobGroup via operator+: (a + b) + (c + d)")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    auto a = pipe.emplace([] {}).name("A");
+    auto b = pipe.emplace([] {}).name("B");
+    auto c = pipe.emplace([] {}).name("C");
+    auto d = pipe.emplace([] {}).name("D");
+    auto root = pipe.emplace([] {}).name("root");
+    auto sink = pipe.emplace([] {}).name("sink");
+
+    auto g1 = a + b;
+    auto g2 = c + d;
+    auto merged = g1 + g2;  // merge two JobGroups
+
+    root >> merged >> sink;
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+
+    const auto& order = exec.order();
+    auto pos = [&](const std::string& name) {
+        return std::find(order.begin(), order.end(), name) - order.begin();
+    };
+
+    CHECK(pos("root") < pos("A"));
+    CHECK(pos("root") < pos("B"));
+    CHECK(pos("root") < pos("C"));
+    CHECK(pos("root") < pos("D"));
+    CHECK(pos("A") < pos("sink"));
+    CHECK(pos("B") < pos("sink"));
+    CHECK(pos("C") < pos("sink"));
+    CHECK(pos("D") < pos("sink"));
+}
+
+TEST_CASE("Re-run DSL-built pipeline")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+    int               counter = 0;
+
+    pipe >> "A"_job([&] { ++counter; })
+         >> "B"_job([&] { ++counter; }) + "C"_job([&] { ++counter; })
+         >> "D"_job([&] { ++counter; });
+
+    for (int run = 1; run <= 3; ++run) {
+        exec.clear();
+        auto result = pipe.run(exec);
+        REQUIRE(result.has_value());
+        CHECK(counter == run * 4);
+        CHECK(exec.order().front() == "A");
+        CHECK(exec.order().back() == "D");
+    }
+}
+
+TEST_CASE("Complex mixed: emplaced root >> inline layers >> emplaced sink, re-run")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+    int               counter = 0;
+
+    auto root = pipe.emplace("root"_job([&] { ++counter; }));
+    auto sink = pipe.emplace("sink"_job([&] { ++counter; }));
+
+    // Use pipe >> to get JobTuple, then chain layers
+    auto [l1, l2] = pipe >> "A"_job([&] { ++counter; }) + "B"_job([&] { ++counter; })
+                         >> "C"_job([&] { ++counter; }) + "D"_job([&] { ++counter; });
+
+    // Wire emplaced root and sink manually
+    auto [a, b] = l1;
+    auto [c, d] = l2;
+    root >> a + b;
+    c + d >> sink;
+
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(d) == "D");
+    CHECK(pipe.size() == 6U);
+
+    for (int run = 1; run <= 3; ++run) {
+        exec.clear();
+        auto result = pipe.run(exec);
+        REQUIRE(result.has_value());
+        CHECK(counter == run * 6);
+        CHECK(exec.order().front() == "root");
+        CHECK(exec.order().back() == "sink");
+    }
+}
+
+TEST_CASE("JobSpec + JobSpec + JobSpec grouping (3-way)")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    // Verify that a+b+c as specs groups correctly without emplacement
+    auto specs = "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {});
+
+    // Emplace via pipe >> specs
+    auto [a, b, c] = pipe >> specs;
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(b) == "B");
+    CHECK(pipe.name(c) == "C");
+    CHECK(pipe.size() == 3U);
+}
+
+TEST_CASE("Large DSL: 50-worker fan-out/in via structured bindings")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    auto root = pipe.emplace("root"_job([] {}));
+    auto sink = pipe.emplace("sink"_job([] {}));
+
+    // Create 50 workers and wire them
+    std::vector<Job> workers;
+    for (int i = 0; i < 50; ++i) {
+        auto w = pipe.emplace(job([] {}));
+        w.name("w" + std::to_string(i));
+        workers.push_back(w);
+    }
+
+    // Build group from workers using operator+
+    auto group = workers[0] + workers[1];
+    for (std::size_t i = 2; i < workers.size(); ++i)
+        group = group + workers[i];
+
+    root >> group >> sink;
+
+    CHECK(pipe.size() == 52U);
+
+    auto result = pipe.run(exec);
+    REQUIRE(result.has_value());
+    CHECK(exec.order().front() == "root");
+    CHECK(exec.order().back() == "sink");
+
+    // Re-run
+    exec.clear();
+    auto r2 = pipe.run(exec);
+    REQUIRE(r2.has_value());
+    CHECK(exec.order().front() == "root");
+    CHECK(exec.order().back() == "sink");
 }
