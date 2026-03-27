@@ -2,14 +2,14 @@
 
 **A lightweight C++23 DAG job scheduler with an expressive operator DSL.**
 
-Build complex dependency graphs in a single expression. Execute them in parallel across embedded and desktop platforms. Zero heap allocations at dispatch time.
+Build complex dependency graphs in a single expression. Execute them in parallel with pluggable backends. Sub-microsecond scheduler overhead.
 
 ```cpp
-Pipeline boot;
-boot >> "nvs"_job(nvs_init)
-     >> "display"_job(display_init).timeout(500ms) + "network"_job(network_init).timeout(500ms)
-     >> "app"_job(app_start);
-// nvs -> {display || network} -> app
+Pipeline pipe;
+pipe >> "load"_job(load_data)
+     >> "parse"_job(parse).timeout(500ms) + "validate"_job(validate).timeout(500ms)
+     >> "commit"_job(commit);
+// load -> {parse || validate} -> commit
 ```
 
 ---
@@ -19,7 +19,7 @@ boot >> "nvs"_job(nvs_init)
 - **One-line DAGs** — Express fan-out, fan-in, diamonds, and layered graphs with `>>` and `+` operators
 - **Structured binding capture** — `auto [a, b, c] = pipe >> specs` gives you handles to every job
 - **220 ns per 4-job diamond** — Sub-microsecond DAG dispatch overhead
-- **Platform-injectable executors** — Same pipeline code runs on ESP32-P4 (FreeRTOS), desktop (std::thread), and bare-metal (sequential)
+- **Platform-injectable executors** — Same pipeline code runs with std::thread, sequential/inline, or custom RTOS backends
 - **Zero-overhead when you don't need it** — The DSL lives in its own namespace and header. Just `#include <sub0pipeline/dsl.hpp>` to use it.
 - **C++23** — `std::expected` error handling, concepts, structured bindings
 
@@ -35,19 +35,19 @@ Part of the **Sub0** C++ library family.
 #include <sub0pipeline/sub0pipeline.hpp>
 using namespace sub0pipeline;
 
-Pipeline boot;
+Pipeline pipe;
 
-auto nvs     = boot.emplace(nvs_init).name("nvs");
-auto display = boot.emplace(display_init).name("display").timeout(500ms);
-auto network = boot.emplace(network_init).name("network").timeout(500ms);
-auto app     = boot.emplace(app_start).name("app");
+auto load     = pipe.emplace(load_data).name("load");
+auto parse    = pipe.emplace(parse_input).name("parse").timeout(500ms);
+auto validate = pipe.emplace(validate_input).name("validate").timeout(500ms);
+auto commit   = pipe.emplace(commit_result).name("commit");
 
-display.succeed(nvs);
-network.succeed(nvs);
-app.succeed(display, network);    // app waits for both
+parse.succeed(load);
+validate.succeed(load);
+commit.succeed(parse, validate);    // commit waits for both
 
 auto exec   = makeDesktopExecutor();
-auto result = boot.run(*exec);    // returns std::expected<void, PipelineError>
+auto result = pipe.run(*exec);      // returns std::expected<void, PipelineError>
 ```
 
 ### DSL Extension
@@ -56,10 +56,10 @@ auto result = boot.run(*exec);    // returns std::expected<void, PipelineError>
 #include <sub0pipeline/dsl.hpp>
 using namespace sub0pipeline::dsl;
 
-Pipeline boot;
-boot >> "nvs"_job(nvs_init)
-     >> "display"_job(display_init).timeout(500ms) + "network"_job(network_init).timeout(500ms)
-     >> "app"_job(app_start);
+Pipeline pipe;
+pipe >> "load"_job(load_data)
+     >> "parse"_job(parse_input).timeout(500ms) + "validate"_job(validate_input).timeout(500ms)
+     >> "commit"_job(commit_result);
 ```
 
 A single `using namespace sub0pipeline::dsl;` activates everything: operators, the `_job` UDL, and helper types.
@@ -250,18 +250,18 @@ See [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) for planned executors.
 | `run(executor, observer?)` | Execute DAG; returns `std::expected<void, PipelineError>` |
 | `validate()` | Check for cycles (Kahn's algorithm; called automatically by `run()`) |
 | `status(job)` / `name(job)` | Query job state and name |
-| `add_tick(tick)` | Register a recurring tick job for the post-boot loop |
-| `run_loop()` | Enter the post-boot event loop (`[[noreturn]]`) |
+| `add_tick(tick)` | Register a recurring tick job for the event loop |
+| `run_loop()` | Enter the tick event loop (`[[noreturn]]`) |
 | `dump_text()` | Print DAG structure to stdout |
 
 ### Job (fluent builder)
 
 ```cpp
-job.name("nvs")
+job.name("task")
    .timeout(5s)
    .core(1)           // CPU affinity (-1 = any)
-   .stack(8192)        // FreeRTOS stack bytes
-   .priority(10)       // FreeRTOS priority (1-24)
+   .stack(8192)        // executor stack bytes
+   .priority(10)       // executor priority (1-24)
    .optional()         // failure won't block dependents
    .succeed(other)     // this job runs after other
    .precede(other)     // other runs after this job
@@ -304,7 +304,7 @@ auto job = pipe.emplace([]() -> std::expected<void, PipelineError> {
 | Example | Description |
 |---------|-------------|
 | [`minimal_pipeline`](examples/minimal_pipeline/) | Linear A -> B -> C chain |
-| [`boot_sequence`](examples/boot_sequence/) | Parallel boot: nvs -> {display &#124;&#124; network} -> app |
+| [`boot_sequence`](examples/boot_sequence/) | Parallel fan-out/in: A -> {B &#124;&#124; C} -> D |
 | [`parallel_tasks`](examples/parallel_tasks/) | Fan-out + fan-in with atomic counters |
 | [`dsl_operators`](examples/dsl_operators/) | DSL syntax: inline pipe, structured bindings, `_job` UDL |
 | [`error_handling`](examples/error_handling/) | Required/optional failures, propagation |
@@ -312,7 +312,7 @@ auto job = pipe.emplace([]() -> std::expected<void, PipelineError> {
 | [`observer_profiling`](examples/observer_profiling/) | Custom `IObserver` with progress bar |
 | [`job_options`](examples/job_options/) | Every builder method demonstrated |
 | [`on_demand_jobs`](examples/on_demand_jobs/) | Event-triggered jobs (stub) |
-| [`tick_loop`](examples/tick_loop/) | Post-boot recurring tasks |
+| [`tick_loop`](examples/tick_loop/) | Recurring tick tasks after pipeline completion |
 
 ---
 

@@ -1,28 +1,27 @@
 // include/sub0pipeline/sub0pipeline.hpp
 //
-// Sub0Pipeline — Zero-overhead DAG job scheduler for boot sequencing and
-// application lifecycle management. Runs on FreeRTOS/C++23/ESP32-P4 and
-// desktop platforms via a platform-injectable executor.
+// Sub0Pipeline — Lightweight C++23 DAG job scheduler.
 //
-// Inspired by Taskflow's DAG model, extracted from NestNinja (ADR-027) as
-// a standalone Sub0-family library.
+// Declare jobs and their dependencies as a directed acyclic graph, then
+// execute them in parallel via a platform-injectable executor. Independent
+// jobs run concurrently; dependent jobs wait for their predecessors.
 //
 // Design principles:
 //   - Graph-as-value: the DAG is a first-class inspectable object
 //   - Builder pattern: fluent .precede()/.name() chaining on Job handles
-//   - Observer hooks: pluggable onStart/onFinish (profiling, boot screen)
-//   - Platform-injectable executor: FreeRTOS tasks / std::thread / sequential
+//   - Observer hooks: pluggable onStart/onFinish for profiling and progress
+//   - Platform-injectable executor: pluggable backends (threaded, sequential, RTOS)
 //   - Zero-overhead when jobs are constexpr-declared
 //
 // Usage:
-//   sub0pipeline::Pipeline boot;
-//   auto nvs     = boot.emplace([] { return nvs_init(); }).name("nvs");
-//   auto display = boot.emplace([] { return display_init(); }).name("display").timeout(8s);
-//   auto network = boot.emplace([] { return network_init(); }).name("network").timeout(10s);
-//   auto storage = boot.emplace([] { return storage_init(); }).name("storage");
-//   storage.succeed(nvs);   // storage depends on nvs
-//   // display and network have no mutual dependency — run in parallel
-//   boot.run(executor, &observer);
+//   sub0pipeline::Pipeline pipe;
+//   auto a = pipe.emplace([] { return init_a(); }).name("A");
+//   auto b = pipe.emplace([] { return init_b(); }).name("B").timeout(8s);
+//   auto c = pipe.emplace([] { return init_c(); }).name("C").timeout(10s);
+//   auto d = pipe.emplace([] { return start_d(); }).name("D");
+//   d.succeed(b, c);   // D depends on both B and C
+//   // B and C have no mutual dependency — run in parallel
+//   pipe.run(executor, &observer);
 //
 #pragma once
 
@@ -69,7 +68,7 @@ class Job
 public:
     constexpr Job() noexcept = default;
 
-    /** Set a human-readable name (used in tracing and boot screen). */
+    /** Set a human-readable name (used in tracing and observer callbacks). */
     Job& name(std::string_view n);
 
     /** Set maximum execution time before the job is considered timed out. */
@@ -78,16 +77,16 @@ public:
     /** Pin the job to a specific CPU core (-1 = any). */
     Job& core(int c) noexcept;
 
-    /** Set the FreeRTOS task stack size in bytes (default 8192). */
+    /** Set the executor task stack size in bytes (default 8192). */
     Job& stack(uint32_t bytes) noexcept;
 
-    /** Set the FreeRTOS task priority 1–24 (default 5). */
+    /** Set the executor task priority 1–24 (default 5). */
     Job& priority(uint8_t p) noexcept;
 
     /** Mark as optional: failure does not block or skip dependents. */
     Job& optional(bool opt = true) noexcept;
 
-    /** Set boot-screen status text shown while this job runs. */
+    /** Set status text shown while this job runs (for observer display). */
     Job& status(const char* text) noexcept;
 
     /**
@@ -174,7 +173,7 @@ enum class JobStatus : uint8_t
  * @brief Platform-injectable execution backend.
  *
  * Provides an abstraction layer so the same Pipeline DAG engine runs on
- * FreeRTOS (ESP32-P4), std::thread (desktop), or inline (headless/tests).
+ * any platform: threaded, sequential/inline, or RTOS-based.
  *
  * Contract:
  *   - dispatch() MUST increment its in-flight counter before returning.
@@ -213,9 +212,9 @@ public:
 // ── Observer interface ────────────────────────────────────────────────────────
 
 /**
- * @brief Pluggable observer for profiling, progress tracking, and boot screen.
+ * @brief Pluggable observer for profiling and progress tracking.
  *
- * Inspired by Taskflow's tf::ObserverInterface. Attach via Pipeline::run().
+ * Attach via Pipeline::run() to receive callbacks as jobs start and finish.
  */
 class IObserver
 {
@@ -240,7 +239,7 @@ public:
 
 // ── Tick job ──────────────────────────────────────────────────────────────────
 
-/** Recurring task registered for the post-boot event loop. */
+/** Recurring task registered for the tick event loop. */
 struct TickJob
 {
     std::string_view          name;      ///< Human-readable label.
@@ -316,7 +315,7 @@ public:
      * Validates the DAG, seeds root jobs, then dispatches successors as their
      * predecessors complete. Blocks until all jobs finish or a required job fails.
      *
-     * @param executor  Platform executor (desktop, FreeRTOS, sequential, …).
+     * @param executor  Execution backend (threaded, sequential, custom, …).
      * @param observer  Optional observer for progress and tracing.
      * @return          std::expected<void, PipelineError> — empty on success,
      *                  or the first fatal error encountered.
@@ -342,24 +341,24 @@ public:
      */
     [[nodiscard]] auto validate() const -> std::expected<void, PipelineError>;
 
-    // ── Post-boot tick loop ───────────────────────────────────────────────
+    // ── Tick loop ─────────────────────────────────────────────────────────
 
-    /** Register a recurring job for the post-boot event loop. */
+    /** Register a recurring job for the tick event loop. */
     void add_tick(TickJob tick);
 
     /**
      * @brief Enter the main event loop — runs tick jobs at their intervals.
      *
      * Does not return. Call after run() completes to begin steady-state
-     * operation. On FreeRTOS, yields via vTaskDelay(1); on desktop, via
-     * std::this_thread::sleep_for(1ms).
+     * operation. Yields between iterations using a platform-appropriate
+     * sleep (1 ms).
      */
     [[noreturn]] void run_loop();
 
     // ── On-demand jobs ────────────────────────────────────────────────────
 
     /**
-     * @brief Register a job that can be triggered by an event post-boot.
+     * @brief Register a job that can be triggered on demand after run().
      * @note trigger() is currently a stub; the returned Job is not yet
      *       connected to the event-dispatch mechanism.
      */

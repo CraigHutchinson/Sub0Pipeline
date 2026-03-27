@@ -12,10 +12,10 @@
 // Usage:
 //   #include <sub0pipeline/dsl.hpp>
 //   using namespace sub0pipeline::dsl;
-//   Pipeline boot;
-//   boot >> "nvs"_job(nvs_init)
-//        >> "display"_job(display_init).timeout(500ms) + "network"_job(network_init)
-//        >> "app"_job(app_start);
+//   Pipeline pipe;
+//   pipe >> "load"_job(load_data)
+//        >> "parse"_job(parse).timeout(500ms) + "validate"_job(validate)
+//        >> "commit"_job(commit);
 
 #pragma once
 #include <sub0pipeline/sub0pipeline.hpp>

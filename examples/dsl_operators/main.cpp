@@ -3,10 +3,10 @@
 // Demonstrates the Sub0Pipeline DSL extension: operator-based dependency
 // wiring, the _job UDL for named job creation, and inline pipe syntax.
 //
-// Graph built:  nvs → (display ∥ network) → app
+// Graph built:  load → (parse ∥ validate) → commit
 //
-// Compare with examples/boot_sequence/main.cpp — same pipeline, expressed
-// three different ways.
+// Compare with examples/boot_sequence/main.cpp for the same pattern
+// expressed with the core API.
 
 #include <sub0pipeline/dsl.hpp>
 
@@ -22,30 +22,30 @@ using namespace sub0pipeline::dsl;
 
 namespace {
 
-auto nvs_init() -> std::expected<void, PipelineError>
+auto load_data() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(20ms);
-    std::printf("  [nvs]     initialised\n");
+    std::printf("  [load]     done\n");
     return {};
 }
 
-auto display_init() -> std::expected<void, PipelineError>
+auto parse_input() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(80ms);
-    std::printf("  [display] initialised\n");
+    std::printf("  [parse]    done\n");
     return {};
 }
 
-auto network_init() -> std::expected<void, PipelineError>
+auto validate_input() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(120ms);
-    std::printf("  [network] initialised\n");
+    std::printf("  [validate] done\n");
     return {};
 }
 
-auto app_start() -> std::expected<void, PipelineError>
+auto commit_result() -> std::expected<void, PipelineError>
 {
-    std::printf("  [app]     started\n");
+    std::printf("  [commit]   done\n");
     return {};
 }
 
@@ -56,31 +56,31 @@ int main()
     // ── Demo 1: Structured bindings + operator wiring ─────────────────────
     {
         std::printf("=== Demo 1: Structured bindings + operator wiring ===\n");
-        Pipeline boot;
-        auto [nvs, display, network, app] = boot.emplace(
-            "nvs"_job(nvs_init),
-            "display"_job(display_init).timeout(500ms),
-            "network"_job(network_init).timeout(500ms),
-            "app"_job(app_start)
+        Pipeline pipe;
+        auto [load, parse, validate, commit] = pipe.emplace(
+            "load"_job(load_data),
+            "parse"_job(parse_input).timeout(500ms),
+            "validate"_job(validate_input).timeout(500ms),
+            "commit"_job(commit_result)
         );
 
-        nvs >> display + network >> app;
+        load >> parse + validate >> commit;
 
         auto exec = makeDesktopExecutor();
-        auto result = boot.run(*exec);
+        auto result = pipe.run(*exec);
         std::printf("  Result: %s\n\n", result ? "OK" : "FAILED");
     }
 
-    // ── Demo 2: Full inline pipe — entire boot in ONE expression ──────────
+    // ── Demo 2: Full inline pipe — entire DAG in ONE expression ───────────
     {
         std::printf("=== Demo 2: Inline pipe syntax ===\n");
-        Pipeline boot;
-        boot >> "nvs"_job(nvs_init)
-             >> "display"_job(display_init).timeout(500ms) + "network"_job(network_init).timeout(500ms)
-             >> "app"_job(app_start);
+        Pipeline pipe;
+        pipe >> "load"_job(load_data)
+             >> "parse"_job(parse_input).timeout(500ms) + "validate"_job(validate_input).timeout(500ms)
+             >> "commit"_job(commit_result);
 
         auto exec = makeDesktopExecutor();
-        auto result = boot.run(*exec);
+        auto result = pipe.run(*exec);
         std::printf("  Result: %s\n\n", result ? "OK" : "FAILED");
     }
 

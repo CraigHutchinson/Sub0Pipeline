@@ -483,13 +483,13 @@ Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> 
     // TODO: on-demand jobs are registered in the DAG but not yet connected to
     // the event-dispatch mechanism. trigger() is a stub. Do NOT call run() on
     // a Pipeline that has on-demand jobs registered — they will execute
-    // immediately as root nodes during the normal boot phase.
+    // immediately as root nodes during the normal execution phase.
     return emplace(std::move(fn));
 }
 
 void Pipeline::trigger(Job /*j*/)
 {
-    // TODO: implement event-triggered execution post-boot.
+    // TODO: implement event-triggered on-demand execution.
 }
 
 // ── Diagnostics ───────────────────────────────────────────────────────────────
