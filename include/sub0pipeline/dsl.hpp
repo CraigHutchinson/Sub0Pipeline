@@ -25,7 +25,9 @@
 #pragma once
 #include <sub0pipeline/sub0pipeline.hpp>
 
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -40,6 +42,8 @@ namespace sub0pipeline::dsl {
 
 template<typename F> class JobSpec;
 template<typename... Fs> class JobSpecGroup;
+template<std::size_t N> struct JobTuple;
+template<typename... Layers> class JobTupleChain;
 
 // ── JobNameProxy — returned by _job UDL ──────────────────────────────────────
 
@@ -149,6 +153,140 @@ auto tuple_to_spec_group(Tuple&& t, std::index_sequence<Is...>)
 
 } // namespace detail
 
+// ── JobTuple<N> — fixed-size job group with structured binding support ───────
+
+/**
+ * @brief A fixed-size group of Job handles supporting structured bindings.
+ *
+ * Produced by `Pipeline >> JobSpecGroup`. Subsequent `>>` operations wire
+ * dependencies from the tuple's members but return `*this` (capture-preserving),
+ * so the tuple can be captured via structured bindings at the end of the chain.
+ *
+ * @example auto [a, b, c] = pipe >> "A"_job(fn) + "B"_job(fn) + "C"_job(fn) >> sink;
+ */
+template<std::size_t N>
+struct JobTuple
+{
+    std::array<Job, N> jobs{};
+
+    /// Convert to JobGroup for interop with existing operators.
+    operator JobGroup() const
+    {
+        JobGroup g;
+        for (auto j : jobs) g.add(j);
+        return g;
+    }
+
+    /// Access the pipeline from the first member.
+    [[nodiscard]] Pipeline* pipeline() const { return jobs[0].pipeline(); }
+};
+
+// ── JobTupleChain<Layers...> — multi-layer capture ───────────────────────────
+
+/**
+ * @brief Accumulates multiple JobTuple layers for layered structured bindings.
+ *
+ * Produced when `JobTuple >> JobSpecGroup` (a second parallel layer is added).
+ * Each `>>` appends a layer and wires the previous layer → new layer.
+ * The last layer is the "active front" used for subsequent `>>` wiring.
+ *
+ * @example auto [l1, l2] = pipe >> a+b+c >> d+e+f >> sink;
+ *          auto [a, b, c] = l1;
+ *          auto [d, e, f] = l2;
+ */
+template<typename... Layers>
+class JobTupleChain
+{
+    std::tuple<Layers...> layers_;
+
+public:
+    explicit JobTupleChain(Layers... layers)
+        : layers_{std::move(layers)...} {}
+
+    /// Access the last layer (the active front for wiring).
+    auto& last() { return std::get<sizeof...(Layers) - 1>(layers_); }
+    const auto& last() const { return std::get<sizeof...(Layers) - 1>(layers_); }
+
+    /// Access all layers (for structured bindings via tuple protocol).
+    const auto& tuple() const { return layers_; }
+
+    /// Pipeline from the last layer.
+    [[nodiscard]] Pipeline* pipeline() const { return last().pipeline(); }
+
+    /// Append a new layer, returning an extended chain.
+    template<std::size_t M>
+    auto append(JobTuple<M> newLayer) const
+    {
+        return std::apply(
+            [&newLayer](const auto&... existing) {
+                return JobTupleChain<Layers..., JobTuple<M>>{existing..., std::move(newLayer)};
+            },
+            layers_);
+    }
+};
+
+} // namespace sub0pipeline::dsl
+
+// ── Tuple protocol for JobTuple (must be in namespace std) ───────────────────
+
+template<std::size_t N>
+struct std::tuple_size<sub0pipeline::dsl::JobTuple<N>>
+    : std::integral_constant<std::size_t, N> {};
+
+template<std::size_t I, std::size_t N>
+struct std::tuple_element<I, sub0pipeline::dsl::JobTuple<N>>
+{
+    using type = sub0pipeline::Job;
+};
+
+// ── Tuple protocol for JobTupleChain ─────────────────────────────────────────
+
+template<typename... Layers>
+struct std::tuple_size<sub0pipeline::dsl::JobTupleChain<Layers...>>
+    : std::integral_constant<std::size_t, sizeof...(Layers)> {};
+
+template<std::size_t I, typename... Layers>
+struct std::tuple_element<I, sub0pipeline::dsl::JobTupleChain<Layers...>>
+{
+    using type = std::tuple_element_t<I, std::tuple<Layers...>>;
+};
+
+namespace sub0pipeline::dsl {
+
+// ── get<> for JobTuple ───────────────────────────────────────────────────────
+
+template<std::size_t I, std::size_t N>
+Job get(JobTuple<N> const& t) { return t.jobs[I]; }
+
+template<std::size_t I, std::size_t N>
+Job get(JobTuple<N>& t) { return t.jobs[I]; }
+
+template<std::size_t I, std::size_t N>
+Job get(JobTuple<N>&& t) { return t.jobs[I]; }
+
+// ── get<> for JobTupleChain ──────────────────────────────────────────────────
+
+template<std::size_t I, typename... Layers>
+auto get(JobTupleChain<Layers...> const& c)
+    -> std::tuple_element_t<I, std::tuple<Layers...>>
+{
+    return std::get<I>(c.tuple());
+}
+
+template<std::size_t I, typename... Layers>
+auto get(JobTupleChain<Layers...>& c)
+    -> std::tuple_element_t<I, std::tuple<Layers...>>
+{
+    return std::get<I>(c.tuple());
+}
+
+template<std::size_t I, typename... Layers>
+auto get(JobTupleChain<Layers...>&& c)
+    -> std::tuple_element_t<I, std::tuple<Layers...>>
+{
+    return std::get<I>(std::move(c).tuple());
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Operators
 // ═════════════════════════════════════════════════════════════════════════════
@@ -221,11 +359,15 @@ Job operator>>(Job lhs, JobSpec<F> rhs)
     return newJob;
 }
 
-/// Pipeline >> JobSpecGroup: emplace all (independent), return JobGroup.
+/// Pipeline >> JobSpecGroup: emplace all (independent), return JobTuple.
 template<typename... Fs>
-JobGroup operator>>(Pipeline& pipe, JobSpecGroup<Fs...> const& rhs)
+auto operator>>(Pipeline& pipe, JobSpecGroup<Fs...> const& rhs)
 {
-    return rhs.build_all(pipe);
+    return std::apply(
+        [&pipe](const auto&... specs) {
+            return JobTuple<sizeof...(Fs)>{{specs.build(pipe)...}};
+        },
+        rhs.tuple());
 }
 
 /// Job >> JobSpecGroup: emplace all, wire lhs→each, return JobGroup.
@@ -256,6 +398,74 @@ Job operator>>(JobGroup const& lhs, JobSpec<F> rhs)
     auto newJob = rhs.build(*lhs.jobs().front().pipeline());
     for (auto j : lhs.jobs()) j.precede(newJob);
     return newJob;
+}
+
+// ── JobTuple >> operators (capture-preserving) ───────────────────────────────
+
+/// JobTuple >> Job: wire all→rhs, return self (capture-preserving).
+template<std::size_t N>
+JobTuple<N> operator>>(JobTuple<N> lhs, Job rhs)
+{
+    for (auto j : lhs.jobs) j.precede(rhs);
+    return lhs;
+}
+
+/// JobTuple >> JobSpec: emplace, wire all→new, return self.
+template<std::size_t N, typename F>
+JobTuple<N> operator>>(JobTuple<N> lhs, JobSpec<F> rhs)
+{
+    auto newJob = rhs.build(*lhs.pipeline());
+    for (auto j : lhs.jobs) j.precede(newJob);
+    return lhs;
+}
+
+/// JobTuple >> JobSpecGroup: emplace all, wire cross-product, return chain.
+template<std::size_t N, typename... Fs>
+auto operator>>(JobTuple<N> lhs, JobSpecGroup<Fs...> const& rhs)
+{
+    auto newLayer = std::apply(
+        [&lhs](const auto&... specs) {
+            return JobTuple<sizeof...(Fs)>{{specs.build(*lhs.pipeline())...}};
+        },
+        rhs.tuple());
+    for (auto l : lhs.jobs)
+        for (auto r : newLayer.jobs)
+            l.precede(r);
+    return JobTupleChain<JobTuple<N>, JobTuple<sizeof...(Fs)>>{std::move(lhs), std::move(newLayer)};
+}
+
+// ── JobTupleChain >> operators ───────────────────────────────────────────────
+
+/// JobTupleChain >> Job: wire last layer→rhs, return self.
+template<typename... Layers>
+JobTupleChain<Layers...> operator>>(JobTupleChain<Layers...> lhs, Job rhs)
+{
+    for (auto j : lhs.last().jobs) j.precede(rhs);
+    return lhs;
+}
+
+/// JobTupleChain >> JobSpec: emplace, wire last layer→new, return self.
+template<typename... Layers, typename F>
+JobTupleChain<Layers...> operator>>(JobTupleChain<Layers...> lhs, JobSpec<F> rhs)
+{
+    auto newJob = rhs.build(*lhs.pipeline());
+    for (auto j : lhs.last().jobs) j.precede(newJob);
+    return lhs;
+}
+
+/// JobTupleChain >> JobSpecGroup: emplace, wire last→new, append layer.
+template<typename... Layers, typename... Fs>
+auto operator>>(JobTupleChain<Layers...> lhs, JobSpecGroup<Fs...> const& rhs)
+{
+    auto newLayer = std::apply(
+        [&lhs](const auto&... specs) {
+            return JobTuple<sizeof...(Fs)>{{specs.build(*lhs.pipeline())...}};
+        },
+        rhs.tuple());
+    for (auto l : lhs.last().jobs)
+        for (auto r : newLayer.jobs)
+            l.precede(r);
+    return lhs.append(std::move(newLayer));
 }
 
 // ── JobSpec grouping (deferred, not yet emplaced) ────────────────────────────

@@ -385,30 +385,59 @@ TEST_CASE("Emplaced root >> inline specs >> emplaced sink")
 // Pipeline >> JobSpecGroup (parallel emplace)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("pipe >> a+b+c: emplace independent group from pipeline")
+TEST_CASE("pipe >> a+b+c: returns JobTuple with structured bindings")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
 
-    auto group = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {});
+    auto [a, b, c] = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {});
 
-    CHECK(group.jobs().size() == 3U);
+    CHECK(a.valid());
+    CHECK(b.valid());
+    CHECK(c.valid());
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(b) == "B");
+    CHECK(pipe.name(c) == "C");
     CHECK(pipe.size() == 3U);
 
     (void)pipe.run(exec);
     CHECK(exec.order().size() == 3U);
 }
 
-TEST_CASE("pipe >> a+b+c >> d+e+f >> sink: layered pipeline")
+TEST_CASE("auto [a,b,c] = pipe >> specs >> sink: capture + wire to sink")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    auto sink = pipe.emplace("sink"_job([] {}));
+    auto [a, b, c] = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {}) >> sink;
+
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(b) == "B");
+    CHECK(pipe.name(c) == "C");
+
+    (void)pipe.run(exec);
+    const auto& order = exec.order();
+    REQUIRE(order.size() == 4U);
+    CHECK(order.back() == "sink");
+}
+
+TEST_CASE("pipe >> a+b+c >> d+e+f >> sink: layered pipeline with chain")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
 
     auto sink = pipe.emplace("sink"_job([] {}));
 
-    pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {})
-         >> "D"_job([] {}) + "E"_job([] {}) + "F"_job([] {})
-         >> sink;
+    auto [l1, l2] = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {})
+                         >> "D"_job([] {}) + "E"_job([] {}) + "F"_job([] {})
+                         >> sink;
+
+    // Destructure layers
+    auto [a, b, c] = l1;
+    auto [d, e, f] = l2;
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(d) == "D");
 
     (void)pipe.run(exec);
     const auto& order = exec.order();
@@ -429,13 +458,18 @@ TEST_CASE("pipe >> a+b+c >> d+e+f >> sink: layered pipeline")
     CHECK(maxLayer1 < minLayer2);
 }
 
-TEST_CASE("pipe >> a+b+c >> d+e+f: no emplaced sink, just two layers")
+TEST_CASE("pipe >> a+b+c >> d+e+f: two layers, no sink, chain capture")
 {
     Pipeline          pipe;
     RecordingExecutor exec;
 
-    pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {})
-         >> "D"_job([] {}) + "E"_job([] {}) + "F"_job([] {});
+    auto [l1, l2] = pipe >> "A"_job([] {}) + "B"_job([] {}) + "C"_job([] {})
+                         >> "D"_job([] {}) + "E"_job([] {}) + "F"_job([] {});
+
+    auto [a, b, c] = l1;
+    auto [d, e, f] = l2;
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(f) == "F");
 
     (void)pipe.run(exec);
     const auto& order = exec.order();
@@ -452,6 +486,48 @@ TEST_CASE("pipe >> a+b+c >> d+e+f: no emplaced sink, just two layers")
         std::find(order.begin(), order.end(), "F") - order.begin()
     });
     CHECK(maxLayer1 < minLayer2);
+}
+
+TEST_CASE("Three-layer chain: pipe >> l1 >> l2 >> l3 >> sink")
+{
+    Pipeline          pipe;
+    RecordingExecutor exec;
+
+    auto sink = pipe.emplace("sink"_job([] {}));
+
+    auto [l1, l2, l3] = pipe >> "A"_job([] {}) + "B"_job([] {})
+                              >> "C"_job([] {}) + "D"_job([] {})
+                              >> "E"_job([] {}) + "F"_job([] {})
+                              >> sink;
+
+    auto [a, b] = l1;
+    auto [c, d] = l2;
+    auto [e, f] = l3;
+    CHECK(pipe.name(a) == "A");
+    CHECK(pipe.name(c) == "C");
+    CHECK(pipe.name(e) == "E");
+    CHECK(pipe.size() == 7U);
+
+    (void)pipe.run(exec);
+    const auto& order = exec.order();
+    REQUIRE(order.size() == 7U);
+    CHECK(order.back() == "sink");
+
+    // Verify layer ordering: l1 < l2 < l3 < sink
+    auto maxL1 = std::max(
+        std::find(order.begin(), order.end(), "A") - order.begin(),
+        std::find(order.begin(), order.end(), "B") - order.begin());
+    auto minL2 = std::min(
+        std::find(order.begin(), order.end(), "C") - order.begin(),
+        std::find(order.begin(), order.end(), "D") - order.begin());
+    auto maxL2 = std::max(
+        std::find(order.begin(), order.end(), "C") - order.begin(),
+        std::find(order.begin(), order.end(), "D") - order.begin());
+    auto minL3 = std::min(
+        std::find(order.begin(), order.end(), "E") - order.begin(),
+        std::find(order.begin(), order.end(), "F") - order.begin());
+    CHECK(maxL1 < minL2);
+    CHECK(maxL2 < minL3);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
