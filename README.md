@@ -210,6 +210,17 @@ ctest --preset default          # Run tests
 | `SUB0PIPELINE_BUILD_BENCHMARKS` | `OFF` | Build nanobench benchmarks |
 | `SUB0PIPELINE_PLATFORM_DESKTOP` | `ON` | Build `DesktopExecutor` (std::thread) |
 
+### Test Coverage
+
+113 test cases, 721 assertions across two suites:
+
+| Suite | Focus | Cases |
+|-------|-------|-------|
+| `Sub0Pipeline_Tests` | Core DAG engine, JobGroup, re-runnability, error propagation | 78 |
+| `Sub0Pipeline_DslTests` | Operators, `_job` UDL, JobTuple, JobTupleChain, inline pipe | 35 |
+
+Tested topologies include linear chains, fan-out/in, diamonds, double-diamonds, W-shapes, hourglasses, binary trees (31 nodes), and stress tests (100+ nodes). Error propagation covers required/optional failure cascading, mid-graph failures, multi-root failure ordering, and full recovery on re-run. The epoch-based re-runnability is verified across all topologies with counter, ordering, and status assertions.
+
 ---
 
 ## CMake Integration
