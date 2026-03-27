@@ -329,6 +329,108 @@ TEST_CASE("Pipeline: invalid job handle returns kPending from status()")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Re-runnability (epoch-based reset)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("Pipeline: run() can be called multiple times")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+    int               counter = 0;
+
+    auto a = pipeline.emplace([&] { ++counter; }).name("A");
+    auto b = pipeline.emplace([&] { ++counter; }).name("B");
+    b.succeed(a);
+
+    auto r1 = pipeline.run(exec);
+    REQUIRE(r1.has_value());
+    CHECK(counter == 2);
+    CHECK(pipeline.status(a) == JobStatus::kDone);
+    CHECK(pipeline.status(b) == JobStatus::kDone);
+
+    // Second run — same pipeline, counter keeps incrementing
+    auto r2 = pipeline.run(exec);
+    REQUIRE(r2.has_value());
+    CHECK(counter == 4);
+    CHECK(pipeline.status(a) == JobStatus::kDone);
+    CHECK(pipeline.status(b) == JobStatus::kDone);
+
+    // Third run
+    auto r3 = pipeline.run(exec);
+    REQUIRE(r3.has_value());
+    CHECK(counter == 6);
+}
+
+TEST_CASE("Pipeline: re-run preserves correct execution order")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto a = pipeline.emplace([] {}).name("A");
+    auto b = pipeline.emplace([] {}).name("B");
+    auto c = pipeline.emplace([] {}).name("C");
+    a.precede(b, c);
+
+    for (int i = 0; i < 3; ++i) {
+        exec.clear();
+        auto result = pipeline.run(exec);
+        REQUIRE(result.has_value());
+        CHECK(exec.order().front() == "A");
+        CHECK(exec.order().size() == 3U);
+    }
+}
+
+TEST_CASE("Pipeline: re-run diamond graph")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+    int               counter = 0;
+
+    auto a = pipeline.emplace([&] { ++counter; }).name("A");
+    auto b = pipeline.emplace([&] { ++counter; }).name("B");
+    auto c = pipeline.emplace([&] { ++counter; }).name("C");
+    auto d = pipeline.emplace([&] { ++counter; }).name("D");
+    a.precede(b, c);
+    d.succeed(b, c);
+
+    for (int run = 1; run <= 5; ++run) {
+        exec.clear();
+        auto result = pipeline.run(exec);
+        REQUIRE(result.has_value());
+        CHECK(counter == run * 4);
+        CHECK(exec.order().front() == "A");
+        CHECK(exec.order().back() == "D");
+    }
+}
+
+TEST_CASE("Pipeline: re-run after failure resets error state")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+    bool              shouldFail = true;
+
+    auto a = pipeline.emplace([&]() -> std::expected<void, PipelineError> {
+        if (shouldFail) return std::unexpected(PipelineError::kJobFailed);
+        return {};
+    }).name("A");
+    auto b = pipeline.emplace([] {}).name("B");
+    b.succeed(a);
+
+    // First run: A fails, B is skipped
+    auto r1 = pipeline.run(exec);
+    CHECK_FALSE(r1.has_value());
+    CHECK(pipeline.status(a) == JobStatus::kFailed);
+    CHECK(pipeline.status(b) == JobStatus::kSkipped);
+
+    // Second run: A succeeds this time
+    shouldFail = false;
+    auto r2 = pipeline.run(exec);
+    REQUIRE(r2.has_value());
+    CHECK(pipeline.status(a) == JobStatus::kDone);
+    CHECK(pipeline.status(b) == JobStatus::kDone);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // JobGroup / parallel()
 // ═══════════════════════════════════════════════════════════════════════════════
 

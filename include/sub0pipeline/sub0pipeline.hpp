@@ -315,6 +315,11 @@ public:
      * Validates the DAG, seeds root jobs, then dispatches successors as their
      * predecessors complete. Blocks until all jobs finish or a required job fails.
      *
+     * Re-runnable: calling run() again re-executes the entire DAG using an
+     * epoch-based reset — no separate reset() call is needed. Each run
+     * increments an internal epoch; nodes lazily reset their state when
+     * first touched, avoiding an O(N) bulk reset pass.
+     *
      * @param executor  Execution backend (threaded, sequential, custom, …).
      * @param observer  Optional observer for progress and tracing.
      * @return          std::expected<void, PipelineError> — empty on success,

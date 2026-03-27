@@ -63,6 +63,7 @@ struct Pipeline::Node
     // is safe because nodes are only moved before execution begins.
     std::atomic<JobStatus>  jobStatus_{JobStatus::kPending};
     std::atomic<uint32_t>   unmetDeps_{0U};
+    uint32_t                lastEpoch_{0U};  ///< Last run epoch this node participated in.
 
     Node() = default;
 
@@ -79,6 +80,7 @@ struct Pipeline::Node
         , successors_{std::move(o.successors_)}
         , jobStatus_{o.jobStatus_.load(std::memory_order_relaxed)}
         , unmetDeps_{o.unmetDeps_.load(std::memory_order_relaxed)}
+        , lastEpoch_{o.lastEpoch_}
     {}
 
     Node& operator=(Node&&)      = delete;
@@ -93,6 +95,7 @@ struct Pipeline::Impl
     std::vector<Node>         nodes_;
     std::vector<TickJob>      ticks_;
     std::atomic<uint32_t>     completedCount_{0U}; ///< Incremented atomically from job threads.
+    uint32_t                  runEpoch_{0U};        ///< Incremented each run(); nodes compare to detect stale state.
 };
 
 // ── Job builder methods ───────────────────────────────────────────────────────
@@ -295,15 +298,23 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
 
-    // Initialise per-node runtime state.
-    for (auto& nd : impl_->nodes_) {
+    // Epoch-based reset: increment the run epoch so nodes know they are stale.
+    // Each node resets itself lazily when first touched (root seeding or
+    // successor propagation), avoiding an O(N) bulk reset pass.
+    const auto epoch = ++impl_->runEpoch_;
+
+    // resetNode: bring a node into the current epoch, resetting its runtime state.
+    auto resetNode = [epoch](Node& nd)
+    {
+        if (nd.lastEpoch_ == epoch) return; // already reset this epoch
+        nd.lastEpoch_ = epoch;
         nd.unmetDeps_.store(
             static_cast<uint32_t>(nd.predecessors_.size()),
             std::memory_order_relaxed);
         nd.jobStatus_.store(
             nd.predecessors_.empty() ? JobStatus::kReady : JobStatus::kPending,
             std::memory_order_relaxed);
-    }
+    };
 
     // hasFatalFailure_ + fatalError_ are written from concurrent job threads.
     // Use atomic<bool> for the flag and a mutex to capture only the first error.
@@ -322,6 +333,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
             const auto idx = toSkip.front();
             toSkip.pop();
             auto& nd = impl_->nodes_[idx];
+            resetNode(nd);
             const auto prev = nd.jobStatus_.exchange(JobStatus::kSkipped, std::memory_order_acq_rel);
             if (prev == JobStatus::kSkipped) continue; // already skipped — avoid re-visiting
             const auto done     = impl_->completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
@@ -337,6 +349,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     std::function<void(uint32_t)> dispatchJob = [&](uint32_t idx)
     {
         auto& nd = impl_->nodes_[idx];
+        resetNode(nd);
 
         if (hasFatalFailure.load(std::memory_order_acquire)) {
             skipNode(idx);
@@ -373,9 +386,8 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
 
         // Propagate: decrement unmetDeps_ on successors; dispatch those that reach zero.
         for (auto succIdx : nd.successors_) {
-            auto& succ       = impl_->nodes_[succIdx];
-            const auto prev  = succ.unmetDeps_.load(std::memory_order_relaxed);
-            assert(prev > 0U && "unmetDeps_ underflow — duplicate edge?");
+            auto& succ = impl_->nodes_[succIdx];
+            resetNode(succ);  // lazy epoch reset — first touch brings node into this run
             const auto remaining =
                 succ.unmetDeps_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
             if (remaining == 0U) {
@@ -393,8 +405,9 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
 
     // Seed: dispatch all root nodes (no predecessors).
     for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
-        if (impl_->nodes_[i].jobStatus_.load(std::memory_order_relaxed) == JobStatus::kReady) {
-            auto& nd = impl_->nodes_[i];
+        auto& nd = impl_->nodes_[i];
+        resetNode(nd);  // lazy reset — roots are the first touch point
+        if (nd.jobStatus_.load(std::memory_order_relaxed) == JobStatus::kReady) {
             executor.dispatch(
                 nd.nameStr_,
                 [&, idx = i] { dispatchJob(idx); },
