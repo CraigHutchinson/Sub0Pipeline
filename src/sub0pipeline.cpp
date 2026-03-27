@@ -94,8 +94,10 @@ struct Pipeline::Impl
 {
     std::vector<Node>         nodes_;
     std::vector<TickJob>      ticks_;
+    std::vector<uint32_t>     roots_;              ///< Cached root indices (no predecessors). Set by validate().
     std::atomic<uint32_t>     completedCount_{0U}; ///< Incremented atomically from job threads.
     uint32_t                  runEpoch_{0U};        ///< Incremented each run(); nodes compare to detect stale state.
+    bool                      rootsCached_{false};  ///< True after first validate() caches root indices.
 };
 
 // ── Job builder methods ───────────────────────────────────────────────────────
@@ -298,9 +300,22 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
 
+    // Cache root indices on first run (nodes with no predecessors).
+    // Subsequent runs reuse the cached set — the DAG structure is immutable
+    // after construction, so the root set doesn't change.
+    if (!impl_->rootsCached_) {
+        impl_->roots_.clear();
+        for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
+            if (impl_->nodes_[i].predecessors_.empty())
+                impl_->roots_.push_back(i);
+        }
+        impl_->rootsCached_ = true;
+    }
+
     // Epoch-based reset: increment the run epoch so nodes know they are stale.
-    // Each node resets itself lazily when first touched (root seeding or
-    // successor propagation), avoiding an O(N) bulk reset pass.
+    // Only root nodes are explicitly reset here; successor nodes are lazily
+    // reset when first reached during dispatch propagation. This scopes the
+    // reset to the DAG's reachable subgraph — disconnected nodes are untouched.
     const auto epoch = ++impl_->runEpoch_;
 
     // resetNode: bring a node into the current epoch, resetting its runtime state.
@@ -349,7 +364,9 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     std::function<void(uint32_t)> dispatchJob = [&](uint32_t idx)
     {
         auto& nd = impl_->nodes_[idx];
-        resetNode(nd);
+        // Node is already reset: roots by the seeding loop, successors by
+        // the propagation step. The epoch guard in resetNode() is idempotent,
+        // but we avoid the call here for clarity.
 
         if (hasFatalFailure.load(std::memory_order_acquire)) {
             skipNode(idx);
@@ -403,19 +420,18 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
         }
     };
 
-    // Seed: dispatch all root nodes (no predecessors).
-    for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
-        auto& nd = impl_->nodes_[i];
-        resetNode(nd);  // lazy reset — roots are the first touch point
-        if (nd.jobStatus_.load(std::memory_order_relaxed) == JobStatus::kReady) {
-            executor.dispatch(
-                nd.nameStr_,
-                [&, idx = i] { dispatchJob(idx); },
-                [] {},
-                nd.coreAffinity_,
-                nd.priority_,
-                nd.stackBytes_);
-        }
+    // Seed: reset and dispatch only root nodes. The epoch reset propagates
+    // through the DAG via successor edges — only reachable nodes are touched.
+    for (auto idx : impl_->roots_) {
+        auto& nd = impl_->nodes_[idx];
+        resetNode(nd);
+        executor.dispatch(
+            nd.nameStr_,
+            [&, i = idx] { dispatchJob(i); },
+            [] {},
+            nd.coreAffinity_,
+            nd.priority_,
+            nd.stackBytes_);
     }
 
     executor.wait_all();
