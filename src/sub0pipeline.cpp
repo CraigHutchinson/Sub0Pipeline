@@ -49,48 +49,59 @@ namespace sub0pipeline {
 
 struct Pipeline::Node
 {
-    std::string                                                             nameStr_;
-    std::function<std::expected<void, PipelineError>()>                     fn_;
-    std::function<std::expected<void, PipelineError>(std::stop_token)>      cancellableFn_;
-    std::stop_source                                                        stopSource_;
-    std::chrono::milliseconds                                               timeout_{std::chrono::milliseconds::max()};
-    int                                                                     coreAffinity_{-1};
-    uint8_t                                                                 priority_{5U};
-    uint32_t                                                                stackBytes_{8192U};
-    bool                                                                    isOptional_{false};
-    const char*                                                             statusText_{nullptr};
+    // ── Hot section: touched every dispatch cycle ─────────────────────────
+    // Placed first so the hot fields and successors_ sit in the fewest cache
+    // lines possible when dispatchJob accesses them from concurrent threads.
 
-    std::vector<uint32_t>   predecessors_;
-    std::vector<uint32_t>   successors_;
-
-    bool                    isOnDemand_{false}; ///< Excluded from run() root set; dispatched only via trigger().
-
-    // std::atomic is non-copyable/non-movable by default, but std::vector may
-    // reallocate nodes during the build phase. Loading in the move constructor
-    // is safe because nodes are only moved before execution begins.
+    std::atomic<uint32_t>   unmetDeps_{0U};    ///< Decremented by completing predecessors.
     std::atomic<JobStatus>  jobStatus_{JobStatus::kPending};
-    std::atomic<uint32_t>   unmetDeps_{0U};
-    uint32_t                lastEpoch_{0U};  ///< Last run epoch this node participated in.
+    uint8_t                 flags_{0U};         ///< Packed bool flags -- see kFlag* constants.
+    uint8_t                 priority_{5U};
+    uint8_t                 _pad0[2]{};         ///< Explicit pad: aligns lastEpoch_ to 4.
+    uint32_t                lastEpoch_{0U};
+    int                     coreAffinity_{-1};
+    uint32_t                stackBytes_{8192U};
+    uint32_t                predecessorCount_{0U}; ///< Replaces predecessors_.size() in resetNode.
+    std::chrono::milliseconds timeout_{std::chrono::milliseconds::max()};
+    std::vector<uint32_t>   successors_;           ///< Iterated on completion -- kept hot.
+
+    // ── Dispatch section: read once at the start of each job execution ────
+    std::function<std::expected<void, PipelineError>(std::stop_token)> fn_;
+    std::stop_source        stopSource_;
+
+    // ── Cold section: build-time only ────────────────────────────────────
+    std::string             nameStr_;
+    const char*             statusText_{nullptr};
+
+    // ── Flag constants ────────────────────────────────────────────────────
+    static constexpr uint8_t kFlagOptional    = 0x01; ///< Failure does not block dependents.
+    static constexpr uint8_t kFlagOnDemand    = 0x02; ///< Excluded from run() root set.
+    static constexpr uint8_t kFlagCancellable = 0x04; ///< fn_ checks stop_token cooperatively.
+
+    bool isOptional()    const noexcept { return (flags_ & kFlagOptional)    != 0U; }
+    bool isOnDemand()    const noexcept { return (flags_ & kFlagOnDemand)    != 0U; }
+    bool isCancellable() const noexcept { return (flags_ & kFlagCancellable) != 0U; }
 
     Node() = default;
 
+    // std::atomic is non-copyable/non-movable, but std::vector may reallocate
+    // nodes during the build phase. Loading in the move constructor is safe
+    // because nodes are only moved before execution begins.
     Node(Node&& o) noexcept
-        : nameStr_{std::move(o.nameStr_)}
-        , fn_{std::move(o.fn_)}
-        , cancellableFn_{std::move(o.cancellableFn_)}
-        , stopSource_{std::move(o.stopSource_)}
-        , timeout_{o.timeout_}
-        , coreAffinity_{o.coreAffinity_}
-        , priority_{o.priority_}
-        , stackBytes_{o.stackBytes_}
-        , isOptional_{o.isOptional_}
-        , statusText_{o.statusText_}
-        , predecessors_{std::move(o.predecessors_)}
-        , successors_{std::move(o.successors_)}
-        , isOnDemand_{o.isOnDemand_}
+        : unmetDeps_{o.unmetDeps_.load(std::memory_order_relaxed)}
         , jobStatus_{o.jobStatus_.load(std::memory_order_relaxed)}
-        , unmetDeps_{o.unmetDeps_.load(std::memory_order_relaxed)}
+        , flags_{o.flags_}
+        , priority_{o.priority_}
         , lastEpoch_{o.lastEpoch_}
+        , coreAffinity_{o.coreAffinity_}
+        , stackBytes_{o.stackBytes_}
+        , predecessorCount_{o.predecessorCount_}
+        , timeout_{o.timeout_}
+        , successors_{std::move(o.successors_)}
+        , fn_{std::move(o.fn_)}
+        , stopSource_{std::move(o.stopSource_)}
+        , nameStr_{std::move(o.nameStr_)}
+        , statusText_{o.statusText_}
     {}
 
     Node& operator=(Node&&)      = delete;
@@ -147,7 +158,11 @@ Job& Job::priority(uint8_t p) noexcept
 
 Job& Job::optional(bool opt) noexcept
 {
-    if (pipeline_ && valid()) pipeline_->node(idx_).isOptional_ = opt;
+    if (pipeline_ && valid()) {
+        auto& nd = pipeline_->node(idx_);
+        if (opt) nd.flags_ |= Pipeline::Node::kFlagOptional;
+        else     nd.flags_ &= static_cast<uint8_t>(~Pipeline::Node::kFlagOptional);
+    }
     return *this;
 }
 
@@ -167,7 +182,7 @@ Job& Job::succeed(Job other)
     if (!pipeline_ || !valid() || !other.valid()) return *this;
     auto& selfNode  = pipeline_->node(idx_);
     auto& otherNode = pipeline_->node(other.idx_);
-    selfNode.predecessors_.push_back(other.idx_);
+    ++selfNode.predecessorCount_;
     otherNode.successors_.push_back(idx_);
     return *this;
 }
@@ -178,7 +193,7 @@ Job& Job::precede(Job other)
     auto& selfNode  = pipeline_->node(idx_);
     auto& otherNode = pipeline_->node(other.idx_);
     selfNode.successors_.push_back(other.idx_);
-    otherNode.predecessors_.push_back(idx_);
+    ++otherNode.predecessorCount_;
     return *this;
 }
 
@@ -248,8 +263,13 @@ Job Pipeline::emplace(std::function<std::expected<void, PipelineError>()> fn)
     if (!impl_) impl_ = std::make_unique<Impl>();
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
-    impl_->nodes_.back().fn_      = std::move(fn);
-    impl_->nodes_.back().nameStr_ = "job_" + std::to_string(idx);
+    auto& nd    = impl_->nodes_.back();
+    // Wrap non-cancellable fn in the unified (stop_token) signature.
+    // kFlagCancellable is NOT set -- dispatchJob uses hard packaged_task cutoff
+    // for timeout enforcement since the wrapped fn ignores the token.
+    nd.fn_      = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
+                  { return f(); };
+    nd.nameStr_ = "job_" + std::to_string(idx);
     return Job{idx, this};
 }
 
@@ -259,21 +279,23 @@ Job Pipeline::emplace(
     if (!impl_) impl_ = std::make_unique<Impl>();
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
-    auto& nd              = impl_->nodes_.back();
-    nd.cancellableFn_     = std::move(fn);
-    nd.nameStr_           = "job_" + std::to_string(idx);
+    auto& nd           = impl_->nodes_.back();
+    nd.fn_             = std::move(fn);
+    nd.flags_         |= Node::kFlagCancellable;
+    nd.nameStr_        = "job_" + std::to_string(idx);
     return Job{idx, this};
 }
 
 Job Pipeline::emplace_void(std::function<void()> fn)
 {
-    std::function<std::expected<void, PipelineError>()> wrapper =
-        [f = std::move(fn)]() -> std::expected<void, PipelineError>
-        {
-            f();
-            return {};
-        };
-    return emplace(std::move(wrapper));
+    if (!impl_) impl_ = std::make_unique<Impl>();
+    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
+    impl_->nodes_.emplace_back();
+    auto& nd    = impl_->nodes_.back();
+    nd.fn_      = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
+                  { f(); return {}; };
+    nd.nameStr_ = "job_" + std::to_string(idx);
+    return Job{idx, this};
 }
 
 std::size_t Pipeline::size() const noexcept
@@ -323,6 +345,11 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
 auto Pipeline::run(IExecutor& executor, IObserver* observer)
     -> std::expected<void, PipelineError>
 {
+    // Layout guard: previous size was 272 bytes. Target <= 192 bytes.
+    // Raise the bound only for an intentional new field; do not raise to paper over bloat.
+    static_assert(sizeof(Node) <= 192,
+        "Pipeline::Node exceeded size budget -- check padding or new large fields");
+
     if (!impl_ || impl_->nodes_.empty()) return {};
 
     if (auto v = validate(); !v) return v;
@@ -338,7 +365,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
         impl_->roots_.clear();
         for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
             const auto& nd = impl_->nodes_[i];
-            if (nd.predecessors_.empty() && !nd.isOnDemand_)
+            if (nd.predecessorCount_ == 0U && !nd.isOnDemand())
                 impl_->roots_.push_back(i);
         }
         impl_->rootsCached_ = true;
@@ -355,12 +382,10 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     {
         if (nd.lastEpoch_ == epoch) return; // already reset this epoch
         nd.lastEpoch_ = epoch;
-        nd.stopSource_ = std::stop_source{};  // fresh cancellation state per run
-        nd.unmetDeps_.store(
-            static_cast<uint32_t>(nd.predecessors_.size()),
-            std::memory_order_relaxed);
+        nd.stopSource_ = std::stop_source{};
+        nd.unmetDeps_.store(nd.predecessorCount_, std::memory_order_relaxed);
         nd.jobStatus_.store(
-            nd.predecessors_.empty() ? JobStatus::kReady : JobStatus::kPending,
+            nd.predecessorCount_ == 0U ? JobStatus::kReady : JobStatus::kPending,
             std::memory_order_relaxed);
     };
 
@@ -409,47 +434,35 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
         nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
         if (observer) observer->onStart(nd.nameStr_);
 
-        // Unified cancellation + timeout execution:
+        // All job functions share the unified (std::stop_token) signature.
+        // Non-cancellable jobs were wrapped at emplace() and ignore the token.
         //
-        // Cancellable jobs (cancellableFn_) receive the stop token and poll it
-        // cooperatively. Timeout fires the stop source first (cooperative signal),
-        // then uses packaged_task as a hard cutoff if the function doesn't return.
+        // Cancellable jobs (kFlagCancellable): watchdog fires the stop source
+        // after timeout; the job polls stop_requested() and exits cooperatively.
         //
-        // Non-cancellable jobs (fn_) use the packaged_task hard cutoff only.
-        // If the timeout fires, the job thread is detached -- UDAW job functions
-        // are expected to also timeout at the syscall level (TCP, subprocess pipe).
+        // Non-cancellable jobs with timeout: packaged_task hard cutoff -- the
+        // fn ignores the token so cooperative exit is not available. Thread is
+        // detached on timeout; UDAW functions timeout at the syscall level too.
         std::expected<void, PipelineError> result;
-        const bool hasCancellable = static_cast<bool>(nd.cancellableFn_);
-        const bool hasTimeout     = nd.timeout_ < std::chrono::milliseconds::max();
+        auto token = nd.stopSource_.get_token();
+        const bool hasTimeout = nd.timeout_ < std::chrono::milliseconds::max();
 
-        if (hasCancellable)
+        if (nd.isCancellable() && hasTimeout)
         {
-            auto token = nd.stopSource_.get_token();
-            if (hasTimeout)
+            std::jthread watchdog{[src = nd.stopSource_, dur = nd.timeout_]
+                (std::stop_token wdStop) mutable
             {
-                // Watchdog fires stop token after timeout, then we check the result.
-                // The job runs on the calling thread -- cooperative cancellation
-                // means it should exit quickly after the stop is requested.
-                std::jthread watchdog{[src = nd.stopSource_, dur = nd.timeout_]
-                    (std::stop_token wdStop) mutable
-                {
-                    std::this_thread::sleep_for(dur);
-                    if (!wdStop.stop_requested()) src.request_stop();
-                }};
-                result = nd.cancellableFn_(token);
-                // watchdog destructor joins and stops the sleep thread
-            }
-            else
-            {
-                result = nd.cancellableFn_(token);
-            }
+                std::this_thread::sleep_for(dur);
+                if (!wdStop.stop_requested()) src.request_stop();
+            }};
+            result = nd.fn_(token);
         }
-        else if (hasTimeout)
+        else if (!nd.isCancellable() && hasTimeout)
         {
-            // Hard cutoff for non-cancellable functions.
-            // Cooperative signal via stop source so any external cancel() also
-            // works, but the function itself won't check it.
-            std::packaged_task<std::expected<void, PipelineError>()> task{nd.fn_};
+            auto tok = token; // copy for capture
+            std::packaged_task<std::expected<void, PipelineError>()> task{
+                [&nd, tok]{ return nd.fn_(tok); }
+            };
             auto fut = task.get_future();
             std::thread jobThread{std::move(task)};
             if (fut.wait_for(nd.timeout_) == std::future_status::timeout)
@@ -466,7 +479,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
         }
         else
         {
-            result = nd.fn_();
+            result = nd.fn_(token);
         }
 
         const auto jobStatus = [&result]() -> JobStatus {
@@ -484,7 +497,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
 
         if (observer) observer->onFinish(nd.nameStr_, jobStatus, progress);
 
-        if (!result && !nd.isOptional_) {
+        if (!result && !nd.isOptional()) {
             // Atomically capture only the first fatal error.
             bool expected = false;
             if (hasFatalFailure.compare_exchange_strong(
@@ -637,9 +650,10 @@ Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> 
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
     auto& nd       = impl_->nodes_.back();
-    nd.fn_         = std::move(fn);
-    nd.nameStr_    = "on_demand_" + std::to_string(idx);
-    nd.isOnDemand_ = true;
+    nd.fn_     = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
+               { return f(); };
+    nd.nameStr_ = "on_demand_" + std::to_string(idx);
+    nd.flags_  |= Pipeline::Node::kFlagOnDemand;
     // Invalidate root cache -- the new on-demand node would otherwise be
     // picked up as a root on the next run() (it has no predecessors).
     impl_->rootsCached_ = false;
@@ -655,7 +669,7 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
         return std::unexpected(PipelineError::kNotArmed);
 
     auto& nd = impl_->nodes_[j.idx_];
-    if (!nd.isOnDemand_)
+    if (!nd.isOnDemand())
         return std::unexpected(PipelineError::kNotOnDemand);
 
     IExecutor*  exec = impl_->armedExecutor_;
@@ -670,7 +684,7 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
             nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
             if (obs) obs->onStart(nd.nameStr_);
 
-            auto result = nd.fn_();
+            auto result = nd.fn_(nd.stopSource_.get_token());
 
             const auto status = result ? JobStatus::kDone : JobStatus::kFailed;
             nd.jobStatus_.store(status, std::memory_order_release);
@@ -692,10 +706,7 @@ void Pipeline::dump_text() const
     std::printf("Pipeline DAG (%zu jobs):\n", impl_->nodes_.size());
     for (uint32_t i = 0U; i < static_cast<uint32_t>(impl_->nodes_.size()); ++i) {
         const auto& nd = impl_->nodes_[i];
-        std::printf("  [%u] %s (deps:", i, nd.nameStr_.c_str());
-        for (auto p : nd.predecessors_)
-            std::printf(" %s", impl_->nodes_[p].nameStr_.c_str());
-        std::printf(") -> (");
+        std::printf("  [%u] %s (predecessors: %u) -> (", i, nd.nameStr_.c_str(), nd.predecessorCount_);
         for (auto s : nd.successors_)
             std::printf(" %s", impl_->nodes_[s].nameStr_.c_str());
         std::printf(")\n");
