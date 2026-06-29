@@ -45,83 +45,97 @@
 
 namespace sub0pipeline {
 
-// ── InlineSuccessors: small-buffer successor list ─────────────────────────────
-// Exactly 16 bytes: stores up to 2 successor indices inline (covers ~80% of
-// real-world nodes), spilling to heap for 3+. Replaces std::vector<uint32_t>
-// (24 bytes, always heap-allocates).
+// ── PoolSuccessors: pool/arena-backed successor list ──────────────────────────
+// 12 bytes: stores up to 4 successor indices inline using uint16_t (node indices
+// ≤ 65535 cover all realistic pipelines). Overflow spills into a flat uint16_t
+// arena owned by Pipeline::Impl -- zero heap allocation after initial reserve.
 //
-// Layout (16 bytes, 8-byte aligned):
-//   [0]     size_ -- bits[6:0] = count, bit[7] = heap mode
-//   [1..7]  _pad7 -- explicit pad to align union to offset 8
-//   [8..15] union: inline_[2] (2×uint32_t) OR heap_ (uint32_t*)
+// Layout (12 bytes, align 2):
+//   [0]    size_    -- bits[6:0] = count (max 127), bit[7] = pool-mode flag
+//   [1]    _pad
+//   [2..3] poolIdx_ -- uint16_t start offset in Impl::succPool_ (pool mode)
+//   [4..11] inline_[4] -- 4 × uint16_t inline entries (8 bytes)
 //
-// Heap grows by exactly 1 per push beyond kInlineCap; allocation count is
-// bounded by node out-degree which is typically ≤5 in practice.
+// Rationale for uint16_t node indices: a pipeline with > 65535 nodes is not a
+// practical use case; 16-bit halves pool storage and doubles inline capacity vs
+// the previous uint32_t design.
 
-struct InlineSuccessors
+struct PoolSuccessors
 {
-    static constexpr uint8_t kInlineCap = 2U;
-    static constexpr uint8_t kHeapFlag  = 0x80U;
+    static constexpr uint8_t  kInlineCap = 4U;
+    static constexpr uint8_t  kPoolFlag  = 0x80U;
 
-    uint8_t  size_{0};    ///< bits[6:0] = count; bit[7] = heap-mode flag
-    uint8_t  _pad7[7]{};  ///< explicit: places union at offset 8 (8-byte aligned)
-    union {
-        uint32_t  inline_[kInlineCap]; ///< inline storage (2 × uint32_t = 8 bytes)
-        uint32_t* heap_{nullptr};      ///< heap pointer when kHeapFlag is set
-    };
+    uint8_t  size_{0};      ///< bits[6:0] = count; bit[7] = pool-mode flag
+    uint8_t  _pad{0};
+    uint16_t poolIdx_{0};   ///< start index into Impl::succPool_ (pool mode only)
+    uint16_t inline_[kInlineCap]{};  ///< inline storage: 4 × uint16_t = 8 bytes
 
-    InlineSuccessors()  = default;
-    ~InlineSuccessors() { if (size_ & kHeapFlag) delete[] heap_; }
+    PoolSuccessors()  = default;
+    ~PoolSuccessors() = default; // no owned resources -- pool owned by Impl
 
-    InlineSuccessors(InlineSuccessors&& o) noexcept : size_{o.size_}
+    PoolSuccessors(PoolSuccessors&& o) noexcept
+        : size_{o.size_}, poolIdx_{o.poolIdx_}
     {
-        if (size_ & kHeapFlag) {
-            heap_ = o.heap_; o.heap_ = nullptr; o.size_ = 0;
-        } else {
-            const auto n = count();
-            for (uint8_t i = 0; i < n; ++i) inline_[i] = o.inline_[i];
-        }
+        for (uint8_t i = 0; i < kInlineCap; ++i) inline_[i] = o.inline_[i];
+        o.size_    = 0;
+        o.poolIdx_ = 0;
     }
-    InlineSuccessors& operator=(InlineSuccessors&&)      = delete;
-    InlineSuccessors(const InlineSuccessors&)             = delete;
-    InlineSuccessors& operator=(const InlineSuccessors&) = delete;
+    PoolSuccessors& operator=(PoolSuccessors&&)      = delete;
+    PoolSuccessors(const PoolSuccessors&)             = delete;
+    PoolSuccessors& operator=(const PoolSuccessors&) = delete;
 
     [[nodiscard]] uint8_t count()  const noexcept { return size_ & 0x7FU; }
     [[nodiscard]] bool    empty()  const noexcept { return count() == 0; }
     [[nodiscard]] uint8_t size()   const noexcept { return count(); }
-    [[nodiscard]] bool    isHeap() const noexcept { return (size_ & kHeapFlag) != 0U; }
+    [[nodiscard]] bool    isPool() const noexcept { return (size_ & kPoolFlag) != 0U; }
 
-    void push_back(uint32_t v)
+    // Push a node index. Pool is a reference to Impl::succPool_ (the arena).
+    // Pool overflow appends a new contiguous block; the old block is abandoned
+    // (wasted but bounded -- out-degree is typically ≤5, so at most 5 blocks
+    // of growing size: 5+6+7+8+9 = 35 entries per node worst case).
+    void push_back(uint16_t v, std::vector<uint16_t>& pool)
     {
         const uint8_t n = count();
-        if (!isHeap() && n < kInlineCap) {
+        if (!isPool() && n < kInlineCap) {
             inline_[n] = v;
             size_ = static_cast<uint8_t>(n + 1U);
-        } else if (!isHeap()) {
-            // Spill inline → heap: allocate exact size
-            uint32_t* p = new uint32_t[n + 1U];
-            for (uint8_t i = 0; i < n; ++i) p[i] = inline_[i];
-            p[n] = v;
-            heap_  = p;
-            size_  = static_cast<uint8_t>(kHeapFlag | (n + 1U));
+        } else if (!isPool()) {
+            // Spill inline → pool: append a new contiguous block
+            assert(pool.size() < 0xFFFFU && "succPool_ exceeded uint16_t address range");
+            const auto start = static_cast<uint16_t>(pool.size());
+            for (uint8_t i = 0; i < n; ++i) pool.push_back(inline_[i]);
+            pool.push_back(v);
+            poolIdx_ = start;
+            size_    = static_cast<uint8_t>(kPoolFlag | (n + 1U));
         } else {
-            // Grow heap by 1 (out-degree is small, O(n²) is negligible here)
-            uint32_t* p = new uint32_t[n + 1U];
-            for (uint8_t i = 0; i < n; ++i) p[i] = heap_[i];
-            p[n] = v;
-            delete[] heap_;
-            heap_ = p;
-            size_ = static_cast<uint8_t>(kHeapFlag | (n + 1U));
+            // Grow pool: allocate a fresh contiguous block (old block orphaned)
+            assert(pool.size() < 0xFFFFU && "succPool_ exceeded uint16_t address range");
+            const auto start = static_cast<uint16_t>(pool.size());
+            for (uint8_t i = 0; i < n; ++i) pool.push_back(pool[poolIdx_ + i]);
+            pool.push_back(v);
+            poolIdx_ = start;
+            size_    = static_cast<uint8_t>(kPoolFlag | (n + 1U));
         }
     }
 
-    const uint32_t* begin() const noexcept { return isHeap() ? heap_ : inline_; }
-    const uint32_t* end()   const noexcept { return begin() + count(); }
-    uint32_t*       begin() noexcept       { return isHeap() ? heap_ : inline_; }
-    uint32_t*       end()   noexcept       { return begin() + count(); }
+    // Returns a pointer into either inline_ or Impl::succPool_.data() + poolIdx_.
+    // Pool pointer is valid until Impl::succPool_ is next modified (reallocated).
+    const uint16_t* begin(const std::vector<uint16_t>& pool) const noexcept
+    { return isPool() ? pool.data() + poolIdx_ : inline_; }
+    const uint16_t* end(const std::vector<uint16_t>& pool)   const noexcept
+    { return begin(pool) + count(); }
+
+    // Range adapter for range-based for: `for (auto s : nd.successors_.range(pool))`
+    struct Range {
+        const uint16_t* b_; const uint16_t* e_;
+        const uint16_t* begin() const noexcept { return b_; }
+        const uint16_t* end()   const noexcept { return e_; }
+    };
+    Range range(const std::vector<uint16_t>& pool) const noexcept
+    { return {begin(pool), end(pool)}; }
 };
-static_assert(sizeof(InlineSuccessors) == 16,
-    "InlineSuccessors must be exactly 16 bytes");
+static_assert(sizeof(PoolSuccessors) == 12,
+    "PoolSuccessors must be exactly 12 bytes");
 
 // ── Internal node ─────────────────────────────────────────────────────────────
 
@@ -135,13 +149,13 @@ struct Pipeline::Node
     std::atomic<JobStatus>  jobStatus_{JobStatus::kPending};
     uint8_t                 flags_{0U};         ///< Packed bool flags -- see kFlag* constants.
     uint8_t                 priority_{5U};
-    uint8_t                 _pad0[2]{};         ///< Explicit pad: aligns lastEpoch_ to 4.
+    uint8_t                 _pad0[1]{};         ///< 1 byte pad: brings offset to 8, aligning lastEpoch_ to 4.
     uint32_t                lastEpoch_{0U};
     int                     coreAffinity_{-1};
     uint32_t                stackBytes_{8192U};
     uint32_t                predecessorCount_{0U}; ///< Replaces predecessors_.size() in resetNode.
     std::chrono::milliseconds timeout_{std::chrono::milliseconds::max()};
-    InlineSuccessors        successors_;            ///< Iterated on completion -- kept hot (16 B, inline up to 3).
+    PoolSuccessors          successors_;            ///< Iterated on completion -- kept hot (12 B, inline up to 4 × uint16_t).
 
     // ── Dispatch section: read once at the start of each job execution ────
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn_;
@@ -175,7 +189,7 @@ struct Pipeline::Node
         , stackBytes_{o.stackBytes_}
         , predecessorCount_{o.predecessorCount_}
         , timeout_{o.timeout_}
-        , successors_{std::move(o.successors_)}   // InlineSuccessors move ctor
+        , successors_{std::move(o.successors_)}   // PoolSuccessors move ctor
         , fn_{std::move(o.fn_)}
         , stopSource_{std::move(o.stopSource_)}
         , nameStr_{std::move(o.nameStr_)}
@@ -195,6 +209,7 @@ struct Pipeline::Impl
     std::vector<Node>         nodes_;
     std::vector<TickJob>      ticks_;
     std::vector<uint32_t>     roots_;
+    std::vector<uint16_t>     succPool_;    ///< Flat arena for overflow successor indices (see PoolSuccessors).
     uint32_t                  runEpoch_{0U};
     bool                      rootsCached_{false};
     IExecutor*                armedExecutor_{nullptr};
@@ -266,7 +281,7 @@ Job& Job::succeed(Job other)
     auto& selfNode  = pipeline_->node(idx_);
     auto& otherNode = pipeline_->node(other.idx_);
     ++selfNode.predecessorCount_;
-    otherNode.successors_.push_back(idx_);
+    otherNode.successors_.push_back(static_cast<uint16_t>(idx_), pipeline_->impl_->succPool_);
     return *this;
 }
 
@@ -275,7 +290,7 @@ Job& Job::precede(Job other)
     if (!pipeline_ || !valid() || !other.valid()) return *this;
     auto& selfNode  = pipeline_->node(idx_);
     auto& otherNode = pipeline_->node(other.idx_);
-    selfNode.successors_.push_back(other.idx_);
+    selfNode.successors_.push_back(static_cast<uint16_t>(other.idx_), pipeline_->impl_->succPool_);
     ++otherNode.predecessorCount_;
     return *this;
 }
@@ -397,9 +412,8 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
     // Kahn's algorithm: topological sort — cycle detected if not all nodes visited.
     std::vector<uint32_t> inDegree(n, 0U);
     for (const auto& nd : impl_->nodes_) {
-        for (auto succ : nd.successors_) {
+        for (auto succ : nd.successors_.range(impl_->succPool_))
             ++inDegree[succ];
-        }
     }
 
     std::queue<uint32_t> ready;
@@ -412,7 +426,7 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
         const auto idx = ready.front();
         ready.pop();
         ++visited;
-        for (auto succ : impl_->nodes_[idx].successors_) {
+        for (auto succ : impl_->nodes_[idx].successors_.range(impl_->succPool_)) {
             if (--inDegree[succ] == 0U) ready.push(succ);
         }
     }
@@ -428,7 +442,9 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
 auto Pipeline::run(IExecutor& executor, IObserver* observer)
     -> std::expected<void, PipelineError>
 {
-    static_assert(sizeof(Node) <= 184,
+    // Previous: 272B (original) → 176B (first pass) → 168B (pool/arena pass).
+    // Raise only for an intentional new field; do not raise to paper over bloat.
+    static_assert(sizeof(Node) <= 168,
         "Pipeline::Node exceeded size budget -- check padding or new large fields");
 
     if (!impl_ || impl_->nodes_.empty()) return {};
@@ -494,7 +510,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
                 const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
                 const auto progress = static_cast<float>(done) / static_cast<float>(total);
                 if (observer) observer->onFinish(nd.nameStr_, JobStatus::kSkipped, progress);
-                for (auto succIdx : nd.successors_) toSkip.push(succIdx);
+                for (auto succIdx : nd.successors_.range(impl.succPool_)) toSkip.push(succIdx);
             }
         }
 
@@ -556,11 +572,11 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
                     std::lock_guard lk{fatalMtx};
                     fatalError = result.error();
                 }
-                for (auto succIdx : nd.successors_) skipNode(succIdx);
+                for (auto succIdx : nd.successors_.range(impl.succPool_)) skipNode(succIdx);
                 return;
             }
 
-            for (auto succIdx : nd.successors_) {
+            for (auto succIdx : nd.successors_.range(impl.succPool_)) {
                 auto& succ = impl.nodes_[succIdx];
                 resetNode(succ);
                 const auto remaining = succ.unmetDeps_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
@@ -766,7 +782,7 @@ void Pipeline::dump_text() const
     for (uint32_t i = 0U; i < static_cast<uint32_t>(impl_->nodes_.size()); ++i) {
         const auto& nd = impl_->nodes_[i];
         std::printf("  [%u] %s (predecessors: %u) -> (", i, nd.nameStr_.c_str(), nd.predecessorCount_);
-        for (auto s : nd.successors_)
+        for (auto s : nd.successors_.range(impl_->succPool_))
             std::printf(" %s", impl_->nodes_[s].nameStr_.c_str());
         std::printf(")\n");
     }
