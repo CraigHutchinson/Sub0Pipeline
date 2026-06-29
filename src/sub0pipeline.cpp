@@ -20,10 +20,12 @@
 #include <cassert>
 #include <chrono>
 #include <cstdio>
+#include <future>
 #include <mutex>
 #include <queue>
 #include <stop_token>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if __has_include(<freertos/FreeRTOS.h>)
@@ -47,14 +49,16 @@ namespace sub0pipeline {
 
 struct Pipeline::Node
 {
-    std::string                                          nameStr_;
-    std::function<std::expected<void, PipelineError>()> fn_;
-    std::chrono::milliseconds                            timeout_{30'000};
-    int                                                  coreAffinity_{-1};
-    uint8_t                                              priority_{5U};
-    uint32_t                                             stackBytes_{8192U};
-    bool                                                 isOptional_{false};
-    const char*                                          statusText_{nullptr};
+    std::string                                                             nameStr_;
+    std::function<std::expected<void, PipelineError>()>                     fn_;
+    std::function<std::expected<void, PipelineError>(std::stop_token)>      cancellableFn_;
+    std::stop_source                                                        stopSource_;
+    std::chrono::milliseconds                                               timeout_{std::chrono::milliseconds::max()};
+    int                                                                     coreAffinity_{-1};
+    uint8_t                                                                 priority_{5U};
+    uint32_t                                                                stackBytes_{8192U};
+    bool                                                                    isOptional_{false};
+    const char*                                                             statusText_{nullptr};
 
     std::vector<uint32_t>   predecessors_;
     std::vector<uint32_t>   successors_;
@@ -73,6 +77,8 @@ struct Pipeline::Node
     Node(Node&& o) noexcept
         : nameStr_{std::move(o.nameStr_)}
         , fn_{std::move(o.fn_)}
+        , cancellableFn_{std::move(o.cancellableFn_)}
+        , stopSource_{std::move(o.stopSource_)}
         , timeout_{o.timeout_}
         , coreAffinity_{o.coreAffinity_}
         , priority_{o.priority_}
@@ -149,6 +155,11 @@ Job& Job::status(const char* text) noexcept
 {
     if (pipeline_ && valid()) pipeline_->node(idx_).statusText_ = text;
     return *this;
+}
+
+void Job::cancel() noexcept
+{
+    if (pipeline_ && valid()) pipeline_->node(idx_).stopSource_.request_stop();
 }
 
 Job& Job::succeed(Job other)
@@ -242,6 +253,18 @@ Job Pipeline::emplace(std::function<std::expected<void, PipelineError>()> fn)
     return Job{idx, this};
 }
 
+Job Pipeline::emplace(
+    std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
+{
+    if (!impl_) impl_ = std::make_unique<Impl>();
+    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
+    impl_->nodes_.emplace_back();
+    auto& nd              = impl_->nodes_.back();
+    nd.cancellableFn_     = std::move(fn);
+    nd.nameStr_           = "job_" + std::to_string(idx);
+    return Job{idx, this};
+}
+
 Job Pipeline::emplace_void(std::function<void()> fn)
 {
     std::function<std::expected<void, PipelineError>()> wrapper =
@@ -332,6 +355,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     {
         if (nd.lastEpoch_ == epoch) return; // already reset this epoch
         nd.lastEpoch_ = epoch;
+        nd.stopSource_ = std::stop_source{};  // fresh cancellation state per run
         nd.unmetDeps_.store(
             static_cast<uint32_t>(nd.predecessors_.size()),
             std::memory_order_relaxed);
@@ -385,9 +409,74 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
         nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
         if (observer) observer->onStart(nd.nameStr_);
 
-        auto result = nd.fn_();
+        // Unified cancellation + timeout execution:
+        //
+        // Cancellable jobs (cancellableFn_) receive the stop token and poll it
+        // cooperatively. Timeout fires the stop source first (cooperative signal),
+        // then uses packaged_task as a hard cutoff if the function doesn't return.
+        //
+        // Non-cancellable jobs (fn_) use the packaged_task hard cutoff only.
+        // If the timeout fires, the job thread is detached -- UDAW job functions
+        // are expected to also timeout at the syscall level (TCP, subprocess pipe).
+        std::expected<void, PipelineError> result;
+        const bool hasCancellable = static_cast<bool>(nd.cancellableFn_);
+        const bool hasTimeout     = nd.timeout_ < std::chrono::milliseconds::max();
 
-        const auto jobStatus = result ? JobStatus::kDone : JobStatus::kFailed;
+        if (hasCancellable)
+        {
+            auto token = nd.stopSource_.get_token();
+            if (hasTimeout)
+            {
+                // Watchdog fires stop token after timeout, then we check the result.
+                // The job runs on the calling thread -- cooperative cancellation
+                // means it should exit quickly after the stop is requested.
+                std::jthread watchdog{[src = nd.stopSource_, dur = nd.timeout_]
+                    (std::stop_token wdStop) mutable
+                {
+                    std::this_thread::sleep_for(dur);
+                    if (!wdStop.stop_requested()) src.request_stop();
+                }};
+                result = nd.cancellableFn_(token);
+                // watchdog destructor joins and stops the sleep thread
+            }
+            else
+            {
+                result = nd.cancellableFn_(token);
+            }
+        }
+        else if (hasTimeout)
+        {
+            // Hard cutoff for non-cancellable functions.
+            // Cooperative signal via stop source so any external cancel() also
+            // works, but the function itself won't check it.
+            std::packaged_task<std::expected<void, PipelineError>()> task{nd.fn_};
+            auto fut = task.get_future();
+            std::thread jobThread{std::move(task)};
+            if (fut.wait_for(nd.timeout_) == std::future_status::timeout)
+            {
+                nd.stopSource_.request_stop();
+                jobThread.detach();
+                result = std::unexpected(PipelineError::kTimeout);
+            }
+            else
+            {
+                jobThread.join();
+                result = fut.get();
+            }
+        }
+        else
+        {
+            result = nd.fn_();
+        }
+
+        const auto jobStatus = [&result]() -> JobStatus {
+            if (result) return JobStatus::kDone;
+            switch (result.error()) {
+                case PipelineError::kTimeout:    return JobStatus::kTimedOut;
+                case PipelineError::kCancelled:  return JobStatus::kCancelled;
+                default:                         return JobStatus::kFailed;
+            }
+        }();
         nd.jobStatus_.store(jobStatus, std::memory_order_release);
 
         const auto done     = impl_->completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;

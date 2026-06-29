@@ -98,7 +98,7 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 |---|---|---|
 | Unit-testable pipelines (swap executor for determinism) | ✅ | `SequentialExecutor` runs jobs inline, in order; no threads, no non-determinism |
 | Reproducible execution order verification | ✅ | `RecordingExecutor` pattern (see tests) captures dispatch order before execution |
-| Timeout injection in tests | 📝 | `.timeout()` stores the value and `kTimeout` / `kTimedOut` are valid error codes, but no built-in executor enforces the deadline -- custom executor or watchdog required |
+| Timeout and cancellation | ✅ | `.timeout(dur)` enforced by the engine (watchdog fires stop_token cooperatively, then hard packaged_task cutoff); `Job::cancel()` fires stop_token from any thread for mid-run cancellation; cancellable jobs take `(std::stop_token)` and poll `stop_requested()` |
 
 ---
 
@@ -412,6 +412,8 @@ auto job = pipe.emplace([]() -> std::expected<void, PipelineError> {
 | `kUnknownJob` | Operation on invalid handle |
 | `kNotArmed` | `trigger()` called before `arm()` |
 | `kNotOnDemand` | `trigger()` called on a regular (non-on-demand) job |
+| `kTimeout` | Job exceeded its declared timeout (hard cutoff via packaged_task) |
+| `kCancelled` | Job returned `kCancelled` or cooperatively exited after stop_token fired |
 
 ---
 

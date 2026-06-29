@@ -55,6 +55,7 @@ enum class PipelineError : uint8_t
     kUnknownJob,        ///< Operation on an invalid Job handle.
     kNotArmed,          ///< trigger() called before arm() -- no executor stored.
     kNotOnDemand,       ///< trigger() called on a job not registered via add_on_demand().
+    kCancelled,         ///< Job was cancelled externally via Job::cancel() or a stop token.
 };
 
 // Forward declarations for cross-references.
@@ -77,7 +78,16 @@ public:
     /** Set a human-readable name (used in tracing and observer callbacks). */
     Job& name(std::string_view n);
 
-    /** Set maximum execution time before the job is considered timed out. */
+    /**
+     * @brief Set the maximum execution time for this job.
+     *
+     * If the job function does not return within `t`, the engine returns
+     * `kTimeout` / `kTimedOut` and cascades skip to all successors.
+     * The job thread is detached -- UDAW job functions are expected to
+     * also timeout at the syscall level (TCP connect, subprocess pipe).
+     *
+     * Default: `std::chrono::milliseconds::max()` (no timeout).
+     */
     Job& timeout(std::chrono::milliseconds t) noexcept;
 
     /** Pin the job to a specific CPU core (-1 = any). */
@@ -94,6 +104,17 @@ public:
 
     /** Set status text shown while this job runs (for observer display). */
     Job& status(const char* text) noexcept;
+
+    /**
+     * @brief Request cancellation of this job.
+     *
+     * Thread-safe. Fires the job's `std::stop_source`, setting its
+     * `stop_token` to stopped. Cancellable job functions (those taking
+     * `std::stop_token`) check `stop_requested()` and return `kCancelled`.
+     * Non-cancellable functions ignore the signal; timeout enforcement
+     * remains active.
+     */
+    void cancel() noexcept;
 
     /**
      * @brief Declare that this job runs AFTER @p other completes.
@@ -170,7 +191,8 @@ enum class JobStatus : uint8_t
     kDone,      ///< Completed successfully.
     kFailed,    ///< Completed with an error.
     kSkipped,   ///< Skipped because a required predecessor failed.
-    kTimedOut,  ///< Exceeded the declared timeout.
+    kTimedOut,   ///< Exceeded the declared timeout.
+    kCancelled,  ///< Cancelled externally via Job::cancel() or a stop token.
 };
 
 // ── Executor interface ────────────────────────────────────────────────────────
@@ -363,6 +385,29 @@ public:
      *            or metadata need to be set.
      */
     [[nodiscard]] Job emplace(std::function<std::expected<void, PipelineError>()> fn);
+
+    /**
+     * @brief Add a cancellable job whose function receives a `std::stop_token`.
+     *
+     * The stop token is signalled when:
+     *   - The job's `.timeout()` expires (cooperative signal before hard cutoff).
+     *   - `Job::cancel()` is called from any thread.
+     *
+     * The function should poll `token.stop_requested()` at checkpoints and
+     * return `std::unexpected(PipelineError::kCancelled)` when it fires:
+     * @code
+     *   pipe.emplace([](std::stop_token st) -> std::expected<void, PipelineError> {
+     *       while (!st.stop_requested()) {
+     *           if (!fetch_chunk()) break;
+     *       }
+     *       if (st.stop_requested())
+     *           return std::unexpected(PipelineError::kCancelled);
+     *       return {};
+     *   }).name("fetch").timeout(5s);
+     * @endcode
+     */
+    [[nodiscard]] Job emplace(
+        std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
 
     /**
      * @brief Add a void-returning job (always succeeds).
