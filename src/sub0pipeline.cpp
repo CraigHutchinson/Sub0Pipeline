@@ -51,22 +51,22 @@ namespace sub0pipeline {
 // arena owned by Pipeline::Impl -- zero heap allocation after initial reserve.
 //
 // Layout (12 bytes, align 2):
-//   [0]    size_    -- bits[6:0] = count (max 127), bit[7] = pool-mode flag
-//   [1]    _pad
-//   [2..3] poolIdx_ -- uint16_t start offset in Impl::succPool_ (pool mode)
+//   [0..1]  size_    -- bit[15] = pool-mode flag; bits[14:0] = count (max 32767)
+//   [2..3]  poolIdx_ -- uint16_t start offset in Impl::succPool_ (pool mode)
 //   [4..11] inline_[4] -- 4 × uint16_t inline entries (8 bytes)
 //
-// Rationale for uint16_t node indices: a pipeline with > 65535 nodes is not a
-// practical use case; 16-bit halves pool storage and doubles inline capacity vs
-// the previous uint32_t design.
+// Rationale for uint16_t size_:
+//   The previous uint8_t layout used bit[7] as the pool flag, limiting count to
+//   127 before silent bit-collision. uint16_t raises that to 32767 -- unreachable
+//   in any real pipeline -- without changing the 12-byte struct size.
 
 struct PoolSuccessors
 {
-    static constexpr uint8_t  kInlineCap = 4U;
-    static constexpr uint8_t  kPoolFlag  = 0x80U;
+    static constexpr uint16_t kInlineCap = 4U;
+    static constexpr uint16_t kPoolFlag  = 0x8000U; ///< bit[15] = pool mode
+    static constexpr uint16_t kCountMask = 0x7FFFU; ///< bits[14:0] = count
 
-    uint8_t  size_{0};      ///< bits[6:0] = count; bit[7] = pool-mode flag
-    uint8_t  _pad{0};
+    uint16_t size_{0};      ///< bit[15] = pool flag; bits[14:0] = entry count
     uint16_t poolIdx_{0};   ///< start index into Impl::succPool_ (pool mode only)
     uint16_t inline_[kInlineCap]{};  ///< inline storage: 4 × uint16_t = 8 bytes
 
@@ -76,7 +76,7 @@ struct PoolSuccessors
     PoolSuccessors(PoolSuccessors&& o) noexcept
         : size_{o.size_}, poolIdx_{o.poolIdx_}
     {
-        for (uint8_t i = 0; i < kInlineCap; ++i) inline_[i] = o.inline_[i];
+        for (uint16_t i = 0; i < kInlineCap; ++i) inline_[i] = o.inline_[i];
         o.size_    = 0;
         o.poolIdx_ = 0;
     }
@@ -84,40 +84,38 @@ struct PoolSuccessors
     PoolSuccessors(const PoolSuccessors&)             = delete;
     PoolSuccessors& operator=(const PoolSuccessors&) = delete;
 
-    [[nodiscard]] uint8_t count()  const noexcept { return size_ & 0x7FU; }
-    [[nodiscard]] bool    empty()  const noexcept { return count() == 0; }
-    [[nodiscard]] uint8_t size()   const noexcept { return count(); }
-    [[nodiscard]] bool    isPool() const noexcept { return (size_ & kPoolFlag) != 0U; }
+    [[nodiscard]] uint16_t count()  const noexcept { return size_ & kCountMask; }
+    [[nodiscard]] bool     empty()  const noexcept { return count() == 0; }
+    [[nodiscard]] uint16_t size()   const noexcept { return count(); }
+    [[nodiscard]] bool     isPool() const noexcept { return (size_ & kPoolFlag) != 0U; }
 
-    // Push a node index. Pool is a reference to Impl::succPool_ (the arena).
+    // Push a node index into the arena-backed successor list.
     // Pool overflow appends a new contiguous block; the old block is abandoned
-    // (wasted but bounded -- out-degree is typically ≤5, so at most 5 blocks
-    // of growing size: 5+6+7+8+9 = 35 entries per node worst case).
+    // (wasted but bounded: typically ≤ 35 abandoned entries per node worst case).
     void push_back(uint16_t v, std::vector<uint16_t>& pool)
     {
-        const uint8_t n = count();
+        const uint16_t n = count();
         if (!isPool() && n < kInlineCap) {
             inline_[n] = v;
-            size_ = static_cast<uint8_t>(n + 1U);
+            size_ = static_cast<uint16_t>(n + 1U);
         } else if (!isPool()) {
             // Spill inline → pool: append a new contiguous block.
-            // Guard: n+1 must fit in bits[6:0] of size_ (max 127); bit[7] is the pool flag.
-            assert(n < 127U && "PoolSuccessors: node has >127 successors -- exceeds 7-bit count");
-            assert(pool.size() < 0xFFFFU && "succPool_ exceeded uint16_t address range");
+            if (pool.size() >= 0xFFFFU)
+                SUB0PIPELINE_THROW("succPool_ exceeded 65535-entry uint16_t address range");
             const auto start = static_cast<uint16_t>(pool.size());
-            for (uint8_t i = 0; i < n; ++i) pool.push_back(inline_[i]);
+            for (uint16_t i = 0; i < n; ++i) pool.push_back(inline_[i]);
             pool.push_back(v);
             poolIdx_ = start;
-            size_    = static_cast<uint8_t>(kPoolFlag | (n + 1U));
+            size_    = static_cast<uint16_t>(kPoolFlag | (n + 1U));
         } else {
             // Grow pool: allocate a fresh contiguous block (old block orphaned).
-            assert(n < 127U && "PoolSuccessors: node has >127 successors -- exceeds 7-bit count");
-            assert(pool.size() < 0xFFFFU && "succPool_ exceeded uint16_t address range");
+            if (pool.size() >= 0xFFFFU)
+                SUB0PIPELINE_THROW("succPool_ exceeded 65535-entry uint16_t address range");
             const auto start = static_cast<uint16_t>(pool.size());
-            for (uint8_t i = 0; i < n; ++i) pool.push_back(pool[poolIdx_ + i]);
+            for (uint16_t i = 0; i < n; ++i) pool.push_back(pool[poolIdx_ + i]);
             pool.push_back(v);
             poolIdx_ = start;
-            size_    = static_cast<uint8_t>(kPoolFlag | (n + 1U));
+            size_    = static_cast<uint16_t>(kPoolFlag | (n + 1U));
         }
     }
 
@@ -158,7 +156,7 @@ struct Pipeline::Node
     uint32_t                stackBytes_{8192U};
     uint32_t                predecessorCount_{0U}; ///< Replaces predecessors_.size() in resetNode.
     std::chrono::milliseconds timeout_{std::chrono::milliseconds::max()};
-    PoolSuccessors          successors_;            ///< Iterated on completion -- kept hot (12 B, inline up to 4 × uint16_t).
+    PoolSuccessors          successors_;            ///< Iterated on completion -- kept hot (12 B, inline ≤4, pool up to 32767).
 
     // ── Dispatch section: read once at the start of each job execution ────
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn_;

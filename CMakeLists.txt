@@ -14,6 +14,7 @@ option(SUB0PIPELINE_BUILD_EXAMPLES "Build examples"     OFF)
 option(SUB0PIPELINE_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(SUB0PIPELINE_PLATFORM_DESKTOP  "Build DesktopExecutor (std::thread)" ON)
 option(SUB0PIPELINE_PLATFORM_PRIORITY "Build PriorityExecutor (bounded pool, priority queue)" ON)
+option(SUB0PIPELINE_EXCEPTIONS "Throw std::runtime_error on hard errors (disable for -fno-exceptions builds)" ON)
 
 if(SUB0PIPELINE_BUILD_TESTING AND NOT IS_SUBPROJECT)
     enable_testing()
@@ -32,6 +33,10 @@ add_library(Sub0Pipeline STATIC
 add_library(Sub0Pipeline::Sub0Pipeline ALIAS Sub0Pipeline)
 
 target_compile_features(Sub0Pipeline PUBLIC cxx_std_23)
+
+target_compile_definitions(Sub0Pipeline PUBLIC
+    SUB0PIPELINE_EXCEPTIONS=$<BOOL:${SUB0PIPELINE_EXCEPTIONS}>
+)
 
 target_compile_options(Sub0Pipeline PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /Zc:preprocessor>
