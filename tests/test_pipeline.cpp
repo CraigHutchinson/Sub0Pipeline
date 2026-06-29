@@ -1045,6 +1045,31 @@ TEST_CASE("Pipeline: required failure cascades to all subsequent roots (sequenti
 // On-demand jobs
 // ═══════════════════════════════════════════════════════════════════════════════
 
+TEST_CASE("run_inline: executes pipeline synchronously without an explicit executor")
+{
+    Pipeline pipe;
+    int count = 0;
+    pipe.emplace([&]{ ++count; }).name("a");
+    pipe.emplace([&]{ ++count; }).name("b");
+
+    auto result = pipe.run_inline();
+
+    CHECK(result.has_value());
+    CHECK(count == 2);
+}
+
+TEST_CASE("run_inline: failure propagates correctly")
+{
+    Pipeline pipe;
+    pipe.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("fail");
+
+    auto result = pipe.run_inline();
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error() == PipelineError::kJobFailed);
+}
+
 TEST_CASE("OnDemand: on-demand job does not run during normal run()")
 {
     RecordingExecutor exec;

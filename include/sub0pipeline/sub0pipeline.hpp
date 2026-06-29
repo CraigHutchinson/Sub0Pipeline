@@ -408,6 +408,23 @@ public:
     [[nodiscard]] auto run(IExecutor& executor, IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
+    /**
+     * @brief Run the pipeline synchronously on the calling thread (no executor required).
+     *
+     * Convenience overload that creates an inline sequential executor internally.
+     * Jobs execute in dependency order on the calling thread with no parallelism.
+     * Useful for request-scoped pipelines, tests, and embedded contexts where
+     * creating an executor explicitly would be boilerplate.
+     *
+     * @code
+     *   Pipeline pipe;
+     *   pipe >> "parse"_job(parse) >> "validate"_job(validate) >> "commit"_job(commit);
+     *   auto result = pipe.run_inline();   // no executor needed
+     * @endcode
+     */
+    [[nodiscard]] auto run_inline(IObserver* observer = nullptr)
+        -> std::expected<void, PipelineError>;
+
     /** @return Current status of a job (kPending before run()). */
     [[nodiscard]] auto status(Job j) const noexcept -> JobStatus;
 

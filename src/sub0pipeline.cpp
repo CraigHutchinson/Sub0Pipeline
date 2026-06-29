@@ -514,6 +514,19 @@ void Pipeline::run_loop()
     }
 }
 
+auto Pipeline::run_inline(IObserver* observer) -> std::expected<void, PipelineError>
+{
+    struct InlineExecutor final : IExecutor
+    {
+        void dispatch(std::string_view, std::function<void()> fn,
+                      std::function<void()> oc, int, uint8_t, uint32_t) override
+        { fn(); if (oc) oc(); }
+        void wait_all() override {}
+        [[nodiscard]] int concurrency() const noexcept override { return 1; }
+    } exec;
+    return run(exec, observer);
+}
+
 void Pipeline::run_until(IExecutor& executor, std::stop_token stop)
 {
     while (!stop.stop_requested())

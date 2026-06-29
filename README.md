@@ -51,15 +51,16 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 | Build systems (compile → link → test → package) | ✅ | Dependency graph maps directly; `validate()` catches cycles at construction |
 | Fan-out / scatter-gather parallelism | ✅ | `a >> b + c + d >> sink`; first-class in the DSL |
 | Map-reduce (N workers → aggregate) | ✅ | Fan-out N jobs, fan-in to one; structured bindings give handles to all N |
-| Processing items of unknown count at runtime | 📝 | `emplace()` works at runtime before `run()`; DAG is immutable once execution starts |
-| Dynamic sub-DAG generation (coarse outer DAG drives dynamic inner workloads) | 📝 | A job function can create and run an inner `Pipeline` via `ScopedExecutor`; inner job count and shape are fully runtime-determined |
+| Processing items of unknown count at runtime | ✅ | Job function creates an inner `Pipeline` of runtime-determined size and runs it via `ScopedExecutor`; shape and count fully dynamic |
+| Dynamic sub-DAG generation (coarse outer DAG drives dynamic inner workloads) | ✅ | `ScopedExecutor` scopes `wait_all()` to inner jobs only -- no deadlock when an outer job runs an inner pipeline on the shared thread pool |
 
 ### Event-driven and I/O
 
 | Use case | Fit | Notes |
 |---|---|---|
-| Hardware / ISR / network event dispatch (fire-and-forget) | 📝 | `add_on_demand()` + `arm()` + `trigger()` -- dispatches immediately; no result awaiting |
-| One pipeline per request (HTTP handler, RPC call) | ✅ | Construct a small pipeline per request; `SequentialExecutor` keeps it stack-local |
+| Hardware / ISR / network event dispatch | 📝 | `trigger()` returns `std::expected` confirming dispatch acceptance; job completion is fire-and-forget (no future returned -- observe via `IObserver`) |
+| Multi-client concurrent dispatch (N threads all calling `trigger()` on the same pipeline) | 📝 | `trigger()` is thread-safe -- concurrent callers contend only on the armed executor's lock; no pipeline-level mutex needed |
+| One pipeline per request (HTTP handler, RPC call) | ✅ | `pipe.run_inline()` runs synchronously on the calling thread with no executor setup; or inject `SequentialExecutor` for observer access |
 | Streaming / continuous I/O (audio decode, video encode, network receive loop) | 📝 | `run_until(exec, stop_token)` re-runs the DAG in a loop; pacing is the caller's responsibility |
 | Producer-consumer queues (bounded, multi-consumer) | 📝 | `add_on_demand()` + `trigger()` dispatches a drainer job on each enqueue; no built-in queue storage |
 
@@ -87,7 +88,7 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 |---|---|---|
 | Fork-join parallelism | ✅ | `executor.wait_all()` at the end of `run()`; all forks joined before return |
 | Diamond dependency (A → {B ∥ C} → D) | ✅ | Core benchmark topology; 220 ns overhead |
-| Priority-ordered execution | 📝 | `priority()` hint passed to executor; enforcement depends on the executor backend |
+| Priority-ordered execution | 📝 | `priority()` hint forwarded to `dispatch()`; `SequentialExecutor` and `DesktopExecutor` ignore it -- only `FreeRtosExecutor` maps it to task priority |
 | Cross-process job distribution | ❌ | Single-process only; no serialization, no remote dispatch |
 | Dynamic graph modification after execution starts | ❌ | Outer DAG structure is immutable once `run()` is called; use sub-DAGs via `ScopedExecutor` for dynamic inner workloads |
 
@@ -97,7 +98,7 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 |---|---|---|
 | Unit-testable pipelines (swap executor for determinism) | ✅ | `SequentialExecutor` runs jobs inline, in order; no threads, no non-determinism |
 | Reproducible execution order verification | ✅ | `RecordingExecutor` pattern (see tests) captures dispatch order before execution |
-| Timeout injection in tests | ✅ | `.timeout()` per job; `kTimeout` error propagates like any other failure |
+| Timeout injection in tests | 📝 | `.timeout()` stores the value and `kTimeout` / `kTimedOut` are valid error codes, but no built-in executor enforces the deadline -- custom executor or watchdog required |
 
 ---
 
@@ -356,6 +357,7 @@ See [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) for planned executors.
 | `emplace(spec)` | Add a job from a `JobSpec` (DSL) |
 | `emplace(specs...)` | Multi-emplace; returns `std::tuple<Job...>` for structured bindings |
 | `run(executor, observer?)` | Execute DAG; returns `std::expected<void, PipelineError>` |
+| `run_inline(observer?)` | Execute synchronously on the calling thread -- no executor needed |
 | `validate()` | Check for cycles (Kahn's algorithm; called automatically by `run()`) |
 | `status(job)` / `name(job)` | Query job state and name |
 | `add_tick(tick)` | Register a recurring tick job for the event loop |
