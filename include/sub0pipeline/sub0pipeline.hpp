@@ -513,11 +513,19 @@ public:
      * iterations in the job functions or by wrapping this call:
      * @code
      *   std::jthread worker([&](std::stop_token st) {
-     *       pipe.run_until(exec, st);
+     *       pipe.run_until(exec, st, observer,
+     *           [&](PipelineError e) { reconnect(); });
      *   });
      * @endcode
+     *
+     * @param observer  Optional observer forwarded to each run() call.
+     * @param onError   Optional callback invoked when run() returns a fatal
+     *                  error. The callback may call stop.request_stop() on the
+     *                  outer jthread to abort the loop on unrecoverable errors.
      */
-    void run_until(IExecutor& executor, std::stop_token stop);
+    void run_until(IExecutor& executor, std::stop_token stop,
+                   IObserver* observer = nullptr,
+                   std::function<void(PipelineError)> onError = nullptr);
 
     // ── On-demand jobs ────────────────────────────────────────────────────
 

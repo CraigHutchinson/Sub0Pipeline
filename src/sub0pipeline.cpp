@@ -100,7 +100,9 @@ struct PoolSuccessors
             inline_[n] = v;
             size_ = static_cast<uint8_t>(n + 1U);
         } else if (!isPool()) {
-            // Spill inline → pool: append a new contiguous block
+            // Spill inline → pool: append a new contiguous block.
+            // Guard: n+1 must fit in bits[6:0] of size_ (max 127); bit[7] is the pool flag.
+            assert(n < 127U && "PoolSuccessors: node has >127 successors -- exceeds 7-bit count");
             assert(pool.size() < 0xFFFFU && "succPool_ exceeded uint16_t address range");
             const auto start = static_cast<uint16_t>(pool.size());
             for (uint8_t i = 0; i < n; ++i) pool.push_back(inline_[i]);
@@ -108,7 +110,8 @@ struct PoolSuccessors
             poolIdx_ = start;
             size_    = static_cast<uint8_t>(kPoolFlag | (n + 1U));
         } else {
-            // Grow pool: allocate a fresh contiguous block (old block orphaned)
+            // Grow pool: allocate a fresh contiguous block (old block orphaned).
+            assert(n < 127U && "PoolSuccessors: node has >127 successors -- exceeds 7-bit count");
             assert(pool.size() < 0xFFFFU && "succPool_ exceeded uint16_t address range");
             const auto start = static_cast<uint16_t>(pool.size());
             for (uint8_t i = 0; i < n; ++i) pool.push_back(pool[poolIdx_ + i]);
@@ -368,6 +371,7 @@ Job Pipeline::emplace(std::function<std::expected<void, PipelineError>()> fn)
     nd.fn_      = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
                   { return f(); };
     nd.nameStr_ = "job_" + std::to_string(idx);
+    impl_->rootsCached_ = false; // new node may be a root; invalidate cached set
     return Job{idx, this};
 }
 
@@ -381,6 +385,7 @@ Job Pipeline::emplace(
     nd.fn_             = std::move(fn);
     nd.flags_         |= Node::kFlagCancellable;
     nd.nameStr_        = "job_" + std::to_string(idx);
+    impl_->rootsCached_ = false;
     return Job{idx, this};
 }
 
@@ -393,6 +398,7 @@ Job Pipeline::emplace_void(std::function<void()> fn)
     nd.fn_      = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
                   { f(); return {}; };
     nd.nameStr_ = "job_" + std::to_string(idx);
+    impl_->rootsCached_ = false;
     return Job{idx, this};
 }
 
@@ -690,10 +696,15 @@ auto Pipeline::run_inline(IObserver* observer) -> std::expected<void, PipelineEr
     return run(exec, observer);
 }
 
-void Pipeline::run_until(IExecutor& executor, std::stop_token stop)
+void Pipeline::run_until(IExecutor& executor, std::stop_token stop,
+                         IObserver* observer,
+                         std::function<void(PipelineError)> onError)
 {
-    while (!stop.stop_requested())
-        (void)run(executor);
+    while (!stop.stop_requested()) {
+        auto result = run(executor, observer);
+        if (!result && onError)
+            onError(result.error());
+    }
 }
 
 // ── On-demand jobs ────────────────────────────────────────────────────────────
@@ -752,18 +763,21 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
 
     nd.jobStatus_.store(JobStatus::kReady, std::memory_order_release);
 
+    // Capture by index, not by nd reference: nodes_ may reallocate if another
+    // add_on_demand() is called before the dispatch lambda executes.
     exec->dispatch(
         nd.nameStr_,
-        [&nd, obs]
+        [impl = impl_.get(), idx = j.idx_, obs]
         {
-            nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
-            if (obs) obs->onStart(nd.nameStr_);
+            auto& n = impl->nodes_[idx];
+            n.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
+            if (obs) obs->onStart(n.nameStr_);
 
-            auto result = nd.fn_(nd.stopSource_.get_token());
+            auto result = n.fn_(n.stopSource_.get_token());
 
             const auto status = result ? JobStatus::kDone : JobStatus::kFailed;
-            nd.jobStatus_.store(status, std::memory_order_release);
-            if (obs) obs->onFinish(nd.nameStr_, status, 1.0f);
+            n.jobStatus_.store(status, std::memory_order_release);
+            if (obs) obs->onFinish(n.nameStr_, status, 1.0f);
         },
         [] {},
         nd.coreAffinity_,
