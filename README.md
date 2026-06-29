@@ -52,6 +52,7 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 | Fan-out / scatter-gather parallelism | ✅ | `a >> b + c + d >> sink`; first-class in the DSL |
 | Map-reduce (N workers → aggregate) | ✅ | Fan-out N jobs, fan-in to one; structured bindings give handles to all N |
 | Processing items of unknown count at runtime | 🟡 | `emplace()` works at runtime before `run()`; DAG is immutable once execution starts |
+| Dynamic sub-DAG generation (coarse outer DAG drives dynamic inner workloads) | 🟡 | A job function can create and run an inner `Pipeline` via `ScopedExecutor`; inner job count and shape are fully runtime-determined |
 
 ### Event-driven and I/O
 
@@ -88,7 +89,7 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 | Diamond dependency (A → {B ∥ C} → D) | ✅ | Core benchmark topology; 220 ns overhead |
 | Priority-ordered execution | 🟡 | `priority()` hint passed to executor; enforcement depends on the executor backend |
 | Cross-process job distribution | ❌ | Single-process only; no serialization, no remote dispatch |
-| Dynamic graph modification after execution starts | ❌ | DAG structure is immutable once `run()` is called; build the full graph before running |
+| Dynamic graph modification after execution starts | ❌ | Outer DAG structure is immutable once `run()` is called; use sub-DAGs via `ScopedExecutor` for dynamic inner workloads |
 
 ### Testing and determinism
 
@@ -285,11 +286,11 @@ ctest --preset default          # Run tests
 
 ### Test Coverage
 
-119 test cases across two suites:
+123 test cases across two suites:
 
 | Suite | Focus | Cases |
 |-------|-------|-------|
-| `Sub0Pipeline_Tests` | Core DAG engine, JobGroup, re-runnability, error propagation, on-demand jobs | 84 |
+| `Sub0Pipeline_Tests` | Core DAG engine, JobGroup, re-runnability, error propagation, on-demand jobs, sub-DAG execution | 88 |
 | `Sub0Pipeline_DslTests` | Operators, `_job` UDL, JobTuple, JobTupleChain, inline pipe | 35 |
 
 Tested topologies include linear chains, fan-out/in, diamonds, double-diamonds, W-shapes, hourglasses, binary trees (31 nodes), and stress tests (100+ nodes). Error propagation covers required/optional failure cascading, mid-graph failures, multi-root failure ordering, and full recovery on re-run. The epoch-based re-runnability is verified across all topologies with counter, ordering, and status assertions.
@@ -317,6 +318,29 @@ target_link_libraries(MyApp PRIVATE Sub0Pipeline::Sub0Pipeline)
 | `SequentialExecutor` | `Sub0Pipeline::Headless` | Any | Inline, no threads. Deterministic. Tests & bare-metal. |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Desktop | One `std::thread` per job. Full parallelism. |
 | `FreeRtosExecutor` | ESP-IDF component | ESP32-P4 | `xTaskCreatePinnedToCore`. Dual-core. |
+| `ScopedExecutor` | `Sub0Pipeline::Sub0Pipeline` | Any | Wraps any executor; scopes `wait_all()` to locally-dispatched jobs. Required for sub-DAG execution from within a running job. |
+
+### Sub-DAG pattern (dynamic inner workloads)
+
+A job function can create and run an inner `Pipeline` whose structure is determined at runtime. Use `ScopedExecutor` to share the outer thread pool without deadlocking on the parent's global `inFlight_` counter:
+
+```cpp
+auto exec = makeDesktopExecutor();
+Pipeline outer;
+
+outer.emplace([&exec, &items]() -> std::expected<void, PipelineError>
+{
+    ScopedExecutor scoped{*exec};   // shares thread pool; local wait_all()
+    Pipeline inner;
+    for (auto& item : items)        // shape and count determined at runtime
+        inner.emplace([&item]{ process(item); });
+    return inner.run(scoped);       // inner jobs run in parallel; no deadlock
+}).name("dynamic_batch");
+
+outer.run(*exec);
+```
+
+**Why `ScopedExecutor` is required with `DesktopExecutor`:** the outer job thread T is tracked in `DesktopExecutor::inFlight_`. If T calls `outerExec.wait_all()` directly from within its own lambda, it waits for `inFlight_` to reach zero -- but T itself contributes 1 and cannot decrement until it returns. `ScopedExecutor` maintains its own `inFlight_` counter covering only inner jobs, so `wait_all()` resolves without waiting for T.
 
 See [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) for planned executors.
 
