@@ -58,6 +58,8 @@ struct Pipeline::Node
     std::vector<uint32_t>   predecessors_;
     std::vector<uint32_t>   successors_;
 
+    bool                    isOnDemand_{false}; ///< Excluded from run() root set; dispatched only via trigger().
+
     // std::atomic is non-copyable/non-movable by default, but std::vector may
     // reallocate nodes during the build phase. Loading in the move constructor
     // is safe because nodes are only moved before execution begins.
@@ -78,6 +80,7 @@ struct Pipeline::Node
         , statusText_{o.statusText_}
         , predecessors_{std::move(o.predecessors_)}
         , successors_{std::move(o.successors_)}
+        , isOnDemand_{o.isOnDemand_}
         , jobStatus_{o.jobStatus_.load(std::memory_order_relaxed)}
         , unmetDeps_{o.unmetDeps_.load(std::memory_order_relaxed)}
         , lastEpoch_{o.lastEpoch_}
@@ -94,10 +97,13 @@ struct Pipeline::Impl
 {
     std::vector<Node>         nodes_;
     std::vector<TickJob>      ticks_;
-    std::vector<uint32_t>     roots_;              ///< Cached root indices (no predecessors). Set by validate().
+    std::vector<uint32_t>     roots_;              ///< Cached root indices (no predecessors, not on-demand). Set by validate().
     std::atomic<uint32_t>     completedCount_{0U}; ///< Incremented atomically from job threads.
     uint32_t                  runEpoch_{0U};        ///< Incremented each run(); nodes compare to detect stale state.
     bool                      rootsCached_{false};  ///< True after first validate() caches root indices.
+
+    IExecutor*                armedExecutor_{nullptr};  ///< Executor stored by arm() for trigger() use.
+    IObserver*                armedObserver_{nullptr};  ///< Observer stored by arm() for trigger() use.
 };
 
 // ── Job builder methods ───────────────────────────────────────────────────────
@@ -300,13 +306,15 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
 
-    // Cache root indices on first run (nodes with no predecessors).
-    // Subsequent runs reuse the cached set — the DAG structure is immutable
+    // Cache root indices on first run (nodes with no predecessors that are not
+    // on-demand). On-demand nodes are excluded -- they execute only via trigger().
+    // Subsequent runs reuse the cached set -- the DAG structure is immutable
     // after construction, so the root set doesn't change.
     if (!impl_->rootsCached_) {
         impl_->roots_.clear();
         for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
-            if (impl_->nodes_[i].predecessors_.empty())
+            const auto& nd = impl_->nodes_[i];
+            if (nd.predecessors_.empty() && !nd.isOnDemand_)
                 impl_->roots_.push_back(i);
         }
         impl_->rootsCached_ = true;
@@ -507,18 +515,64 @@ void Pipeline::run_loop()
 
 // ── On-demand jobs ────────────────────────────────────────────────────────────
 
-Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> fn)
+void Pipeline::arm(IExecutor& executor, IObserver* observer) noexcept
 {
-    // TODO: on-demand jobs are registered in the DAG but not yet connected to
-    // the event-dispatch mechanism. trigger() is a stub. Do NOT call run() on
-    // a Pipeline that has on-demand jobs registered — they will execute
-    // immediately as root nodes during the normal execution phase.
-    return emplace(std::move(fn));
+    if (!impl_) impl_ = std::make_unique<Impl>();
+    impl_->armedExecutor_ = &executor;
+    impl_->armedObserver_ = observer;
 }
 
-void Pipeline::trigger(Job /*j*/)
+Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> fn)
 {
-    // TODO: implement event-triggered on-demand execution.
+    if (!impl_) impl_ = std::make_unique<Impl>();
+    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
+    impl_->nodes_.emplace_back();
+    auto& nd       = impl_->nodes_.back();
+    nd.fn_         = std::move(fn);
+    nd.nameStr_    = "on_demand_" + std::to_string(idx);
+    nd.isOnDemand_ = true;
+    // Invalidate root cache -- the new on-demand node would otherwise be
+    // picked up as a root on the next run() (it has no predecessors).
+    impl_->rootsCached_ = false;
+    return Job{idx, this};
+}
+
+auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
+{
+    if (!impl_ || !j.valid() || j.idx_ >= impl_->nodes_.size())
+        return std::unexpected(PipelineError::kUnknownJob);
+
+    if (!impl_->armedExecutor_)
+        return std::unexpected(PipelineError::kNotArmed);
+
+    auto& nd = impl_->nodes_[j.idx_];
+    if (!nd.isOnDemand_)
+        return std::unexpected(PipelineError::kNotOnDemand);
+
+    IExecutor*  exec = impl_->armedExecutor_;
+    IObserver*  obs  = impl_->armedObserver_;
+
+    nd.jobStatus_.store(JobStatus::kReady, std::memory_order_release);
+
+    exec->dispatch(
+        nd.nameStr_,
+        [&nd, obs]
+        {
+            nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
+            if (obs) obs->onStart(nd.nameStr_);
+
+            auto result = nd.fn_();
+
+            const auto status = result ? JobStatus::kDone : JobStatus::kFailed;
+            nd.jobStatus_.store(status, std::memory_order_release);
+            if (obs) obs->onFinish(nd.nameStr_, status, 1.0f);
+        },
+        [] {},
+        nd.coreAffinity_,
+        nd.priority_,
+        nd.stackBytes_);
+
+    return {};
 }
 
 // ── Diagnostics ───────────────────────────────────────────────────────────────

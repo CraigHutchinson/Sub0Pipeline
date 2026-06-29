@@ -1036,10 +1036,158 @@ TEST_CASE("Pipeline: required failure cascades to all subsequent roots (sequenti
     // A fails, B is skipped due to predecessor failure
     CHECK(pipeline.status(a) == JobStatus::kFailed);
     CHECK(pipeline.status(b) == JobStatus::kSkipped);
-
     // C and D are skipped because hasFatalFailure was already set by A
     CHECK(pipeline.status(c) == JobStatus::kSkipped);
     CHECK(pipeline.status(d) == JobStatus::kSkipped);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// On-demand jobs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("OnDemand: on-demand job does not run during normal run()")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    int callCount = 0;
+    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+        ++callCount;
+        return {};
+    });
+    od.name("fetch");
+
+    // Normal run() must not execute on-demand jobs.
+    (void)pipe.run(exec);
+
+    CHECK(callCount == 0);
+    CHECK_FALSE(exec.order().end() != std::find(exec.order().begin(), exec.order().end(), "fetch"));
+}
+
+TEST_CASE("OnDemand: trigger() dispatches job via armed executor")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    int callCount = 0;
+    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+        ++callCount;
+        return {};
+    });
+    od.name("fetch");
+
+    pipe.arm(exec);
+    auto result = pipe.trigger(od);
+
+    CHECK(result.has_value());
+    CHECK(callCount == 1);
+}
+
+TEST_CASE("OnDemand: trigger() can be called multiple times independently")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    int callCount = 0;
+    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+        ++callCount;
+        return {};
+    });
+
+    pipe.arm(exec);
+    (void)pipe.trigger(od);
+    (void)pipe.trigger(od);
+    (void)pipe.trigger(od);
+
+    CHECK(callCount == 3);
+}
+
+TEST_CASE("OnDemand: trigger() without arm() returns kNotArmed")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    auto od = pipe.add_on_demand([]() -> std::expected<void, PipelineError> {
+        return {};
+    });
+
+    auto result = pipe.trigger(od);
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error() == PipelineError::kNotArmed);
+}
+
+TEST_CASE("OnDemand: trigger() on a non-on-demand job returns kNotOnDemand")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    auto regular = pipe.emplace([]() -> std::expected<void, PipelineError> {
+        return {};
+    });
+    regular.name("regular");
+
+    pipe.arm(exec);
+    auto result = pipe.trigger(regular);
+    CHECK_FALSE(result.has_value());
+    CHECK(result.error() == PipelineError::kNotOnDemand);
+}
+
+TEST_CASE("OnDemand: normal jobs and on-demand jobs coexist -- only normal jobs run via run()")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    int normalCount   = 0;
+    int onDemandCount = 0;
+
+    pipe.emplace([&]() -> std::expected<void, PipelineError> {
+        ++normalCount; return {};
+    }).name("normal");
+
+    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+        ++onDemandCount; return {};
+    });
+    od.name("on_demand");
+
+    (void)pipe.run(exec);
+
+    CHECK(normalCount   == 1);
+    CHECK(onDemandCount == 0);
+
+    pipe.arm(exec);
+    (void)pipe.trigger(od);
+
+    CHECK(onDemandCount == 1);
+    CHECK(normalCount   == 1);
+}
+
+TEST_CASE("OnDemand: normal jobs and on-demand jobs coexist -- only normal jobs run via run()")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    int normalCount   = 0;
+    int onDemandCount = 0;
+
+    pipe.emplace([&]() -> std::expected<void, PipelineError> {
+        ++normalCount; return {};
+    }).name("normal");
+
+    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+        ++onDemandCount; return {};
+    });
+    od.name("on_demand");
+
+    (void)pipe.run(exec);
+
+    CHECK(normalCount   == 1);
+    CHECK(onDemandCount == 0);
+
+    pipe.arm(exec);
+    (void)pipe.trigger(od);
+
+    CHECK(onDemandCount == 1);
+    CHECK(normalCount   == 1);
 }
 
 TEST_CASE("Pipeline: failure in middle of diamond")

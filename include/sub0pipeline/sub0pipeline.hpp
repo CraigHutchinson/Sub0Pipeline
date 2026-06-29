@@ -49,6 +49,8 @@ enum class PipelineError : uint8_t
     kCyclicDependency,  ///< The DAG contains a cycle.
     kDuplicateJob,      ///< Job was added more than once.
     kUnknownJob,        ///< Operation on an invalid Job handle.
+    kNotArmed,          ///< trigger() called before arm() -- no executor stored.
+    kNotOnDemand,       ///< trigger() called on a job not registered via add_on_demand().
 };
 
 // Forward declarations for cross-references.
@@ -363,17 +365,43 @@ public:
     // ── On-demand jobs ────────────────────────────────────────────────────
 
     /**
-     * @brief Register a job that can be triggered on demand after run().
-     * @note trigger() is currently a stub; the returned Job is not yet
-     *       connected to the event-dispatch mechanism.
+     * @brief Arm the pipeline with an executor for on-demand dispatch.
+     *
+     * Must be called before trigger(). The executor and observer are stored
+     * by pointer; the caller must keep them alive for the lifetime of any
+     * trigger() calls. Does not transfer ownership.
+     *
+     * Typical usage:
+     * @code
+     *   auto exec = makeDesktopExecutor();
+     *   pipeline.arm(*exec);
+     *   // ... later from any thread:
+     *   pipeline.trigger(job);
+     * @endcode
+     */
+    void arm(IExecutor& executor, IObserver* observer = nullptr) noexcept;
+
+    /**
+     * @brief Register a job that is excluded from normal run() execution
+     *        and dispatched only when trigger() is called.
+     *
+     * On-demand jobs are not included in the root set for run() -- they do
+     * not execute during the normal DAG execution phase. Call arm() with an
+     * executor before calling trigger().
      */
     [[nodiscard]] Job add_on_demand(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
-     * @brief Trigger an on-demand job. Safe to call from any task or ISR.
-     * @note Currently a stub — see PLATFORM_ROADMAP.md.
+     * @brief Dispatch an on-demand job via the armed executor.
+     *
+     * Safe to call from any thread. Requires arm() to have been called first.
+     * Returns an error if the pipeline has not been armed or the job is not
+     * an on-demand job.
+     *
+     * The job executes asynchronously; completion is reported via the observer
+     * passed to arm() (if any).
      */
-    void trigger(Job j);
+    [[nodiscard]] std::expected<void, PipelineError> trigger(Job j);
 
     // ── Generic emplace (concept-based extension point) ─────────────────
 
