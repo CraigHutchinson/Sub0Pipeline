@@ -31,7 +31,7 @@ Part of the **Sub0** C++ library family.
 
 A quick reference for where Sub0Pipeline is the right tool and where it is not.
 
-**Fit key:** ✅ Strong &nbsp; 🟡 Partial &nbsp; ❌ Weak / not the right tool
+**Fit key:** ✅ Strong &nbsp; 📝 Conditional (works with caveats) &nbsp; ❌ Weak / not the right tool
 
 ### Initialization and sequencing
 
@@ -51,35 +51,35 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 | Build systems (compile → link → test → package) | ✅ | Dependency graph maps directly; `validate()` catches cycles at construction |
 | Fan-out / scatter-gather parallelism | ✅ | `a >> b + c + d >> sink`; first-class in the DSL |
 | Map-reduce (N workers → aggregate) | ✅ | Fan-out N jobs, fan-in to one; structured bindings give handles to all N |
-| Processing items of unknown count at runtime | 🟡 | `emplace()` works at runtime before `run()`; DAG is immutable once execution starts |
-| Dynamic sub-DAG generation (coarse outer DAG drives dynamic inner workloads) | 🟡 | A job function can create and run an inner `Pipeline` via `ScopedExecutor`; inner job count and shape are fully runtime-determined |
+| Processing items of unknown count at runtime | 📝 | `emplace()` works at runtime before `run()`; DAG is immutable once execution starts |
+| Dynamic sub-DAG generation (coarse outer DAG drives dynamic inner workloads) | 📝 | A job function can create and run an inner `Pipeline` via `ScopedExecutor`; inner job count and shape are fully runtime-determined |
 
 ### Event-driven and I/O
 
 | Use case | Fit | Notes |
 |---|---|---|
-| Hardware / ISR / network event dispatch (fire-and-forget) | 🟡 | `add_on_demand()` + `arm()` + `trigger()` -- dispatches immediately; no result awaiting |
+| Hardware / ISR / network event dispatch (fire-and-forget) | 📝 | `add_on_demand()` + `arm()` + `trigger()` -- dispatches immediately; no result awaiting |
 | One pipeline per request (HTTP handler, RPC call) | ✅ | Construct a small pipeline per request; `SequentialExecutor` keeps it stack-local |
-| Streaming / continuous I/O (audio decode, video encode, network receive loop) | 🟡 | `run_until(exec, stop_token)` re-runs the DAG in a loop; pacing is the caller's responsibility |
-| Producer-consumer queues (bounded, multi-consumer) | 🟡 | `add_on_demand()` + `trigger()` dispatches a drainer job on each enqueue; no built-in queue storage |
+| Streaming / continuous I/O (audio decode, video encode, network receive loop) | 📝 | `run_until(exec, stop_token)` re-runs the DAG in a loop; pacing is the caller's responsibility |
+| Producer-consumer queues (bounded, multi-consumer) | 📝 | `add_on_demand()` + `trigger()` dispatches a drainer job on each enqueue; no built-in queue storage |
 
 ### Long-running services and daemons
 
 | Use case | Fit | Notes |
 |---|---|---|
-| Periodic tick tasks at fixed intervals | 🟡 | `add_tick()` + `run_loop()` -- 1 ms granularity; no sub-millisecond cadence |
+| Periodic tick tasks at fixed intervals | 📝 | `add_tick()` + `run_loop()` -- 1 ms granularity; no sub-millisecond cadence |
 | Daemon startup then event loop | ✅ | `run()` for the startup DAG, `run_loop()` for steady-state ticks, `trigger()` for events |
-| Perpetual background worker threads | 🟡 | `run_until(exec, stop_token)` loops `run()` until stopped; combine with `std::jthread` for lifecycle |
+| Perpetual background worker threads | 📝 | `run_until(exec, stop_token)` loops `run()` until stopped; combine with `std::jthread` for lifecycle |
 | Work-stealing thread pools (unbounded runtime queue) | ❌ | DAG topology is defined before execution; not a general task queue |
 
 ### Real-time and embedded
 
 | Use case | Fit | Notes |
 |---|---|---|
-| RTOS task scheduling (FreeRTOS, ESP32) | 🟡 | `FreeRtosExecutor` available; `core()` and `priority()` map to `xTaskCreatePinnedToCore`; no preemption |
-| Fixed-rate game / simulation update (update → physics → render) | 🟡 | DAG-per-frame works; overhead is 220--500 ns for small graphs; re-run support confirmed |
-| Hard real-time deadlines (< 10 µs response) | 🟡 | `SequentialExecutor` gives deterministic sub-microsecond dispatch; `DesktopExecutor` has OS scheduling jitter |
-| ISR-safe, zero-allocation dispatch | 🟡 | Allocations happen at construction (`emplace`), not at dispatch; `run()` itself is allocation-free after the DAG is built |
+| RTOS task scheduling (FreeRTOS, ESP32) | 📝 | `FreeRtosExecutor` available; `core()` and `priority()` map to `xTaskCreatePinnedToCore`; no preemption |
+| Fixed-rate game / simulation update (update → physics → render) | 📝 | DAG-per-frame works; overhead is 220--500 ns for small graphs; re-run support confirmed |
+| Hard real-time deadlines (< 10 µs response) | 📝 | `SequentialExecutor` gives deterministic sub-microsecond dispatch; `DesktopExecutor` has OS scheduling jitter |
+| ISR-safe, zero-allocation dispatch | 📝 | Allocations happen at construction (`emplace`), not at dispatch; `run()` itself is allocation-free after the DAG is built |
 
 ### Concurrency patterns
 
@@ -87,7 +87,7 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 |---|---|---|
 | Fork-join parallelism | ✅ | `executor.wait_all()` at the end of `run()`; all forks joined before return |
 | Diamond dependency (A → {B ∥ C} → D) | ✅ | Core benchmark topology; 220 ns overhead |
-| Priority-ordered execution | 🟡 | `priority()` hint passed to executor; enforcement depends on the executor backend |
+| Priority-ordered execution | 📝 | `priority()` hint passed to executor; enforcement depends on the executor backend |
 | Cross-process job distribution | ❌ | Single-process only; no serialization, no remote dispatch |
 | Dynamic graph modification after execution starts | ❌ | Outer DAG structure is immutable once `run()` is called; use sub-DAGs via `ScopedExecutor` for dynamic inner workloads |
 
