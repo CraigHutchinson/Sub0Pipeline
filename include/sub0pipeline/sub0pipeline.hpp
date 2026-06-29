@@ -549,6 +549,20 @@ public:
     [[nodiscard]] Job add_on_demand(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
+     * @brief Register a cancellable on-demand job (receives `std::stop_token`).
+     *
+     * Equivalent to `add_on_demand()` but the function is called with the job's
+     * stop token, enabling cooperative cancellation via `Job::cancel()` or
+     * `.timeout()`. Sets `kFlagCancellable` so the watchdog path is used rather
+     * than the hard packaged_task cutoff.
+     *
+     * Primary use case: UDAW FetchQueue drainer that must exit cleanly when
+     * a client session disconnects.
+     */
+    [[nodiscard]] Job add_on_demand(
+        std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
+
+    /**
      * @brief Dispatch an on-demand job via the armed executor.
      *
      * Safe to call from any thread. Requires arm() to have been called first.
@@ -676,5 +690,31 @@ template<typename... Jobs_t>
     (g.add(jobs), ...);
     return g;
 }
+
+// ── Executor factory functions ────────────────────────────────────────────────
+
+/// Returns a `DesktopExecutor` (one `std::thread` per job, no priority ordering).
+/// Defined in `platform/desktop/`.
+std::unique_ptr<IExecutor> makeDesktopExecutor();
+
+/// Returns a `SequentialExecutor` (inline, no threads, deterministic).
+/// Defined in `platform/headless/`.
+std::unique_ptr<IExecutor> makeSequentialExecutor();
+
+/**
+ * @brief Returns a `PriorityExecutor` -- bounded thread pool that dispatches
+ *        higher-priority jobs first.
+ *
+ * Jobs with a larger `.priority()` value are started before lower-priority
+ * jobs that are still queued. Running jobs are not preempted.
+ *
+ * Typical UDAW usage: blocking fetches (.priority(10)) preempt prefetch
+ * hints (.priority(5)) when the thread pool is under load.
+ *
+ * @param threadCount  Worker thread count. 0 = `hardware_concurrency()`.
+ *
+ * Defined in `platform/priority/`.
+ */
+std::unique_ptr<IExecutor> makePriorityExecutor(unsigned int threadCount = 0);
 
 } // namespace sub0pipeline

@@ -13,6 +13,7 @@ option(SUB0PIPELINE_BUILD_TESTING  "Build unit-tests"   ON)
 option(SUB0PIPELINE_BUILD_EXAMPLES "Build examples"     OFF)
 option(SUB0PIPELINE_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(SUB0PIPELINE_PLATFORM_DESKTOP  "Build DesktopExecutor (std::thread)" ON)
+option(SUB0PIPELINE_PLATFORM_PRIORITY "Build PriorityExecutor (bounded pool, priority queue)" ON)
 
 if(SUB0PIPELINE_BUILD_TESTING AND NOT IS_SUBPROJECT)
     enable_testing()
@@ -47,6 +48,10 @@ target_include_directories(Sub0Pipeline
 
 if(SUB0PIPELINE_PLATFORM_DESKTOP)
     add_subdirectory(platform/desktop)
+endif()
+
+if(SUB0PIPELINE_PLATFORM_PRIORITY)
+    add_subdirectory(platform/priority)
 endif()
 
 add_subdirectory(platform/headless)

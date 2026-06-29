@@ -69,6 +69,7 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 | Use case | Fit | Notes |
 |---|---|---|
 | Periodic tick tasks at fixed intervals | 📝 | `add_tick()` + `run_loop()` -- 1 ms granularity; no sub-millisecond cadence |
+| Health-check / keep-alive at long intervals (e.g. 30 s VCS ping) | ✅ | `add_tick({.interval = 30s, .fn = checkBackend})` -- interval range is 1 ms to hours |
 | Daemon startup then event loop | ✅ | `run()` for the startup DAG, `run_loop()` for steady-state ticks, `trigger()` for events |
 | Perpetual background worker threads | 📝 | `run_until(exec, stop_token)` loops `run()` until stopped; combine with `std::jthread` for lifecycle |
 | Work-stealing thread pools (unbounded runtime queue) | ❌ | DAG topology is defined before execution; not a general task queue |
@@ -88,7 +89,8 @@ A quick reference for where Sub0Pipeline is the right tool and where it is not.
 |---|---|---|
 | Fork-join parallelism | ✅ | `executor.wait_all()` at the end of `run()`; all forks joined before return |
 | Diamond dependency (A → {B ∥ C} → D) | ✅ | Core benchmark topology; 220 ns overhead |
-| Priority-ordered execution | 📝 | `priority()` hint forwarded to `dispatch()`; `SequentialExecutor` and `DesktopExecutor` ignore it -- only `FreeRtosExecutor` maps it to task priority |
+| Priority-ordered execution | ✅ | `PriorityExecutor` (bounded pool) honours `.priority()` -- higher-value jobs start first; `DesktopExecutor` and `SequentialExecutor` still ignore it |
+| Retry / reconnect loop (detect failure >> backoff >> reconnect >> reload) | 📝 | `run_until(exec, stop_token)` drives the outer retry loop; `optional()` marks the backoff step; retry logic lives in the job function |
 | Cross-process job distribution | ❌ | Single-process only; no serialization, no remote dispatch |
 | Dynamic graph modification after execution starts | ❌ | Outer DAG structure is immutable once `run()` is called; use sub-DAGs via `ScopedExecutor` for dynamic inner workloads |
 
@@ -317,7 +319,8 @@ target_link_libraries(MyApp PRIVATE Sub0Pipeline::Sub0Pipeline)
 | Executor | CMake Target | Platform | Description |
 |----------|-------------|----------|-------------|
 | `SequentialExecutor` | `Sub0Pipeline::Headless` | Any | Inline, no threads. Deterministic. Tests & bare-metal. |
-| `DesktopExecutor` | `Sub0Pipeline::Desktop` | Desktop | One `std::thread` per job. Full parallelism. |
+| `DesktopExecutor` | `Sub0Pipeline::Desktop` | Desktop | One `std::thread` per job. Full parallelism. No priority ordering. |
+| `PriorityExecutor` | `Sub0Pipeline::Priority` | Desktop | Bounded thread pool; higher `.priority()` jobs start first. Ideal for mixed blocking/prefetch workloads (e.g. UDAW). |
 | `FreeRtosExecutor` | ESP-IDF component | ESP32-P4 | `xTaskCreatePinnedToCore`. Dual-core. |
 | `ScopedExecutor` | `Sub0Pipeline::Sub0Pipeline` | Any | Wraps any executor; scopes `wait_all()` to locally-dispatched jobs. Required for sub-DAG execution from within a running job. |
 

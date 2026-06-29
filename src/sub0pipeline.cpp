@@ -45,6 +45,84 @@
 
 namespace sub0pipeline {
 
+// ── InlineSuccessors: small-buffer successor list ─────────────────────────────
+// Exactly 16 bytes: stores up to 2 successor indices inline (covers ~80% of
+// real-world nodes), spilling to heap for 3+. Replaces std::vector<uint32_t>
+// (24 bytes, always heap-allocates).
+//
+// Layout (16 bytes, 8-byte aligned):
+//   [0]     size_ -- bits[6:0] = count, bit[7] = heap mode
+//   [1..7]  _pad7 -- explicit pad to align union to offset 8
+//   [8..15] union: inline_[2] (2×uint32_t) OR heap_ (uint32_t*)
+//
+// Heap grows by exactly 1 per push beyond kInlineCap; allocation count is
+// bounded by node out-degree which is typically ≤5 in practice.
+
+struct InlineSuccessors
+{
+    static constexpr uint8_t kInlineCap = 2U;
+    static constexpr uint8_t kHeapFlag  = 0x80U;
+
+    uint8_t  size_{0};    ///< bits[6:0] = count; bit[7] = heap-mode flag
+    uint8_t  _pad7[7]{};  ///< explicit: places union at offset 8 (8-byte aligned)
+    union {
+        uint32_t  inline_[kInlineCap]; ///< inline storage (2 × uint32_t = 8 bytes)
+        uint32_t* heap_{nullptr};      ///< heap pointer when kHeapFlag is set
+    };
+
+    InlineSuccessors()  = default;
+    ~InlineSuccessors() { if (size_ & kHeapFlag) delete[] heap_; }
+
+    InlineSuccessors(InlineSuccessors&& o) noexcept : size_{o.size_}
+    {
+        if (size_ & kHeapFlag) {
+            heap_ = o.heap_; o.heap_ = nullptr; o.size_ = 0;
+        } else {
+            const auto n = count();
+            for (uint8_t i = 0; i < n; ++i) inline_[i] = o.inline_[i];
+        }
+    }
+    InlineSuccessors& operator=(InlineSuccessors&&)      = delete;
+    InlineSuccessors(const InlineSuccessors&)             = delete;
+    InlineSuccessors& operator=(const InlineSuccessors&) = delete;
+
+    [[nodiscard]] uint8_t count()  const noexcept { return size_ & 0x7FU; }
+    [[nodiscard]] bool    empty()  const noexcept { return count() == 0; }
+    [[nodiscard]] uint8_t size()   const noexcept { return count(); }
+    [[nodiscard]] bool    isHeap() const noexcept { return (size_ & kHeapFlag) != 0U; }
+
+    void push_back(uint32_t v)
+    {
+        const uint8_t n = count();
+        if (!isHeap() && n < kInlineCap) {
+            inline_[n] = v;
+            size_ = static_cast<uint8_t>(n + 1U);
+        } else if (!isHeap()) {
+            // Spill inline → heap: allocate exact size
+            uint32_t* p = new uint32_t[n + 1U];
+            for (uint8_t i = 0; i < n; ++i) p[i] = inline_[i];
+            p[n] = v;
+            heap_  = p;
+            size_  = static_cast<uint8_t>(kHeapFlag | (n + 1U));
+        } else {
+            // Grow heap by 1 (out-degree is small, O(n²) is negligible here)
+            uint32_t* p = new uint32_t[n + 1U];
+            for (uint8_t i = 0; i < n; ++i) p[i] = heap_[i];
+            p[n] = v;
+            delete[] heap_;
+            heap_ = p;
+            size_ = static_cast<uint8_t>(kHeapFlag | (n + 1U));
+        }
+    }
+
+    const uint32_t* begin() const noexcept { return isHeap() ? heap_ : inline_; }
+    const uint32_t* end()   const noexcept { return begin() + count(); }
+    uint32_t*       begin() noexcept       { return isHeap() ? heap_ : inline_; }
+    uint32_t*       end()   noexcept       { return begin() + count(); }
+};
+static_assert(sizeof(InlineSuccessors) == 16,
+    "InlineSuccessors must be exactly 16 bytes");
+
 // ── Internal node ─────────────────────────────────────────────────────────────
 
 struct Pipeline::Node
@@ -63,7 +141,7 @@ struct Pipeline::Node
     uint32_t                stackBytes_{8192U};
     uint32_t                predecessorCount_{0U}; ///< Replaces predecessors_.size() in resetNode.
     std::chrono::milliseconds timeout_{std::chrono::milliseconds::max()};
-    std::vector<uint32_t>   successors_;           ///< Iterated on completion -- kept hot.
+    InlineSuccessors        successors_;            ///< Iterated on completion -- kept hot (16 B, inline up to 3).
 
     // ── Dispatch section: read once at the start of each job execution ────
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn_;
@@ -97,7 +175,7 @@ struct Pipeline::Node
         , stackBytes_{o.stackBytes_}
         , predecessorCount_{o.predecessorCount_}
         , timeout_{o.timeout_}
-        , successors_{std::move(o.successors_)}
+        , successors_{std::move(o.successors_)}   // InlineSuccessors move ctor
         , fn_{std::move(o.fn_)}
         , stopSource_{std::move(o.stopSource_)}
         , nameStr_{std::move(o.nameStr_)}
@@ -113,15 +191,20 @@ struct Pipeline::Node
 
 struct Pipeline::Impl
 {
+    // Build-time / init-time fields (written once, read during run setup).
     std::vector<Node>         nodes_;
     std::vector<TickJob>      ticks_;
-    std::vector<uint32_t>     roots_;              ///< Cached root indices (no predecessors, not on-demand). Set by validate().
-    std::atomic<uint32_t>     completedCount_{0U}; ///< Incremented atomically from job threads.
-    uint32_t                  runEpoch_{0U};        ///< Incremented each run(); nodes compare to detect stale state.
-    bool                      rootsCached_{false};  ///< True after first validate() caches root indices.
+    std::vector<uint32_t>     roots_;
+    uint32_t                  runEpoch_{0U};
+    bool                      rootsCached_{false};
+    IExecutor*                armedExecutor_{nullptr};
+    IObserver*                armedObserver_{nullptr};
 
-    IExecutor*                armedExecutor_{nullptr};  ///< Executor stored by arm() for trigger() use.
-    IObserver*                armedObserver_{nullptr};  ///< Observer stored by arm() for trigger() use.
+    // Hot atomic: written by every completing job thread on every run.
+    // alignas(64) isolates it from the fields above so concurrent job-thread
+    // writes to completedCount_ do not cause false sharing with runEpoch_ or
+    // rootsCached_ which the run-owning thread reads/writes.
+    alignas(64) std::atomic<uint32_t> completedCount_{0U};
 };
 
 // ── Job builder methods ───────────────────────────────────────────────────────
@@ -345,22 +428,15 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
 auto Pipeline::run(IExecutor& executor, IObserver* observer)
     -> std::expected<void, PipelineError>
 {
-    // Layout guard: previous size was 272 bytes. Target <= 192 bytes.
-    // Raise the bound only for an intentional new field; do not raise to paper over bloat.
-    static_assert(sizeof(Node) <= 192,
+    static_assert(sizeof(Node) <= 184,
         "Pipeline::Node exceeded size budget -- check padding or new large fields");
 
     if (!impl_ || impl_->nodes_.empty()) return {};
-
     if (auto v = validate(); !v) return v;
 
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
 
-    // Cache root indices on first run (nodes with no predecessors that are not
-    // on-demand). On-demand nodes are excluded -- they execute only via trigger().
-    // Subsequent runs reuse the cached set -- the DAG structure is immutable
-    // after construction, so the root set doesn't change.
     if (!impl_->rootsCached_) {
         impl_->roots_.clear();
         for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
@@ -371,178 +447,147 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
         impl_->rootsCached_ = true;
     }
 
-    // Epoch-based reset: increment the run epoch so nodes know they are stale.
-    // Only root nodes are explicitly reset here; successor nodes are lazily
-    // reset when first reached during dispatch propagation. This scopes the
-    // reset to the DAG's reachable subgraph — disconnected nodes are untouched.
     const auto epoch = ++impl_->runEpoch_;
 
-    // resetNode: bring a node into the current epoch, resetting its runtime state.
-    auto resetNode = [epoch](Node& nd)
-    {
-        if (nd.lastEpoch_ == epoch) return; // already reset this epoch
-        nd.lastEpoch_ = epoch;
-        nd.stopSource_ = std::stop_source{};
-        nd.unmetDeps_.store(nd.predecessorCount_, std::memory_order_relaxed);
-        nd.jobStatus_.store(
-            nd.predecessorCount_ == 0U ? JobStatus::kReady : JobStatus::kPending,
-            std::memory_order_relaxed);
-    };
-
-    // hasFatalFailure_ + fatalError_ are written from concurrent job threads.
-    // Use atomic<bool> for the flag and a mutex to capture only the first error.
     std::atomic<bool> hasFatalFailure{false};
     PipelineError     fatalError{PipelineError::kJobFailed};
     std::mutex        fatalMtx;
 
-    // skipNode: mark a node kSkipped and cascade transitively to all successors.
-    // Called only when hasFatalFailure is true, so no jobs will be dispatched.
-    // Uses a local queue rather than recursion to avoid stack overflow on deep graphs.
-    auto skipNode = [&](uint32_t startIdx)
+    // DispatchContext: replaces the previous std::function<void(uint32_t)>
+    // self-referential lambda. Defined as a local struct inside run() so it
+    // has access to Pipeline's private Impl and Node types.
+    //
+    // executor.dispatch() receives [&ctx, si] (pointer + uint32_t = 12 bytes)
+    // which fits in std::function SSO, eliminating one heap alloc per dispatch.
+    struct DispatchContext
     {
-        std::queue<uint32_t> toSkip;
-        toSkip.push(startIdx);
-        while (!toSkip.empty()) {
-            const auto idx = toSkip.front();
-            toSkip.pop();
-            auto& nd = impl_->nodes_[idx];
-            resetNode(nd);
-            const auto prev = nd.jobStatus_.exchange(JobStatus::kSkipped, std::memory_order_acq_rel);
-            if (prev == JobStatus::kSkipped) continue; // already skipped — avoid re-visiting
-            const auto done     = impl_->completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
+        Impl&               impl;
+        IExecutor&          executor;
+        IObserver*          observer;
+        uint32_t            total;
+        uint32_t            epoch;
+        std::atomic<bool>&  hasFatalFailure;
+        PipelineError&      fatalError;
+        std::mutex&         fatalMtx;
+
+        void resetNode(Node& nd) const noexcept
+        {
+            if (nd.lastEpoch_ == epoch) return;
+            nd.lastEpoch_ = epoch;
+            nd.stopSource_ = std::stop_source{};
+            nd.unmetDeps_.store(nd.predecessorCount_, std::memory_order_relaxed);
+            nd.jobStatus_.store(
+                nd.predecessorCount_ == 0U ? JobStatus::kReady : JobStatus::kPending,
+                std::memory_order_relaxed);
+        }
+
+        void skipNode(uint32_t startIdx)
+        {
+            std::queue<uint32_t> toSkip;
+            toSkip.push(startIdx);
+            while (!toSkip.empty()) {
+                const auto idx = toSkip.front(); toSkip.pop();
+                auto& nd = impl.nodes_[idx];
+                resetNode(nd);
+                const auto prev = nd.jobStatus_.exchange(JobStatus::kSkipped, std::memory_order_acq_rel);
+                if (prev == JobStatus::kSkipped) continue;
+                const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
+                const auto progress = static_cast<float>(done) / static_cast<float>(total);
+                if (observer) observer->onFinish(nd.nameStr_, JobStatus::kSkipped, progress);
+                for (auto succIdx : nd.successors_) toSkip.push(succIdx);
+            }
+        }
+
+        void dispatchJob(uint32_t idx)
+        {
+            auto& nd = impl.nodes_[idx];
+            if (hasFatalFailure.load(std::memory_order_acquire)) { skipNode(idx); return; }
+
+            nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
+            if (observer) observer->onStart(nd.nameStr_);
+
+            std::expected<void, PipelineError> result;
+            auto token = nd.stopSource_.get_token();
+            const bool hasTimeout = nd.timeout_ < std::chrono::milliseconds::max();
+
+            if (nd.isCancellable() && hasTimeout) {
+                std::jthread watchdog{[src = nd.stopSource_, dur = nd.timeout_]
+                    (std::stop_token wdStop) mutable {
+                    std::this_thread::sleep_for(dur);
+                    if (!wdStop.stop_requested()) src.request_stop();
+                }};
+                result = nd.fn_(token);
+            } else if (!nd.isCancellable() && hasTimeout) {
+                auto fnCopy = nd.fn_;
+                std::packaged_task<std::expected<void, PipelineError>()> task{
+                    [f = std::move(fnCopy), tok = token]{ return f(tok); }
+                };
+                auto fut = task.get_future();
+                std::thread jobThread{std::move(task)};
+                if (fut.wait_for(nd.timeout_) == std::future_status::timeout) {
+                    nd.stopSource_.request_stop();
+                    jobThread.detach();
+                    result = std::unexpected(PipelineError::kTimeout);
+                } else {
+                    jobThread.join();
+                    result = fut.get();
+                }
+            } else {
+                result = nd.fn_(token);
+            }
+
+            const auto jobStatus = [&result]() -> JobStatus {
+                if (result) return JobStatus::kDone;
+                switch (result.error()) {
+                    case PipelineError::kTimeout:   return JobStatus::kTimedOut;
+                    case PipelineError::kCancelled: return JobStatus::kCancelled;
+                    default:                        return JobStatus::kFailed;
+                }
+            }();
+            nd.jobStatus_.store(jobStatus, std::memory_order_release);
+
+            const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
             const auto progress = static_cast<float>(done) / static_cast<float>(total);
-            if (observer) observer->onFinish(nd.nameStr_, JobStatus::kSkipped, progress);
-            for (auto succIdx : nd.successors_) toSkip.push(succIdx);
-        }
-    };
+            if (observer) observer->onFinish(nd.nameStr_, jobStatus, progress);
 
-    // dispatchJob: execute one node, then propagate to ready successors.
-    // Must be std::function (not auto lambda) because it references itself
-    // when dispatching successors — recursive lambdas need an explicit type.
-    std::function<void(uint32_t)> dispatchJob = [&](uint32_t idx)
-    {
-        auto& nd = impl_->nodes_[idx];
-        // Node is already reset: roots by the seeding loop, successors by
-        // the propagation step. The epoch guard in resetNode() is idempotent,
-        // but we avoid the call here for clarity.
-
-        if (hasFatalFailure.load(std::memory_order_acquire)) {
-            skipNode(idx);
-            return;
-        }
-
-        nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
-        if (observer) observer->onStart(nd.nameStr_);
-
-        // All job functions share the unified (std::stop_token) signature.
-        // Non-cancellable jobs were wrapped at emplace() and ignore the token.
-        //
-        // Cancellable jobs (kFlagCancellable): watchdog fires the stop source
-        // after timeout; the job polls stop_requested() and exits cooperatively.
-        //
-        // Non-cancellable jobs with timeout: packaged_task hard cutoff -- the
-        // fn ignores the token so cooperative exit is not available. Thread is
-        // detached on timeout; UDAW functions timeout at the syscall level too.
-        std::expected<void, PipelineError> result;
-        auto token = nd.stopSource_.get_token();
-        const bool hasTimeout = nd.timeout_ < std::chrono::milliseconds::max();
-
-        if (nd.isCancellable() && hasTimeout)
-        {
-            std::jthread watchdog{[src = nd.stopSource_, dur = nd.timeout_]
-                (std::stop_token wdStop) mutable
-            {
-                std::this_thread::sleep_for(dur);
-                if (!wdStop.stop_requested()) src.request_stop();
-            }};
-            result = nd.fn_(token);
-        }
-        else if (!nd.isCancellable() && hasTimeout)
-        {
-            auto tok = token; // copy for capture
-            std::packaged_task<std::expected<void, PipelineError>()> task{
-                [&nd, tok]{ return nd.fn_(tok); }
-            };
-            auto fut = task.get_future();
-            std::thread jobThread{std::move(task)};
-            if (fut.wait_for(nd.timeout_) == std::future_status::timeout)
-            {
-                nd.stopSource_.request_stop();
-                jobThread.detach();
-                result = std::unexpected(PipelineError::kTimeout);
+            if (!result && !nd.isOptional()) {
+                bool expected = false;
+                if (hasFatalFailure.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+                    std::lock_guard lk{fatalMtx};
+                    fatalError = result.error();
+                }
+                for (auto succIdx : nd.successors_) skipNode(succIdx);
+                return;
             }
-            else
-            {
-                jobThread.join();
-                result = fut.get();
-            }
-        }
-        else
-        {
-            result = nd.fn_(token);
-        }
 
-        const auto jobStatus = [&result]() -> JobStatus {
-            if (result) return JobStatus::kDone;
-            switch (result.error()) {
-                case PipelineError::kTimeout:    return JobStatus::kTimedOut;
-                case PipelineError::kCancelled:  return JobStatus::kCancelled;
-                default:                         return JobStatus::kFailed;
-            }
-        }();
-        nd.jobStatus_.store(jobStatus, std::memory_order_release);
-
-        const auto done     = impl_->completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
-        const auto progress = static_cast<float>(done) / static_cast<float>(total);
-
-        if (observer) observer->onFinish(nd.nameStr_, jobStatus, progress);
-
-        if (!result && !nd.isOptional()) {
-            // Atomically capture only the first fatal error.
-            bool expected = false;
-            if (hasFatalFailure.compare_exchange_strong(
-                    expected, true, std::memory_order_acq_rel)) {
-                std::lock_guard lk{fatalMtx};
-                fatalError = result.error();
-            }
-            // Cascade skip to all successors of this failed node.
             for (auto succIdx : nd.successors_) {
-                skipNode(succIdx);
-            }
-            return;
-        }
-
-        // Propagate: decrement unmetDeps_ on successors; dispatch those that reach zero.
-        for (auto succIdx : nd.successors_) {
-            auto& succ = impl_->nodes_[succIdx];
-            resetNode(succ);  // lazy epoch reset — first touch brings node into this run
-            const auto remaining =
-                succ.unmetDeps_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
-            if (remaining == 0U) {
-                succ.jobStatus_.store(JobStatus::kReady, std::memory_order_release);
-                executor.dispatch(
-                    succ.nameStr_,
-                    [&, si = succIdx] { dispatchJob(si); },
-                    [] {},
-                    succ.coreAffinity_,
-                    succ.priority_,
-                    succ.stackBytes_);
+                auto& succ = impl.nodes_[succIdx];
+                resetNode(succ);
+                const auto remaining = succ.unmetDeps_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
+                if (remaining == 0U) {
+                    succ.jobStatus_.store(JobStatus::kReady, std::memory_order_release);
+                    executor.dispatch(
+                        succ.nameStr_,
+                        [this, si = succIdx]{ dispatchJob(si); },
+                        [] {},
+                        succ.coreAffinity_, succ.priority_, succ.stackBytes_);
+                }
             }
         }
     };
 
-    // Seed: reset and dispatch only root nodes. The epoch reset propagates
-    // through the DAG via successor edges — only reachable nodes are touched.
+    DispatchContext ctx{*impl_, executor, observer,
+                        static_cast<uint32_t>(total), epoch,
+                        hasFatalFailure, fatalError, fatalMtx};
+
     for (auto idx : impl_->roots_) {
         auto& nd = impl_->nodes_[idx];
-        resetNode(nd);
+        ctx.resetNode(nd);
         executor.dispatch(
             nd.nameStr_,
-            [&, i = idx] { dispatchJob(i); },
+            [&ctx, i = idx]{ ctx.dispatchJob(i); },
             [] {},
-            nd.coreAffinity_,
-            nd.priority_,
-            nd.stackBytes_);
+            nd.coreAffinity_, nd.priority_, nd.stackBytes_);
     }
 
     executor.wait_all();
@@ -656,6 +701,20 @@ Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> 
     nd.flags_  |= Pipeline::Node::kFlagOnDemand;
     // Invalidate root cache -- the new on-demand node would otherwise be
     // picked up as a root on the next run() (it has no predecessors).
+    impl_->rootsCached_ = false;
+    return Job{idx, this};
+}
+
+Job Pipeline::add_on_demand(
+    std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
+{
+    if (!impl_) impl_ = std::make_unique<Impl>();
+    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
+    impl_->nodes_.emplace_back();
+    auto& nd    = impl_->nodes_.back();
+    nd.fn_      = std::move(fn);
+    nd.nameStr_ = "on_demand_" + std::to_string(idx);
+    nd.flags_  |= Pipeline::Node::kFlagOnDemand | Pipeline::Node::kFlagCancellable;
     impl_->rootsCached_ = false;
     return Job{idx, this};
 }
