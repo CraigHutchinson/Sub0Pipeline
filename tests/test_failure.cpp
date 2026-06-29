@@ -126,3 +126,141 @@ TEST_CASE("Failure: multiple required failures — first error returned")
     CHECK((result.error() == PipelineError::kJobFailed
         || result.error() == PipelineError::kTimeout));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Complex error propagation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("Pipeline: status() is kFailed for optional failed job")
+{
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+    auto a = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("A").optional();
+    (void)pipeline.run(exec);
+    CHECK(pipeline.status(a) == JobStatus::kFailed);
+}
+
+TEST_CASE("Pipeline: required failure cascades to all subsequent roots (sequential)")
+{
+    // Two independent chains: A(fail)->B and C(fail)->D
+    // With sequential executor: A runs first and fails, setting hasFatalFailure.
+    // C (also a root) is then skipped by the fatal failure check, not executed.
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto a = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("A");
+    auto b = pipeline.emplace([] {}).name("B");
+    b.succeed(a);
+
+    auto c = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("C");
+    auto d = pipeline.emplace([] {}).name("D");
+    d.succeed(c);
+
+    auto result = pipeline.run(exec);
+    CHECK_FALSE(result.has_value());
+
+    // A fails, B is skipped due to predecessor failure
+    CHECK(pipeline.status(a) == JobStatus::kFailed);
+    CHECK(pipeline.status(b) == JobStatus::kSkipped);
+    // C and D are skipped because hasFatalFailure was already set by A
+    CHECK(pipeline.status(c) == JobStatus::kSkipped);
+    CHECK(pipeline.status(d) == JobStatus::kSkipped);
+}
+
+TEST_CASE("Pipeline: failure in middle of diamond")
+{
+    //   A -> {B(fail), C} -> D
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto a = pipeline.emplace([] {}).name("A");
+    auto b = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("B");
+    auto c = pipeline.emplace([] {}).name("C");
+    auto d = pipeline.emplace([] {}).name("D");
+
+    a.precede(b, c);
+    d.succeed(b, c);
+
+    auto result = pipeline.run(exec);
+    CHECK_FALSE(result.has_value());
+    CHECK(pipeline.status(a) == JobStatus::kDone);
+    CHECK(pipeline.status(b) == JobStatus::kFailed);
+    // D must be skipped since required predecessor B failed
+    CHECK(pipeline.status(d) == JobStatus::kSkipped);
+}
+
+TEST_CASE("Pipeline: optional job in critical path -- required successor still runs")
+{
+    //   A (required) -> B (optional, fails) -> C (required)
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+
+    auto a = pipeline.emplace([] {}).name("A");
+    auto b = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    }).name("B").optional();
+    auto c = pipeline.emplace([] {}).name("C");
+    a.precede(b);
+    b.precede(c);
+
+    auto result = pipeline.run(exec);
+    REQUIRE(result.has_value());
+    CHECK(pipeline.status(a) == JobStatus::kDone);
+    CHECK(pipeline.status(b) == JobStatus::kFailed);
+    CHECK(pipeline.status(c) == JobStatus::kDone);
+
+    // Re-run: verify C still runs after optional B fails again
+    auto r2 = pipeline.run(exec);
+    REQUIRE(r2.has_value());
+    CHECK(pipeline.status(c) == JobStatus::kDone);
+}
+
+TEST_CASE("Pipeline: double-diamond with failure in first diamond, recovery on re-run")
+{
+    //   A -> {B(fail), C} -> D -> {E, F} -> G
+    Pipeline          pipeline;
+    RecordingExecutor exec;
+    bool              shouldFail = true;
+
+    auto a = pipeline.emplace([] {}).name("A");
+    auto b = pipeline.emplace([&]() -> std::expected<void, PipelineError> {
+        if (shouldFail) return std::unexpected(PipelineError::kJobFailed);
+        return {};
+    }).name("B");
+    auto c = pipeline.emplace([] {}).name("C");
+    auto d = pipeline.emplace([] {}).name("D");
+    auto e = pipeline.emplace([] {}).name("E");
+    auto f = pipeline.emplace([] {}).name("F");
+    auto g = pipeline.emplace([] {}).name("G");
+
+    a.precede(b, c);
+    d.succeed(b, c);
+    d.precede(e, f);
+    g.succeed(e, f);
+
+    // Run 1: B fails -> D,E,F,G all skipped
+    auto r1 = pipeline.run(exec);
+    CHECK_FALSE(r1.has_value());
+    CHECK(pipeline.status(b) == JobStatus::kFailed);
+    CHECK(pipeline.status(d) == JobStatus::kSkipped);
+    CHECK(pipeline.status(g) == JobStatus::kSkipped);
+
+    // Run 2: B succeeds -> entire graph completes
+    shouldFail = false;
+    exec.clear();
+    auto r2 = pipeline.run(exec);
+    REQUIRE(r2.has_value());
+
+    for (auto j : {a, b, c, d, e, f, g})
+        CHECK(pipeline.status(j) == JobStatus::kDone);
+    CHECK(exec.order().front() == "A");
+    CHECK(exec.order().back() == "G");
+}

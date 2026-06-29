@@ -4,6 +4,7 @@
 // Uses a RecordingExecutor (sequential, inline) for deterministic results.
 
 #include <sub0pipeline/sub0pipeline.hpp>
+#include "test_helpers.hpp"
 #include "doctest.h"
 
 #include <algorithm>
@@ -12,35 +13,6 @@
 
 using namespace sub0pipeline;
 using namespace std::chrono_literals;
-
-// ── Test helpers ──────────────────────────────────────────────────────────────
-
-/// Sequential executor that records dispatch order before execution.
-class RecordingExecutor final : public IExecutor
-{
-public:
-    void dispatch(
-        std::string_view              name,
-        std::function<void()>         fn,
-        std::function<void()>         onComplete,
-        int                           /*core*/,
-        uint8_t                       /*priority*/,
-        uint32_t                      /*stack_bytes*/) override
-    {
-        order_.emplace_back(name);  // capture BEFORE execution
-        fn();
-        if (onComplete) onComplete();
-    }
-
-    void wait_all() override {}
-    [[nodiscard]] int concurrency() const noexcept override { return 1; }
-
-    [[nodiscard]] const std::vector<std::string>& order() const { return order_; }
-    void clear() { order_.clear(); }
-
-private:
-    std::vector<std::string> order_;
-};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Construction
@@ -112,7 +84,7 @@ TEST_CASE("Pipeline: size tracks emplace count")
 // Dependency ordering
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("Pipeline: linear chain runs in order A→B→C")
+TEST_CASE("Pipeline: linear chain runs in order A->B->C")
 {
     Pipeline          pipeline;
     RecordingExecutor exec;
@@ -132,7 +104,7 @@ TEST_CASE("Pipeline: linear chain runs in order A→B→C")
     CHECK(order[2] == "C");
 }
 
-TEST_CASE("Pipeline: diamond dependency — A first, D last")
+TEST_CASE("Pipeline: diamond dependency -- A first, D last")
 {
     //    A
     //   / \
@@ -175,7 +147,7 @@ TEST_CASE("Pipeline: independent jobs all run")
     CHECK(cRan);
 }
 
-TEST_CASE("Pipeline: precede chaining — A runs first")
+TEST_CASE("Pipeline: precede chaining -- A runs first")
 {
     Pipeline          pipeline;
     RecordingExecutor exec;
@@ -183,13 +155,13 @@ TEST_CASE("Pipeline: precede chaining — A runs first")
     auto a = pipeline.emplace([] {}).name("A");
     auto b = pipeline.emplace([] {}).name("B");
     auto c = pipeline.emplace([] {}).name("C");
-    a.precede(b).precede(c);   // A → B, A → C (fan-out from A)
+    a.precede(b).precede(c);   // A -> B, A -> C (fan-out from A)
 
     (void)pipeline.run(exec);
     CHECK(exec.order()[0] == "A");
 }
 
-TEST_CASE("Pipeline: succeed chaining — C after A and B")
+TEST_CASE("Pipeline: succeed chaining -- C after A and B")
 {
     Pipeline          pipeline;
     RecordingExecutor exec;
@@ -283,7 +255,7 @@ TEST_CASE("Pipeline: dump_text does not crash")
     auto a = pipeline.emplace([] {}).name("A");
     auto b = pipeline.emplace([] {}).name("B");
     b.succeed(a);
-    // Output goes to stdout — just verify no crash.
+    // Output goes to stdout -- just verify no crash.
     pipeline.dump_text();
 }
 
@@ -310,365 +282,11 @@ TEST_CASE("Pipeline: status() is kDone after successful run()")
     CHECK(pipeline.status(b) == JobStatus::kDone);
 }
 
-TEST_CASE("Pipeline: status() is kFailed for optional failed job")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    auto a = pipeline.emplace([]() -> std::expected<void, PipelineError> {
-        return std::unexpected(PipelineError::kJobFailed);
-    }).name("A").optional();
-    (void)pipeline.run(exec);
-    CHECK(pipeline.status(a) == JobStatus::kFailed);
-}
-
 TEST_CASE("Pipeline: invalid job handle returns kPending from status()")
 {
     Pipeline pipeline;
     Job invalid;
     CHECK(pipeline.status(invalid) == JobStatus::kPending);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Re-runnability (epoch-based reset)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-TEST_CASE("Pipeline: run() can be called multiple times")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    auto a = pipeline.emplace([&] { ++counter; }).name("A");
-    auto b = pipeline.emplace([&] { ++counter; }).name("B");
-    b.succeed(a);
-
-    auto r1 = pipeline.run(exec);
-    REQUIRE(r1.has_value());
-    CHECK(counter == 2);
-    CHECK(pipeline.status(a) == JobStatus::kDone);
-    CHECK(pipeline.status(b) == JobStatus::kDone);
-
-    // Second run — same pipeline, counter keeps incrementing
-    auto r2 = pipeline.run(exec);
-    REQUIRE(r2.has_value());
-    CHECK(counter == 4);
-    CHECK(pipeline.status(a) == JobStatus::kDone);
-    CHECK(pipeline.status(b) == JobStatus::kDone);
-
-    // Third run
-    auto r3 = pipeline.run(exec);
-    REQUIRE(r3.has_value());
-    CHECK(counter == 6);
-}
-
-TEST_CASE("Pipeline: re-run preserves correct execution order")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-
-    auto a = pipeline.emplace([] {}).name("A");
-    auto b = pipeline.emplace([] {}).name("B");
-    auto c = pipeline.emplace([] {}).name("C");
-    a.precede(b, c);
-
-    for (int i = 0; i < 3; ++i) {
-        exec.clear();
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(exec.order().front() == "A");
-        CHECK(exec.order().size() == 3U);
-    }
-}
-
-TEST_CASE("Pipeline: re-run diamond graph")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    auto a = pipeline.emplace([&] { ++counter; }).name("A");
-    auto b = pipeline.emplace([&] { ++counter; }).name("B");
-    auto c = pipeline.emplace([&] { ++counter; }).name("C");
-    auto d = pipeline.emplace([&] { ++counter; }).name("D");
-    a.precede(b, c);
-    d.succeed(b, c);
-
-    for (int run = 1; run <= 5; ++run) {
-        exec.clear();
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(counter == run * 4);
-        CHECK(exec.order().front() == "A");
-        CHECK(exec.order().back() == "D");
-    }
-}
-
-TEST_CASE("Pipeline: re-run after failure resets error state")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    bool              shouldFail = true;
-
-    auto a = pipeline.emplace([&]() -> std::expected<void, PipelineError> {
-        if (shouldFail) return std::unexpected(PipelineError::kJobFailed);
-        return {};
-    }).name("A");
-    auto b = pipeline.emplace([] {}).name("B");
-    b.succeed(a);
-
-    // First run: A fails, B is skipped
-    auto r1 = pipeline.run(exec);
-    CHECK_FALSE(r1.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kFailed);
-    CHECK(pipeline.status(b) == JobStatus::kSkipped);
-
-    // Second run: A succeeds this time
-    shouldFail = false;
-    auto r2 = pipeline.run(exec);
-    REQUIRE(r2.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kDone);
-    CHECK(pipeline.status(b) == JobStatus::kDone);
-}
-
-TEST_CASE("Pipeline: re-run single job (simplest case)")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    pipeline.emplace([&] { ++counter; }).name("solo");
-
-    for (int run = 1; run <= 3; ++run) {
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(counter == run);
-    }
-}
-
-TEST_CASE("Pipeline: re-run all-roots (no edges)")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    for (int i = 0; i < 5; ++i)
-        pipeline.emplace([&] { ++counter; }).name("r" + std::to_string(i));
-
-    for (int run = 1; run <= 3; ++run) {
-        exec.clear();
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(counter == run * 5);
-        CHECK(exec.order().size() == 5U);
-    }
-}
-
-TEST_CASE("Pipeline: re-run disconnected subgraphs")
-{
-    // Two independent chains: A→B and C→D
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    auto a = pipeline.emplace([&] { ++counter; }).name("A");
-    auto b = pipeline.emplace([&] { ++counter; }).name("B");
-    auto c = pipeline.emplace([&] { ++counter; }).name("C");
-    auto d = pipeline.emplace([&] { ++counter; }).name("D");
-    b.succeed(a);
-    d.succeed(c);
-
-    for (int run = 1; run <= 3; ++run) {
-        exec.clear();
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(counter == run * 4);
-
-        // Both subgraphs must execute
-        CHECK(pipeline.status(a) == JobStatus::kDone);
-        CHECK(pipeline.status(b) == JobStatus::kDone);
-        CHECK(pipeline.status(c) == JobStatus::kDone);
-        CHECK(pipeline.status(d) == JobStatus::kDone);
-
-        // Ordering within each chain
-        const auto& order = exec.order();
-        auto aPos = std::find(order.begin(), order.end(), "A") - order.begin();
-        auto bPos = std::find(order.begin(), order.end(), "B") - order.begin();
-        auto cPos = std::find(order.begin(), order.end(), "C") - order.begin();
-        auto dPos = std::find(order.begin(), order.end(), "D") - order.begin();
-        CHECK(aPos < bPos);
-        CHECK(cPos < dPos);
-    }
-}
-
-TEST_CASE("Pipeline: re-run deep chain (20 nodes)")
-{
-    constexpr int     cN = 20;
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    std::vector<Job> jobs;
-    jobs.reserve(cN);
-    for (int i = 0; i < cN; ++i) {
-        auto j = pipeline.emplace([&] { ++counter; }).name("j" + std::to_string(i));
-        if (!jobs.empty()) j.succeed(jobs.back());
-        jobs.push_back(j);
-    }
-
-    for (int run = 1; run <= 3; ++run) {
-        exec.clear();
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(counter == run * cN);
-
-        // Must execute in exact linear order
-        const auto& order = exec.order();
-        REQUIRE(order.size() == static_cast<std::size_t>(cN));
-        for (int i = 0; i < cN; ++i)
-            CHECK(order[static_cast<std::size_t>(i)] == "j" + std::to_string(i));
-    }
-}
-
-TEST_CASE("Pipeline: re-run wide fan-out (1 root + many leaves)")
-{
-    constexpr int     cLeaves = 20;
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    auto root = pipeline.emplace([&] { ++counter; }).name("root");
-    for (int i = 0; i < cLeaves; ++i) {
-        pipeline.emplace([&] { ++counter; })
-            .name("leaf_" + std::to_string(i))
-            .succeed(root);
-    }
-
-    for (int run = 1; run <= 3; ++run) {
-        exec.clear();
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(counter == run * (1 + cLeaves));
-        CHECK(exec.order().front() == "root");
-        CHECK(exec.order().size() == static_cast<std::size_t>(1 + cLeaves));
-    }
-}
-
-TEST_CASE("Pipeline: re-run with observer receives callbacks each run")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-
-    auto a = pipeline.emplace([] {}).name("A");
-    auto b = pipeline.emplace([] {}).name("B");
-    b.succeed(a);
-
-    struct CountingObserver final : IObserver {
-        int starts = 0, finishes = 0;
-        void onStart(std::string_view) override { ++starts; }
-        void onFinish(std::string_view, JobStatus, float) override { ++finishes; }
-    } obs;
-
-    // Run 1
-    auto r1 = pipeline.run(exec, &obs);
-    REQUIRE(r1.has_value());
-    CHECK(obs.starts == 2);
-    CHECK(obs.finishes == 2);
-
-    // Run 2 — observer should get callbacks again
-    auto r2 = pipeline.run(exec, &obs);
-    REQUIRE(r2.has_value());
-    CHECK(obs.starts == 4);
-    CHECK(obs.finishes == 4);
-}
-
-TEST_CASE("Pipeline: re-run optional failure then success")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               callCount = 0;
-    bool              shouldFail = true;
-
-    auto a = pipeline.emplace([&]() -> std::expected<void, PipelineError> {
-        ++callCount;
-        if (shouldFail) return std::unexpected(PipelineError::kJobFailed);
-        return {};
-    }).name("A").optional();
-    auto b = pipeline.emplace([&] { ++callCount; }).name("B");
-    b.succeed(a);
-
-    // Run 1: A fails (optional), B still runs
-    auto r1 = pipeline.run(exec);
-    REQUIRE(r1.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kFailed);
-    CHECK(pipeline.status(b) == JobStatus::kDone);
-    CHECK(callCount == 2);
-
-    // Run 2: A succeeds, B still runs
-    shouldFail = false;
-    auto r2 = pipeline.run(exec);
-    REQUIRE(r2.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kDone);
-    CHECK(pipeline.status(b) == JobStatus::kDone);
-    CHECK(callCount == 4);
-}
-
-TEST_CASE("Pipeline: re-run required failure cascade then recovery")
-{
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    bool              shouldFail = true;
-
-    // A (required) → B → C
-    auto a = pipeline.emplace([&]() -> std::expected<void, PipelineError> {
-        if (shouldFail) return std::unexpected(PipelineError::kJobFailed);
-        return {};
-    }).name("A");
-    auto b = pipeline.emplace([] {}).name("B");
-    auto c = pipeline.emplace([] {}).name("C");
-    a.precede(b);
-    b.precede(c);
-
-    // Run 1: A fails → B,C skipped
-    auto r1 = pipeline.run(exec);
-    CHECK_FALSE(r1.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kFailed);
-    CHECK(pipeline.status(b) == JobStatus::kSkipped);
-    CHECK(pipeline.status(c) == JobStatus::kSkipped);
-
-    // Run 2: A succeeds → B,C run normally
-    shouldFail = false;
-    auto r2 = pipeline.run(exec);
-    REQUIRE(r2.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kDone);
-    CHECK(pipeline.status(b) == JobStatus::kDone);
-    CHECK(pipeline.status(c) == JobStatus::kDone);
-}
-
-TEST_CASE("Pipeline: re-run fan-in (many predecessors → one sink)")
-{
-    constexpr int     cN = 10;
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    int               counter = 0;
-
-    std::vector<Job> leaves;
-    for (int i = 0; i < cN; ++i)
-        leaves.push_back(pipeline.emplace([&] { ++counter; }).name("l" + std::to_string(i)));
-
-    auto sink = pipeline.emplace([&] { ++counter; }).name("sink");
-    for (auto& leaf : leaves) sink.succeed(leaf);
-
-    for (int run = 1; run <= 3; ++run) {
-        exec.clear();
-        auto result = pipeline.run(exec);
-        REQUIRE(result.has_value());
-        CHECK(counter == run * (cN + 1));
-        CHECK(exec.order().back() == "sink");
-
-        for (auto& leaf : leaves)
-            CHECK(pipeline.status(leaf) == JobStatus::kDone);
-        CHECK(pipeline.status(sink) == JobStatus::kDone);
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -834,7 +452,7 @@ TEST_CASE("Pipeline: emplace(Spec, Spec) returns tuple for structured bindings")
 
 TEST_CASE("Pipeline: double-diamond (two diamonds joined)")
 {
-    //   A → {B,C} → D → {E,F} → G
+    //   A -> {B,C} -> D -> {E,F} -> G
     Pipeline          pipeline;
     RecordingExecutor exec;
 
@@ -874,7 +492,7 @@ TEST_CASE("Pipeline: double-diamond (two diamonds joined)")
 
 TEST_CASE("Pipeline: W-shape DAG with cross-mesh edges")
 {
-    //   A → {B,C}, {B,C} → D, {A,D} → E
+    //   A -> {B,C}, {B,C} -> D, {A,D} -> E
     Pipeline          pipeline;
     RecordingExecutor exec;
 
@@ -904,9 +522,9 @@ TEST_CASE("Pipeline: W-shape DAG with cross-mesh edges")
     CHECK(pos("D") < pos("E"));
 }
 
-TEST_CASE("Pipeline: hourglass (fan-out → narrow → fan-out)")
+TEST_CASE("Pipeline: hourglass (fan-out -> narrow -> fan-out)")
 {
-    //   root → {L0..L4} → mid → {R0..R4}
+    //   root -> {L0..L4} -> mid -> {R0..R4}
     Pipeline          pipeline;
     RecordingExecutor exec;
 
@@ -1007,311 +625,10 @@ TEST_CASE("Pipeline: large fan-out + fan-in stress (100 nodes)")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Complex error propagation
-// ═══════════════════════════════════════════════════════════════════════════════
-
-TEST_CASE("Pipeline: required failure cascades to all subsequent roots (sequential)")
-{
-    // Two independent chains: A(fail)→B and C(fail)→D
-    // With sequential executor: A runs first and fails, setting hasFatalFailure.
-    // C (also a root) is then skipped by the fatal failure check, not executed.
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-
-    auto a = pipeline.emplace([]() -> std::expected<void, PipelineError> {
-        return std::unexpected(PipelineError::kJobFailed);
-    }).name("A");
-    auto b = pipeline.emplace([] {}).name("B");
-    b.succeed(a);
-
-    auto c = pipeline.emplace([]() -> std::expected<void, PipelineError> {
-        return std::unexpected(PipelineError::kJobFailed);
-    }).name("C");
-    auto d = pipeline.emplace([] {}).name("D");
-    d.succeed(c);
-
-    auto result = pipeline.run(exec);
-    CHECK_FALSE(result.has_value());
-
-    // A fails, B is skipped due to predecessor failure
-    CHECK(pipeline.status(a) == JobStatus::kFailed);
-    CHECK(pipeline.status(b) == JobStatus::kSkipped);
-    // C and D are skipped because hasFatalFailure was already set by A
-    CHECK(pipeline.status(c) == JobStatus::kSkipped);
-    CHECK(pipeline.status(d) == JobStatus::kSkipped);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// On-demand jobs
-// ═══════════════════════════════════════════════════════════════════════════════
-
-TEST_CASE("run_inline: executes pipeline synchronously without an explicit executor")
-{
-    Pipeline pipe;
-    int count = 0;
-    pipe.emplace([&]{ ++count; }).name("a");
-    pipe.emplace([&]{ ++count; }).name("b");
-
-    auto result = pipe.run_inline();
-
-    CHECK(result.has_value());
-    CHECK(count == 2);
-}
-
-TEST_CASE("run_inline: failure propagates correctly")
-{
-    Pipeline pipe;
-    pipe.emplace([]() -> std::expected<void, PipelineError> {
-        return std::unexpected(PipelineError::kJobFailed);
-    }).name("fail");
-
-    auto result = pipe.run_inline();
-    CHECK_FALSE(result.has_value());
-    CHECK(result.error() == PipelineError::kJobFailed);
-}
-
-TEST_CASE("OnDemand: on-demand job does not run during normal run()")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int callCount = 0;
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
-        ++callCount;
-        return {};
-    });
-    od.name("fetch");
-
-    // Normal run() must not execute on-demand jobs.
-    (void)pipe.run(exec);
-
-    CHECK(callCount == 0);
-    CHECK_FALSE(exec.order().end() != std::find(exec.order().begin(), exec.order().end(), "fetch"));
-}
-
-TEST_CASE("OnDemand: trigger() dispatches job via armed executor")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int callCount = 0;
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
-        ++callCount;
-        return {};
-    });
-    od.name("fetch");
-
-    pipe.arm(exec);
-    auto result = pipe.trigger(od);
-
-    CHECK(result.has_value());
-    CHECK(callCount == 1);
-}
-
-TEST_CASE("OnDemand: trigger() can be called multiple times independently")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int callCount = 0;
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
-        ++callCount;
-        return {};
-    });
-
-    pipe.arm(exec);
-    (void)pipe.trigger(od);
-    (void)pipe.trigger(od);
-    (void)pipe.trigger(od);
-
-    CHECK(callCount == 3);
-}
-
-TEST_CASE("OnDemand: trigger() without arm() returns kNotArmed")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    auto od = pipe.add_on_demand([]() -> std::expected<void, PipelineError> {
-        return {};
-    });
-
-    auto result = pipe.trigger(od);
-    CHECK_FALSE(result.has_value());
-    CHECK(result.error() == PipelineError::kNotArmed);
-}
-
-TEST_CASE("OnDemand: trigger() on a non-on-demand job returns kNotOnDemand")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    auto regular = pipe.emplace([]() -> std::expected<void, PipelineError> {
-        return {};
-    });
-    regular.name("regular");
-
-    pipe.arm(exec);
-    auto result = pipe.trigger(regular);
-    CHECK_FALSE(result.has_value());
-    CHECK(result.error() == PipelineError::kNotOnDemand);
-}
-
-TEST_CASE("OnDemand: normal jobs and on-demand jobs coexist -- only normal jobs run via run()")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int normalCount   = 0;
-    int onDemandCount = 0;
-
-    pipe.emplace([&]() -> std::expected<void, PipelineError> {
-        ++normalCount; return {};
-    }).name("normal");
-
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
-        ++onDemandCount; return {};
-    });
-    od.name("on_demand");
-
-    (void)pipe.run(exec);
-
-    CHECK(normalCount   == 1);
-    CHECK(onDemandCount == 0);
-
-    pipe.arm(exec);
-    (void)pipe.trigger(od);
-
-    CHECK(onDemandCount == 1);
-    CHECK(normalCount   == 1);
-}
-
-TEST_CASE("OnDemand: normal jobs and on-demand jobs coexist -- only normal jobs run via run()")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int normalCount   = 0;
-    int onDemandCount = 0;
-
-    pipe.emplace([&]() -> std::expected<void, PipelineError> {
-        ++normalCount; return {};
-    }).name("normal");
-
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
-        ++onDemandCount; return {};
-    });
-    od.name("on_demand");
-
-    (void)pipe.run(exec);
-
-    CHECK(normalCount   == 1);
-    CHECK(onDemandCount == 0);
-
-    pipe.arm(exec);
-    (void)pipe.trigger(od);
-
-    CHECK(onDemandCount == 1);
-    CHECK(normalCount   == 1);
-}
-
-TEST_CASE("Pipeline: failure in middle of diamond")
-{
-    //   A → {B(fail), C} → D
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-
-    auto a = pipeline.emplace([] {}).name("A");
-    auto b = pipeline.emplace([]() -> std::expected<void, PipelineError> {
-        return std::unexpected(PipelineError::kJobFailed);
-    }).name("B");
-    auto c = pipeline.emplace([] {}).name("C");
-    auto d = pipeline.emplace([] {}).name("D");
-
-    a.precede(b, c);
-    d.succeed(b, c);
-
-    auto result = pipeline.run(exec);
-    CHECK_FALSE(result.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kDone);
-    CHECK(pipeline.status(b) == JobStatus::kFailed);
-    // D must be skipped since required predecessor B failed
-    CHECK(pipeline.status(d) == JobStatus::kSkipped);
-}
-
-TEST_CASE("Pipeline: optional job in critical path — required successor still runs")
-{
-    //   A (required) → B (optional, fails) → C (required)
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-
-    auto a = pipeline.emplace([] {}).name("A");
-    auto b = pipeline.emplace([]() -> std::expected<void, PipelineError> {
-        return std::unexpected(PipelineError::kJobFailed);
-    }).name("B").optional();
-    auto c = pipeline.emplace([] {}).name("C");
-    a.precede(b);
-    b.precede(c);
-
-    auto result = pipeline.run(exec);
-    REQUIRE(result.has_value());
-    CHECK(pipeline.status(a) == JobStatus::kDone);
-    CHECK(pipeline.status(b) == JobStatus::kFailed);
-    CHECK(pipeline.status(c) == JobStatus::kDone);
-
-    // Re-run: verify C still runs after optional B fails again
-    auto r2 = pipeline.run(exec);
-    REQUIRE(r2.has_value());
-    CHECK(pipeline.status(c) == JobStatus::kDone);
-}
-
-TEST_CASE("Pipeline: double-diamond with failure in first diamond, recovery on re-run")
-{
-    //   A → {B(fail), C} → D → {E, F} → G
-    Pipeline          pipeline;
-    RecordingExecutor exec;
-    bool              shouldFail = true;
-
-    auto a = pipeline.emplace([] {}).name("A");
-    auto b = pipeline.emplace([&]() -> std::expected<void, PipelineError> {
-        if (shouldFail) return std::unexpected(PipelineError::kJobFailed);
-        return {};
-    }).name("B");
-    auto c = pipeline.emplace([] {}).name("C");
-    auto d = pipeline.emplace([] {}).name("D");
-    auto e = pipeline.emplace([] {}).name("E");
-    auto f = pipeline.emplace([] {}).name("F");
-    auto g = pipeline.emplace([] {}).name("G");
-
-    a.precede(b, c);
-    d.succeed(b, c);
-    d.precede(e, f);
-    g.succeed(e, f);
-
-    // Run 1: B fails → D,E,F,G all skipped
-    auto r1 = pipeline.run(exec);
-    CHECK_FALSE(r1.has_value());
-    CHECK(pipeline.status(b) == JobStatus::kFailed);
-    CHECK(pipeline.status(d) == JobStatus::kSkipped);
-    CHECK(pipeline.status(g) == JobStatus::kSkipped);
-
-    // Run 2: B succeeds → entire graph completes
-    shouldFail = false;
-    exec.clear();
-    auto r2 = pipeline.run(exec);
-    REQUIRE(r2.has_value());
-
-    for (auto j : {a, b, c, d, e, f, g})
-        CHECK(pipeline.status(j) == JobStatus::kDone);
-    CHECK(exec.order().front() == "A");
-    CHECK(exec.order().back() == "G");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // Validation edge cases
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("Pipeline: cycle detection in longer cycle (A→B→C→A)")
+TEST_CASE("Pipeline: cycle detection in longer cycle (A->B->C->A)")
 {
     Pipeline pipeline;
 
@@ -1385,7 +702,7 @@ TEST_CASE("Pipeline: job handles remain valid across re-runs")
     CHECK(pipeline.name(a) == "A");
     CHECK(pipeline.status(a) == JobStatus::kDone);
 
-    // Run 2 — same handles still valid
+    // Run 2 -- same handles still valid
     (void)pipeline.run(exec);
     CHECK(a.valid());
     CHECK(pipeline.name(a) == "A");
@@ -1419,230 +736,9 @@ TEST_CASE("Pipeline: observer progress is monotonic and resets on re-run")
     REQUIRE(!obs.progressValues.empty());
     CHECK(obs.progressValues.back() == doctest::Approx(1.0f));
 
-    // Run 2 — progress should start from scratch
+    // Run 2 -- progress should start from scratch
     obs.reset();
     (void)pipeline.run(exec, &obs);
     CHECK(obs.monotonic);
     CHECK(obs.progressValues.back() == doctest::Approx(1.0f));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Cancellation and timeout enforcement
-// ═══════════════════════════════════════════════════════════════════════════════
-
-TEST_CASE("Cancel: cancellable job receives stop_token")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    bool tokenReceived = false;
-    auto j = pipe.emplace([&tokenReceived](std::stop_token st) -> std::expected<void, PipelineError> {
-        tokenReceived = true;
-        return {};
-    });
-    j.name("cancellable");
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());
-    CHECK(tokenReceived);
-}
-
-TEST_CASE("Cancel: kCancelled error code propagates correctly when job self-reports")
-{
-    // cancel() is designed for mid-run concurrent use; resetNode() creates a
-    // fresh stop_source per epoch so pre-run cancel() is a no-op by design.
-    // This test verifies the kCancelled error path via job self-report.
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    auto j = pipe.emplace([](std::stop_token) -> std::expected<void, PipelineError> {
-        return std::unexpected(PipelineError::kCancelled);
-    });
-    j.name("fetch");
-
-    auto result = pipe.run(exec);
-    CHECK_FALSE(result.has_value());
-    CHECK(result.error() == PipelineError::kCancelled);
-    CHECK(pipe.status(j) == JobStatus::kCancelled);
-}
-
-TEST_CASE("Cancel: pre-run cancel() is a no-op -- stop_source resets at run() start")
-{
-    // resetNode() creates a fresh stop_source per epoch so that cancellation
-    // state from a previous run (or a mistaken pre-run cancel) does not bleed
-    // into the next run. cancel() is intended for concurrent mid-run use.
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int ran = 0;
-    auto j = pipe.emplace([&ran](std::stop_token st) -> std::expected<void, PipelineError> {
-        if (st.stop_requested()) return std::unexpected(PipelineError::kCancelled);
-        ++ran;
-        return {};
-    });
-    j.cancel();  // fired before run() -- will be reset by resetNode()
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());  // cancel had no effect
-    CHECK(ran == 1);
-}
-
-TEST_CASE("Cancel: non-cancellable job ignores cancel() entirely")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int ran = 0;
-    auto j = pipe.emplace([&ran]() -> std::expected<void, PipelineError> {
-        ++ran; return {};
-    });
-    j.cancel();
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());
-    CHECK(ran == 1);
-}
-
-TEST_CASE("Cancel: stop_source is fresh on each run -- no cross-epoch bleed")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-
-    int runCount = 0;
-    auto j = pipe.emplace([&runCount](std::stop_token st) -> std::expected<void, PipelineError> {
-        if (st.stop_requested()) return std::unexpected(PipelineError::kCancelled);
-        ++runCount;
-        return {};
-    });
-
-    // Run 1 clean
-    auto r1 = pipe.run(exec);
-    CHECK(r1.has_value());
-    CHECK(runCount == 1);
-
-    // Run 2 also clean -- no stop_source bleed from run 1
-    auto r2 = pipe.run(exec);
-    CHECK(r2.has_value());
-    CHECK(runCount == 2);
-}
-
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
-
-TEST_CASE("Timeout: cancellable job honours stop_token fired by DesktopExecutor watchdog")
-{
-    using namespace std::chrono_literals;
-    auto exec = sub0pipeline::makeDesktopExecutor();
-    Pipeline pipe;
-
-    // Job polls stop_token in a tight loop; watchdog fires it after 50ms.
-    auto j = pipe.emplace([](std::stop_token st) -> std::expected<void, PipelineError>
-    {
-        while (!st.stop_requested())
-            std::this_thread::sleep_for(std::chrono::milliseconds{5});
-        return std::unexpected(PipelineError::kCancelled);
-    });
-    j.name("slow_fetch").timeout(50ms);
-
-    auto result = pipe.run(*exec);
-    CHECK_FALSE(result.has_value());
-    // Either kCancelled (cooperative exit via stop_token) or kTimeout (hard cutoff)
-    CHECK((result.error() == PipelineError::kCancelled
-        || result.error() == PipelineError::kTimeout));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PoolSuccessors: pool/arena behaviour
-// ═══════════════════════════════════════════════════════════════════════════════
-
-TEST_CASE("PoolSuccessors: inline capacity holds exactly 4 entries without pool")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-    std::atomic<int> ran{0};
-
-    auto root = pipe.emplace([&]{ ++ran; }).name("root");
-    for (int i = 0; i < 4; ++i)
-        pipe.emplace([&]{ ++ran; }).name("leaf_" + std::to_string(i)).succeed(root);
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());
-    CHECK(ran.load() == 5); // root + 4 leaves
-    // Verify all 4 successors dispatched in order after root
-    const auto& order = exec.order();
-    REQUIRE(order.size() == 5U);
-    CHECK(order[0] == "root");
-}
-
-TEST_CASE("PoolSuccessors: 5th successor spills to pool, all complete correctly")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-    std::atomic<int> ran{0};
-
-    auto root = pipe.emplace([&]{ ++ran; }).name("root");
-    for (int i = 0; i < 5; ++i)  // one more than inline capacity
-        pipe.emplace([&]{ ++ran; }).name("leaf_" + std::to_string(i)).succeed(root);
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());
-    CHECK(ran.load() == 6); // root + 5 leaves
-}
-
-TEST_CASE("PoolSuccessors: wide fan-out N=16 (multiple pool grow cycles)")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-    std::atomic<int> ran{0};
-    constexpr int cN = 16;
-
-    auto root = pipe.emplace([&]{ ++ran; }).name("root");
-    for (int i = 0; i < cN; ++i)
-        pipe.emplace([&]{ ++ran; }).succeed(root);
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());
-    CHECK(ran.load() == cN + 1);
-}
-
-TEST_CASE("PoolSuccessors: N=128 fan-out exercises full uint16_t count range")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-    std::atomic<int> ran{0};
-    constexpr int cN = 128; // exceeds old 7-bit limit of 127
-
-    auto root = pipe.emplace([&]{ ++ran; }).name("root");
-    for (int i = 0; i < cN; ++i)
-        pipe.emplace([&]{ ++ran; }).succeed(root);
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());
-    CHECK(ran.load() == cN + 1);
-    // All leaves must have run after root
-    const auto& order = exec.order();
-    REQUIRE(order.size() == static_cast<size_t>(cN + 1));
-    CHECK(order[0] == "root");
-}
-
-TEST_CASE("PoolSuccessors: pool iteration matches push order")
-{
-    RecordingExecutor exec;
-    Pipeline pipe;
-    std::vector<int> results;
-    std::mutex mtx;
-
-    auto root = pipe.emplace([]{}); // root with no action
-    for (int i = 0; i < 8; ++i) {
-        pipe.emplace([&results, &mtx, i]{
-            std::lock_guard lk{mtx};
-            results.push_back(i);
-        }).succeed(root);
-    }
-
-    auto result = pipe.run(exec);
-    CHECK(result.has_value());
-    REQUIRE(results.size() == 8U);
-    // With sequential executor, all 8 successors ran -- check set equality
-    std::sort(results.begin(), results.end());
-    for (int i = 0; i < 8; ++i) CHECK(results[i] == i);
 }

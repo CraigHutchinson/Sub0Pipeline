@@ -6,6 +6,10 @@ add_executable(Sub0Pipeline_Tests
     test_main.cpp
     test_pipeline.cpp
     test_failure.cpp
+    test_rerun.cpp
+    test_ondemand.cpp
+    test_cancel.cpp
+    test_pool.cpp
     test_validation.cpp
     test_observer.cpp
     test_concurrent.cpp

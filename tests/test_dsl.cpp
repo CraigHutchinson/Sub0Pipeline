@@ -18,31 +18,6 @@ using namespace sub0pipeline::dsl;
 using namespace std::chrono_literals;
 using namespace std::string_literals;
 
-// ── Test helpers ─────────────────────────────────────────────────────────────
-
-class RecordingExecutor final : public IExecutor
-{
-public:
-    void dispatch(
-        std::string_view name, std::function<void()> fn,
-        std::function<void()> onComplete,
-        int, uint8_t, uint32_t) override
-    {
-        order_.emplace_back(name);
-        fn();
-        if (onComplete) onComplete();
-    }
-
-    void wait_all() override {}
-    [[nodiscard]] int concurrency() const noexcept override { return 1; }
-
-    [[nodiscard]] const std::vector<std::string>& order() const { return order_; }
-    void clear() { order_.clear(); }
-
-private:
-    std::vector<std::string> order_;
-};
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // _job UDL + JobSpec
 // ═══════════════════════════════════════════════════════════════════════════════
