@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <mutex>
 #include <queue>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -511,6 +512,12 @@ void Pipeline::run_loop()
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
 #endif
     }
+}
+
+void Pipeline::run_until(IExecutor& executor, std::stop_token stop)
+{
+    while (!stop.stop_requested())
+        (void)run(executor);
 }
 
 // ── On-demand jobs ────────────────────────────────────────────────────────────

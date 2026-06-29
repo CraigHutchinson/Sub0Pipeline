@@ -27,6 +27,79 @@ Part of the **Sub0** C++ library family.
 
 ---
 
+## Use-case fit
+
+A quick reference for where Sub0Pipeline is the right tool and where it is not.
+
+**Fit key:** ✅ Strong &nbsp; 🟡 Partial &nbsp; ❌ Weak / not the right tool
+
+### Initialization and sequencing
+
+| Use case | Fit | Notes |
+|---|---|---|
+| Boot / init sequence with dependency ordering | ✅ | The primary use case -- `auth >> load_config >> {mount || tcp} >> ready` |
+| Staged shutdown (reverse-ordered teardown) | ✅ | Reverse the edges; `run()` handles the ordering |
+| Feature flag / canary rollout stages | ✅ | One pipeline per stage; `optional()` for non-blocking gates |
+| Plugin / module loading with inter-dependencies | ✅ | Each plugin is a job; `succeed()` encodes load order |
+
+### Batch and data processing
+
+| Use case | Fit | Notes |
+|---|---|---|
+| Single-shot ETL / data pipeline (ingest → transform → validate → store) | ✅ | Natural fit; fan-out for parallel transform, fan-in for aggregate |
+| Asset import pipeline (per-batch: dedup → fetch → cache → notify) | ✅ | Finite DAG per batch; `IObserver` provides per-job progress telemetry |
+| Build systems (compile → link → test → package) | ✅ | Dependency graph maps directly; `validate()` catches cycles at construction |
+| Fan-out / scatter-gather parallelism | ✅ | `a >> b + c + d >> sink`; first-class in the DSL |
+| Map-reduce (N workers → aggregate) | ✅ | Fan-out N jobs, fan-in to one; structured bindings give handles to all N |
+| Processing items of unknown count at runtime | 🟡 | `emplace()` works at runtime before `run()`; DAG is immutable once execution starts |
+
+### Event-driven and I/O
+
+| Use case | Fit | Notes |
+|---|---|---|
+| Hardware / ISR / network event dispatch (fire-and-forget) | 🟡 | `add_on_demand()` + `arm()` + `trigger()` -- dispatches immediately; no result awaiting |
+| One pipeline per request (HTTP handler, RPC call) | ✅ | Construct a small pipeline per request; `SequentialExecutor` keeps it stack-local |
+| Streaming / continuous I/O (audio decode, video encode, network receive loop) | 🟡 | `run_until(exec, stop_token)` re-runs the DAG in a loop; pacing is the caller's responsibility |
+| Producer-consumer queues (bounded, multi-consumer) | 🟡 | `add_on_demand()` + `trigger()` dispatches a drainer job on each enqueue; no built-in queue storage |
+
+### Long-running services and daemons
+
+| Use case | Fit | Notes |
+|---|---|---|
+| Periodic tick tasks at fixed intervals | 🟡 | `add_tick()` + `run_loop()` -- 1 ms granularity; no sub-millisecond cadence |
+| Daemon startup then event loop | ✅ | `run()` for the startup DAG, `run_loop()` for steady-state ticks, `trigger()` for events |
+| Perpetual background worker threads | 🟡 | `run_until(exec, stop_token)` loops `run()` until stopped; combine with `std::jthread` for lifecycle |
+| Work-stealing thread pools (unbounded runtime queue) | ❌ | DAG topology is defined before execution; not a general task queue |
+
+### Real-time and embedded
+
+| Use case | Fit | Notes |
+|---|---|---|
+| RTOS task scheduling (FreeRTOS, ESP32) | 🟡 | `FreeRtosExecutor` available; `core()` and `priority()` map to `xTaskCreatePinnedToCore`; no preemption |
+| Fixed-rate game / simulation update (update → physics → render) | 🟡 | DAG-per-frame works; overhead is 220--500 ns for small graphs; re-run support confirmed |
+| Hard real-time deadlines (< 10 µs response) | 🟡 | `SequentialExecutor` gives deterministic sub-microsecond dispatch; `DesktopExecutor` has OS scheduling jitter |
+| ISR-safe, zero-allocation dispatch | 🟡 | Allocations happen at construction (`emplace`), not at dispatch; `run()` itself is allocation-free after the DAG is built |
+
+### Concurrency patterns
+
+| Use case | Fit | Notes |
+|---|---|---|
+| Fork-join parallelism | ✅ | `executor.wait_all()` at the end of `run()`; all forks joined before return |
+| Diamond dependency (A → {B ∥ C} → D) | ✅ | Core benchmark topology; 220 ns overhead |
+| Priority-ordered execution | 🟡 | `priority()` hint passed to executor; enforcement depends on the executor backend |
+| Cross-process job distribution | ❌ | Single-process only; no serialization, no remote dispatch |
+| Dynamic graph modification after execution starts | ❌ | DAG structure is immutable once `run()` is called; build the full graph before running |
+
+### Testing and determinism
+
+| Use case | Fit | Notes |
+|---|---|---|
+| Unit-testable pipelines (swap executor for determinism) | ✅ | `SequentialExecutor` runs jobs inline, in order; no threads, no non-determinism |
+| Reproducible execution order verification | ✅ | `RecordingExecutor` pattern (see tests) captures dispatch order before execution |
+| Timeout injection in tests | ✅ | `.timeout()` per job; `kTimeout` error propagates like any other failure |
+
+---
+
 ## Quick Start
 
 ### Core API
@@ -212,11 +285,11 @@ ctest --preset default          # Run tests
 
 ### Test Coverage
 
-113 test cases, 721 assertions across two suites:
+119 test cases across two suites:
 
 | Suite | Focus | Cases |
 |-------|-------|-------|
-| `Sub0Pipeline_Tests` | Core DAG engine, JobGroup, re-runnability, error propagation | 78 |
+| `Sub0Pipeline_Tests` | Core DAG engine, JobGroup, re-runnability, error propagation, on-demand jobs | 84 |
 | `Sub0Pipeline_DslTests` | Operators, `_job` UDL, JobTuple, JobTupleChain, inline pipe | 35 |
 
 Tested topologies include linear chains, fan-out/in, diamonds, double-diamonds, W-shapes, hourglasses, binary trees (31 nodes), and stress tests (100+ nodes). Error propagation covers required/optional failure cascading, mid-graph failures, multi-root failure ordering, and full recovery on re-run. The epoch-based re-runnability is verified across all topologies with counter, ordering, and status assertions.
@@ -263,6 +336,10 @@ See [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) for planned executors.
 | `status(job)` / `name(job)` | Query job state and name |
 | `add_tick(tick)` | Register a recurring tick job for the event loop |
 | `run_loop()` | Enter the tick event loop (`[[noreturn]]`) |
+| `run_until(executor, stop_token)` | Re-run the pipeline in a loop until the stop token is signalled |
+| `arm(executor, observer?)` | Store executor for later `trigger()` calls |
+| `add_on_demand(fn)` | Register a job excluded from `run()`; dispatched only via `trigger()` |
+| `trigger(job)` | Dispatch an on-demand job via the armed executor; returns `std::expected` |
 | `dump_text()` | Print DAG structure to stdout |
 
 ### Job (fluent builder)
@@ -307,6 +384,8 @@ auto job = pipe.emplace([]() -> std::expected<void, PipelineError> {
 | `kCyclicDependency` | DAG contains a cycle |
 | `kDuplicateJob` | Job added more than once |
 | `kUnknownJob` | Operation on invalid handle |
+| `kNotArmed` | `trigger()` called before `arm()` |
+| `kNotOnDemand` | `trigger()` called on a regular (non-on-demand) job |
 
 ---
 
@@ -322,7 +401,7 @@ auto job = pipe.emplace([]() -> std::expected<void, PipelineError> {
 | [`validate_dag`](examples/validate_dag/) | Cycle detection, `dump_text()` |
 | [`observer_profiling`](examples/observer_profiling/) | Custom `IObserver` with progress bar |
 | [`job_options`](examples/job_options/) | Every builder method demonstrated |
-| [`on_demand_jobs`](examples/on_demand_jobs/) | Event-triggered jobs (stub) |
+| [`on_demand_jobs`](examples/on_demand_jobs/) | Event-triggered jobs: `arm()` + `trigger()` with atomic counters |
 | [`tick_loop`](examples/tick_loop/) | Recurring tick tasks after pipeline completion |
 
 ---

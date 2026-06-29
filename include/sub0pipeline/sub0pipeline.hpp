@@ -31,6 +31,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <stop_token>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -361,6 +362,23 @@ public:
      * sleep (1 ms).
      */
     [[noreturn]] void run_loop();
+
+    /**
+     * @brief Re-run the pipeline repeatedly until the stop token is signalled.
+     *
+     * Each iteration calls run(executor) and discards the result. Useful for
+     * perpetual update loops (game frame loop, streaming processor, background
+     * worker) where the same DAG structure executes at continuous intervals.
+     *
+     * The caller controls pacing -- insert a sleep or frame-sync between
+     * iterations in the job functions or by wrapping this call:
+     * @code
+     *   std::jthread worker([&](std::stop_token st) {
+     *       pipe.run_until(exec, st);
+     *   });
+     * @endcode
+     */
+    void run_until(IExecutor& executor, std::stop_token stop);
 
     // ── On-demand jobs ────────────────────────────────────────────────────
 
