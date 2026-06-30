@@ -499,6 +499,18 @@ public:
     /** @return Human-readable name of a job. */
     [[nodiscard]] auto name(Job j) const noexcept -> std::string_view;
 
+    /**
+     * @brief Name of the first non-optional job that failed in the most recent run().
+     *
+     * Empty string if the last run() succeeded or has not been called yet.
+     * Useful for error reporting without requiring an IObserver:
+     * @code
+     *   auto r = pipe.run(exec);
+     *   if (!r) fmt::print("Failed job: {}\n", pipe.first_failure_name());
+     * @endcode
+     */
+    [[nodiscard]] std::string_view first_failure_name() const noexcept;
+
     // ── Validation ───────────────────────────────────────────────────────
 
     /**

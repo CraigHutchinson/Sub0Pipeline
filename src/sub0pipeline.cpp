@@ -216,6 +216,10 @@ struct Pipeline::Impl
     IExecutor*                armedExecutor_{nullptr};
     IObserver*                armedObserver_{nullptr};
 
+    // Written once (under fatalMtx) when the first non-optional job fails.
+    // Readable after run() returns via Pipeline::first_failure_name().
+    std::string               failedJobName_;
+
     // Hot atomic: written by every completing job thread on every run.
     // alignas(64) isolates it from the fields above so concurrent job-thread
     // writes to completedCount_ do not cause false sharing with runEpoch_ or
@@ -472,6 +476,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
     std::atomic<bool> hasFatalFailure{false};
     PipelineError     fatalError{PipelineError::kJobFailed};
     std::mutex        fatalMtx;
+    impl_->failedJobName_.clear();
 
     // DispatchContext: replaces the previous std::function<void(uint32_t)>
     // self-referential lambda. Defined as a local struct inside run() so it
@@ -575,6 +580,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
                 if (hasFatalFailure.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                     std::lock_guard lk{fatalMtx};
                     fatalError = result.error();
+                    impl.failedJobName_ = nd.nameStr_;
                 }
                 for (auto succIdx : nd.successors_.range(impl.succPool_)) skipNode(succIdx);
                 return;
@@ -633,6 +639,12 @@ auto Pipeline::name(Job j) const noexcept -> std::string_view
     if (!impl_ || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return {};
     return impl_->nodes_[j.idx_].nameStr_;
+}
+
+std::string_view Pipeline::first_failure_name() const noexcept
+{
+    if (!impl_) return {};
+    return impl_->failedJobName_;
 }
 
 // ── Tick loop ─────────────────────────────────────────────────────────────────
