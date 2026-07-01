@@ -346,7 +346,7 @@ class IObserver
 public:
     virtual ~IObserver() = default;
 
-    /** Called just before a job starts executing. */
+    /** Called just before a job starts executing (hot path -- keep implementations fast). */
     virtual void onStart(std::string_view jobName) = 0;
 
     /**
@@ -356,6 +356,24 @@ public:
      * @param progress  Fraction of total jobs completed (0.0–1.0).
      */
     virtual void onFinish(std::string_view jobName, JobStatus status, float progress) = 0;
+
+    /**
+     * @brief Called when a non-optional job fails -- default no-op.
+     *
+     * Separate from onFinish so callers only opt into failure detail when they
+     * need it.  Zero cost when the default no-op is not overridden; the
+     * observer vtable dispatch itself is already gated by `if (observer)`.
+     *
+     * @param jobName  Name of the failed job.
+     * @param error    The PipelineError code.
+     * @param message  Diagnostic string set by the job via
+     *                 Pipeline::set_current_job_error() -- empty if the job
+     *                 did not provide context.  Only allocated on the failure
+     *                 branch; the success hot-path never touches this string.
+     */
+    virtual void onFailure([[maybe_unused]] std::string_view jobName,
+                           [[maybe_unused]] PipelineError    error,
+                           [[maybe_unused]] std::string_view message) noexcept {}
 
     /** Called when a dependency edge is traversed (for Gantt chart arrows). */
     virtual void onDependency([[maybe_unused]] std::string_view from,
@@ -510,6 +528,44 @@ public:
      * @endcode
      */
     [[nodiscard]] std::string_view first_failure_name() const noexcept;
+
+    /**
+     * @brief Set a diagnostic message for the job currently executing on this thread.
+     *
+     * Call on the failure branch before returning `std::unexpected(...)`.  The
+     * message is consumed by `dispatchJob` and forwarded to `IObserver::onFailure`.
+     * Zero cost on the success path -- the thread-local string is never read when
+     * the job succeeds.
+     *
+     * @code
+     *   auto fn = [&]() -> std::expected<void, PipelineError> {
+     *       if (!connect()) {
+     *           Pipeline::set_current_job_error("TCP connect timed out after 30s");
+     *           return std::unexpected(PipelineError::kJobFailed);
+     *       }
+     *       return {};
+     *   };
+     * @endcode
+     */
+    static void set_current_job_error(std::string_view msg) noexcept;
+
+    /**
+     * @brief Lightweight status snapshot of all jobs (for status bars and UI).
+     *
+     * Each `JobSnapshot` is a {name, status} pair read via relaxed atomic load --
+     * no locks, no synchronisation barrier.  Safe to call from any thread at any
+     * time; results are a consistent point-in-time view of the per-job atomics.
+     * Allocates one `std::vector` per call; poll at the display frame rate (not
+     * tighter than 16 ms) to avoid unnecessary pressure.
+     *
+     * For single-string "current job" display prefer `IObserver::onStart` feeding
+     * an atomic pointer -- zero allocation, zero polling.
+     */
+    struct JobSnapshot {
+        std::string_view name;    ///< Stable pointer into the pipeline's node; valid until pipeline is destroyed.
+        JobStatus        status;  ///< Relaxed atomic load of the job's current status.
+    };
+    [[nodiscard]] std::vector<JobSnapshot> snapshot() const noexcept;
 
     // ── Validation ───────────────────────────────────────────────────────
 

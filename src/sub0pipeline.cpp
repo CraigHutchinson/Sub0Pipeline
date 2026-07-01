@@ -25,8 +25,16 @@
 #include <queue>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
+
+// ── Thread-local job error context ────────────────────────────────────────────
+// Jobs call Pipeline::set_current_job_error() on the failure branch only.
+// The string is read once (inside dispatchJob, after the job fn returns) and
+// immediately cleared.  On the success path the string is never touched --
+// zero allocation, zero reads, branch-predictor-friendly empty check.
+namespace { thread_local std::string t_jobError; }
 
 #if __has_include(<freertos/FreeRTOS.h>)
 #include <freertos/FreeRTOS.h>
@@ -571,11 +579,20 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
             }();
             nd.jobStatus_.store(jobStatus, std::memory_order_release);
 
+            // Consume the thread-local error context set by the job (failure branch only).
+            // Move clears t_jobError so it does not leak into the next job on this thread.
+            // On the success path t_jobError is empty and this move is a no-op.
+            std::string jobErrorCtx = std::move(t_jobError);
+
             const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
             const auto progress = static_cast<float>(done) / static_cast<float>(total);
             if (observer) observer->onFinish(nd.nameStr_, jobStatus, progress);
 
             if (!result && !nd.isOptional()) {
+                // Report failure detail through the dedicated hook -- zero cost when
+                // no observer is attached or observer's onFailure is the default no-op.
+                if (observer) observer->onFailure(nd.nameStr_, result.error(), jobErrorCtx);
+
                 bool expected = false;
                 if (hasFatalFailure.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                     std::lock_guard lk{fatalMtx};
@@ -645,6 +662,25 @@ std::string_view Pipeline::first_failure_name() const noexcept
 {
     if (!impl_) return {};
     return impl_->failedJobName_;
+}
+
+void Pipeline::set_current_job_error(std::string_view msg) noexcept
+{
+    // Called from within a job function on the failure branch.
+    // Allocates only here (failure path); the success path never calls this.
+    t_jobError = msg;
+}
+
+std::vector<Pipeline::JobSnapshot> Pipeline::snapshot() const noexcept
+{
+    if (!impl_) return {};
+    std::vector<JobSnapshot> out;
+    out.reserve(impl_->nodes_.size());
+    for (const auto& nd : impl_->nodes_) {
+        // Skip on-demand nodes that have not yet been triggered.
+        out.push_back({nd.nameStr_, nd.jobStatus_.load(std::memory_order_relaxed)});
+    }
+    return out;
 }
 
 // ── Tick loop ─────────────────────────────────────────────────────────────────
