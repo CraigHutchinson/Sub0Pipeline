@@ -13,6 +13,7 @@ add_executable(Sub0Pipeline_Tests
     test_validation.cpp
     test_observer.cpp
     test_concurrent.cpp
+    test_priority_executor.cpp
 )
 
 target_link_libraries(Sub0Pipeline_Tests
@@ -20,6 +21,7 @@ target_link_libraries(Sub0Pipeline_Tests
         Sub0Pipeline::Sub0Pipeline
         Sub0Pipeline::Desktop
         Sub0Pipeline::Headless
+        Sub0Pipeline::Priority
 )
 
 target_include_directories(Sub0Pipeline_Tests

@@ -32,11 +32,12 @@ class PriorityExecutor final : public IExecutor
     };
 
 public:
-    explicit PriorityExecutor(unsigned int threadCount)
+    PriorityExecutor(unsigned int threadCount, std::function<void()> onThreadStart)
     {
         workers_.reserve(threadCount);
         for (unsigned int i = 0; i < threadCount; ++i) {
-            workers_.emplace_back([this](std::stop_token st) {
+            workers_.emplace_back([this, onThreadStart](std::stop_token st) {
+                if (onThreadStart) onThreadStart();
                 while (!st.stop_requested()) {
                     Job job;
                     {
@@ -92,11 +93,12 @@ private:
     std::condition_variable         doneCv_;
 };
 
-std::unique_ptr<IExecutor> makePriorityExecutor(unsigned int threadCount)
+std::unique_ptr<IExecutor> makePriorityExecutor(unsigned int threadCount,
+                                                 std::function<void()> onThreadStart)
 {
     if (threadCount == 0)
         threadCount = std::max(1U, std::thread::hardware_concurrency());
-    return std::make_unique<PriorityExecutor>(threadCount);
+    return std::make_unique<PriorityExecutor>(threadCount, std::move(onThreadStart));
 }
 
 } // namespace sub0pipeline
