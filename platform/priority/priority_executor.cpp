@@ -16,23 +16,55 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 namespace sub0pipeline {
 
-class PriorityExecutor final : public IExecutor
+namespace {
+    /// 0-byte placeholder for the enqueue-sequence field in the lean (unstable)
+    /// executor, so a memory-constrained target carries no per-job ordering cost.
+    struct NoSeq {};
+}
+
+/**
+ * Bounded thread-pool executor honouring job priority.
+ *
+ * @tparam Stable  When true, equal-priority jobs run in dispatch order (FIFO)
+ *                 via a per-job enqueue sequence -- the guarantee callers that
+ *                 dispatch an ordered sequence (e.g. an access-order prefetch)
+ *                 or need peer fairness depend on. When false, equal-priority
+ *                 order is the heap's arbitrary order and no per-job sequence is
+ *                 stored, so a memory-constrained target that does not need FIFO
+ *                 among peers pays nothing for the ordering. `makePriorityExecutor`
+ *                 selects the stable policy; `makeLeanPriorityExecutor` the lean one.
+ */
+template<bool Stable>
+class PriorityExecutorT final : public IExecutor
 {
     struct Job
     {
         std::function<void()> fn;
         std::function<void()> onComplete;
         uint8_t               priority{5};
+        // Present only in the stable policy; NoSeq is empty so the lean job pays
+        // no per-job cost. std::priority_queue is a max-heap on operator<, so the
+        // "greatest" Job pops first: higher priority is greater, and within one
+        // priority the LOWER seq (enqueued earlier) compares greater so it pops
+        // first. Without the tie-break a later-dispatched job can overtake an
+        // earlier one, which is unacceptable where dispatch order carries meaning.
+        [[no_unique_address]] std::conditional_t<Stable, uint64_t, NoSeq> seq{};
 
-        bool operator<(const Job& o) const noexcept { return priority < o.priority; }
+        bool operator<(const Job& o) const noexcept
+        {
+            if (priority != o.priority) return priority < o.priority;
+            if constexpr (Stable) return seq > o.seq;
+            else                  return false;   // equal priority: heap order (lean)
+        }
     };
 
 public:
-    PriorityExecutor(unsigned int threadCount, std::function<void()> onThreadStart)
+    PriorityExecutorT(unsigned int threadCount, std::function<void()> onThreadStart)
     {
         workers_.reserve(threadCount);
         for (unsigned int i = 0; i < threadCount; ++i) {
@@ -67,7 +99,10 @@ public:
         inFlight_.fetch_add(1U, std::memory_order_relaxed);
         {
             std::lock_guard lk{mtx_};
-            queue_.push(Job{std::move(fn), std::move(onComplete), priority});
+            if constexpr (Stable)
+                queue_.push(Job{std::move(fn), std::move(onComplete), priority, seq_++});
+            else
+                queue_.push(Job{std::move(fn), std::move(onComplete), priority});
         }
         cv_.notify_one();
     }
@@ -85,6 +120,9 @@ public:
 
 private:
     std::priority_queue<Job>        queue_;
+    // Monotonic enqueue counter, guarded by mtx_, stamps Job::seq -- stable policy
+    // only (NoSeq is empty, so the lean executor object carries no counter either).
+    [[no_unique_address]] std::conditional_t<Stable, uint64_t, NoSeq> seq_{};
     std::mutex                      mtx_;
     std::condition_variable_any     cv_;
     std::vector<std::jthread>       workers_;
@@ -98,7 +136,15 @@ std::unique_ptr<IExecutor> makePriorityExecutor(unsigned int threadCount,
 {
     if (threadCount == 0)
         threadCount = std::max(1U, std::thread::hardware_concurrency());
-    return std::make_unique<PriorityExecutor>(threadCount, std::move(onThreadStart));
+    return std::make_unique<PriorityExecutorT<true>>(threadCount, std::move(onThreadStart));
+}
+
+std::unique_ptr<IExecutor> makeLeanPriorityExecutor(unsigned int threadCount,
+                                                     std::function<void()> onThreadStart)
+{
+    if (threadCount == 0)
+        threadCount = std::max(1U, std::thread::hardware_concurrency());
+    return std::make_unique<PriorityExecutorT<false>>(threadCount, std::move(onThreadStart));
 }
 
 } // namespace sub0pipeline

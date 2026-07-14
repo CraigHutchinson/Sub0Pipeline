@@ -826,4 +826,18 @@ std::unique_ptr<IExecutor> makeSequentialExecutor();
 std::unique_ptr<IExecutor> makePriorityExecutor(
     unsigned int threadCount = 0, std::function<void()> onThreadStart = nullptr);
 
+/**
+ * @brief Lean variant of `makePriorityExecutor` for memory-constrained targets.
+ *
+ * Identical scheduling except that equal-priority jobs run in the priority
+ * heap's arbitrary order rather than FIFO dispatch order -- in exchange, jobs
+ * carry no per-job enqueue-sequence field. Choose this only when the caller does
+ * not depend on order among same-priority jobs; otherwise use
+ * `makePriorityExecutor`, which is stable by default.
+ *
+ * Defined in `platform/priority/`.
+ */
+std::unique_ptr<IExecutor> makeLeanPriorityExecutor(
+    unsigned int threadCount = 0, std::function<void()> onThreadStart = nullptr);
+
 } // namespace sub0pipeline

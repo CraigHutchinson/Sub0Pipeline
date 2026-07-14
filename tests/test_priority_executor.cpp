@@ -71,6 +71,43 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
     CHECK(order[0] == "high"); // highest priority among the three queued jobs
 }
 
+TEST_CASE("PriorityExecutor: equal-priority jobs run in dispatch order (stable FIFO)")
+{
+    // Same single-worker hold trick: occupy the one thread, queue several jobs at
+    // the SAME priority, then release. A plain max-heap keyed on priority alone
+    // would pop equal-priority jobs in arbitrary heap order; the enqueue-sequence
+    // tie-break makes that order FIFO, which callers that dispatch an ordered
+    // sequence (e.g. an access-order prefetch) depend on.
+    auto exec = makePriorityExecutor(1);
+
+    std::mutex              mtx;
+    std::condition_variable holdCv;
+    bool                    releaseHold = false;
+    exec->dispatch("hold", [&] {
+        std::unique_lock lk{mtx};
+        holdCv.wait(lk, [&] { return releaseHold; });
+    }, nullptr, -1, 5);
+
+    std::vector<std::string> order;
+    std::mutex               orderMtx;
+    const std::vector<std::string> expected{"a", "b", "c", "d", "e"};
+    for (const auto& name : expected) {
+        exec->dispatch(name, [&, name] {
+            std::lock_guard lk{orderMtx};
+            order.push_back(name);
+        }, nullptr, -1, 5);   // all identical priority
+    }
+
+    {
+        std::lock_guard lk{mtx};
+        releaseHold = true;
+    }
+    holdCv.notify_one();
+    exec->wait_all();
+
+    CHECK(order == expected);
+}
+
 TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before any job on that thread")
 {
     constexpr unsigned int kThreads = 3;
@@ -115,6 +152,40 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
 
     CHECK(startCount.load() == kThreads);
     CHECK(jobsOnUnprimedThread.load() == 0U);
+}
+
+TEST_CASE("LeanPriorityExecutor: dispatches, completes, and still honours priority")
+{
+    // The lean policy drops FIFO among equal-priority jobs but must still run and
+    // still start a higher-priority job before a lower-priority queued one.
+    auto exec = makeLeanPriorityExecutor(1);
+
+    std::mutex              mtx;
+    std::condition_variable holdCv;
+    bool                    releaseHold = false;
+    exec->dispatch("hold", [&] {
+        std::unique_lock lk{mtx};
+        holdCv.wait(lk, [&] { return releaseHold; });
+    }, nullptr, -1, 1);
+
+    std::vector<std::string> order;
+    std::mutex               orderMtx;
+    auto record = [&](std::string_view name) {
+        std::lock_guard lk{orderMtx};
+        order.emplace_back(name);
+    };
+    exec->dispatch("low",  [&] { record("low"); },  nullptr, -1, 1);
+    exec->dispatch("high", [&] { record("high"); }, nullptr, -1, 10);
+
+    {
+        std::lock_guard lk{mtx};
+        releaseHold = true;
+    }
+    holdCv.notify_one();
+    exec->wait_all();
+
+    REQUIRE(order.size() == 2U);
+    CHECK(order[0] == "high");
 }
 
 TEST_CASE("PriorityExecutor: default (no onThreadStart) still dispatches correctly")
