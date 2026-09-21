@@ -233,6 +233,24 @@ struct Pipeline::Impl
     // writes to completedCount_ do not cause false sharing with runEpoch_ or
     // rootsCached_ which the run-owning thread reads/writes.
     alignas(64) std::atomic<uint32_t> completedCount_{0U};
+
+    // ── Orphaned timeout threads (structured-cancellation groundwork) ─────
+    // A non-cancellable job that exceeds .timeout() cannot be cooperatively
+    // signalled or force-terminated, so its std::thread can no longer be
+    // silently detach()'d -- that is exactly the "safe to free borrowed
+    // state" ambiguity from issue #1. It is retained here, still joinable,
+    // until join_orphans() reaps it. See Pipeline::join_orphans() docs.
+    mutable std::mutex        orphanMtx_;
+    std::vector<std::thread>  orphanThreads_;
+
+    ~Impl()
+    {
+        // A joinable std::thread's destructor calls std::terminate(); this
+        // is the last-resort backstop if the owner destroys the Pipeline
+        // without calling join_orphans() first. Best-effort and blocking --
+        // exactly the same wait join_orphans() would have performed.
+        for (auto& t : orphanThreads_) if (t.joinable()) t.join();
+    }
 };
 
 // ── Job builder methods ───────────────────────────────────────────────────────
@@ -458,6 +476,21 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
 auto Pipeline::run(IExecutor& executor, IObserver* observer)
     -> std::expected<void, PipelineError>
 {
+    return runImpl(executor, nullptr, observer);
+}
+
+auto Pipeline::run(IExecutor& executor, std::stop_token external, IObserver* observer)
+    -> std::expected<void, PipelineError>
+{
+    // `external` (the by-value parameter) lives for the whole call -- run()
+    // is synchronous end-to-end (blocks on executor.wait_all()) -- so the
+    // pointer runImpl stores in DispatchContext never outlives its pointee.
+    return runImpl(executor, &external, observer);
+}
+
+auto Pipeline::runImpl(IExecutor& executor, const std::stop_token* external, IObserver* observer)
+    -> std::expected<void, PipelineError>
+{
     // Previous: 272B (original) → 176B (first pass) → 168B (pool/arena pass).
     // Raise only for an intentional new field; do not raise to paper over bloat.
     static_assert(sizeof(Node) <= 168,
@@ -502,12 +535,22 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
         std::atomic<bool>&  hasFatalFailure;
         PipelineError&      fatalError;
         std::mutex&         fatalMtx;
+        const std::stop_token* externalStop; ///< nullptr if run() was called without one.
 
         void resetNode(Node& nd) const noexcept
         {
             if (nd.lastEpoch_ == epoch) return;
             nd.lastEpoch_ = epoch;
             nd.stopSource_ = std::stop_source{};
+            // Fan the externally-supplied stop token out to every node the
+            // instant it is first touched this epoch. This is what closes
+            // the "cancelled between commit-success and ACK-dispatch" race
+            // from issue #1: resetNode(succ) runs synchronously inside the
+            // predecessor's dispatchJob, right before succ is handed to the
+            // executor -- so a stop request observed here always lands
+            // before that handoff, never after.
+            if (externalStop && externalStop->stop_requested())
+                nd.stopSource_.request_stop();
             nd.unmetDeps_.store(nd.predecessorCount_, std::memory_order_relaxed);
             nd.jobStatus_.store(
                 nd.predecessorCount_ == 0U ? JobStatus::kReady : JobStatus::kPending,
@@ -543,7 +586,19 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
             auto token = nd.stopSource_.get_token();
             const bool hasTimeout = nd.timeout_ < std::chrono::milliseconds::max();
 
-            if (nd.isCancellable() && hasTimeout) {
+            if (nd.isCancellable() && token.stop_requested()) {
+                // Preemptive: this node was already cancelled by the time it
+                // reached the front of the queue -- via Job::cancel() called
+                // directly on it, or an externally supplied stop token fanned
+                // out by resetNode() above. fn_ is never invoked, so it can
+                // never touch whatever state its closure borrowed. This is
+                // what closes the issue #1 race: "cancelled between
+                // commit-success and ACK-dispatch" means ACK's token is
+                // already stopped before this line runs, every time --
+                // dispatch order guarantees resetNode(ack) happens-before
+                // this check, never after.
+                result = std::unexpected(PipelineError::kCancelled);
+            } else if (nd.isCancellable() && hasTimeout) {
                 std::jthread watchdog{[src = nd.stopSource_, dur = nd.timeout_]
                     (std::stop_token wdStop) mutable {
                     std::this_thread::sleep_for(dur);
@@ -559,7 +614,17 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
                 std::thread jobThread{std::move(task)};
                 if (fut.wait_for(nd.timeout_) == std::future_status::timeout) {
                     nd.stopSource_.request_stop();
-                    jobThread.detach();
+                    // NOT detach(): a detached thread can outlive the
+                    // Pipeline::run() call that reports this job kTimeout,
+                    // and keep touching whatever borrowed state fn_ closed
+                    // over -- this is the exact "safe to free borrowed
+                    // state" hazard from issue #1. The thread is instead
+                    // retained, still joinable, until join_orphans() reaps
+                    // it (or ~Impl() does, as a last-resort backstop).
+                    {
+                        std::lock_guard lk{impl.orphanMtx_};
+                        impl.orphanThreads_.push_back(std::move(jobThread));
+                    }
                     result = std::unexpected(PipelineError::kTimeout);
                 } else {
                     jobThread.join();
@@ -621,7 +686,7 @@ auto Pipeline::run(IExecutor& executor, IObserver* observer)
 
     DispatchContext ctx{*impl_, executor, observer,
                         static_cast<uint32_t>(total), epoch,
-                        hasFatalFailure, fatalError, fatalMtx};
+                        hasFatalFailure, fatalError, fatalMtx, external};
 
     for (auto idx : impl_->roots_) {
         auto& nd = impl_->nodes_[idx];
@@ -729,17 +794,49 @@ void Pipeline::run_loop()
     }
 }
 
+namespace {
+struct InlineExecutor final : IExecutor
+{
+    void dispatch(std::string_view, std::function<void()> fn,
+                  std::function<void()> oc, int, uint8_t, uint32_t) override
+    { fn(); if (oc) oc(); }
+    void wait_all() override {}
+    [[nodiscard]] int concurrency() const noexcept override { return 1; }
+};
+} // namespace
+
 auto Pipeline::run_inline(IObserver* observer) -> std::expected<void, PipelineError>
 {
-    struct InlineExecutor final : IExecutor
-    {
-        void dispatch(std::string_view, std::function<void()> fn,
-                      std::function<void()> oc, int, uint8_t, uint32_t) override
-        { fn(); if (oc) oc(); }
-        void wait_all() override {}
-        [[nodiscard]] int concurrency() const noexcept override { return 1; }
-    } exec;
+    InlineExecutor exec;
     return run(exec, observer);
+}
+
+auto Pipeline::run_inline(std::stop_token external, IObserver* observer)
+    -> std::expected<void, PipelineError>
+{
+    InlineExecutor exec;
+    return run(exec, std::move(external), observer);
+}
+
+bool Pipeline::join_orphans()
+{
+    if (!impl_) return false;
+    std::vector<std::thread> batch;
+    {
+        std::lock_guard lk{impl_->orphanMtx_};
+        batch = std::move(impl_->orphanThreads_);
+        impl_->orphanThreads_.clear();
+    }
+    if (batch.empty()) return false;
+    for (auto& t : batch) if (t.joinable()) t.join();
+    return true;
+}
+
+bool Pipeline::has_pending_orphans() const noexcept
+{
+    if (!impl_) return false;
+    std::lock_guard lk{impl_->orphanMtx_};
+    return !impl_->orphanThreads_.empty();
 }
 
 void Pipeline::run_until(IExecutor& executor, std::stop_token stop,

@@ -495,6 +495,51 @@ public:
         -> std::expected<void, PipelineError>;
 
     /**
+     * @brief Execute the DAG under an externally supplied stop token.
+     *
+     * @par Structured cancellation contract (see GitHub issue #1)
+     * This is the "cancellation requested" half of a two-signal contract.
+     * When @p external is signalled:
+     *   - Every node not yet dispatched at the moment the signal is observed
+     *     is pre-cancelled: its job function is never invoked, and it
+     *     resolves as `JobStatus::kCancelled` / `PipelineError::kCancelled`.
+     *     This closes the exact race this issue names -- a job whose
+     *     predecessor already returned success but which has not yet been
+     *     handed to the executor cannot start after cancellation fires, even
+     *     if the job body itself never checks its `std::stop_token`.
+     *   - Cancellation is a fatal-style condition for the run: once any node
+     *     resolves as `kCancelled`, its successors are skipped (mirroring
+     *     failure propagation), and `run()` itself returns
+     *     `std::unexpected(PipelineError::kCancelled)`.
+     *   - A node **already dispatched and running** at the moment @p external
+     *     fires does *not* automatically observe it through this call --
+     *     only its own per-node token (armed via `Job::cancel()` or
+     *     `.timeout()`) reaches a job already in flight. Fanning an external
+     *     token out to in-flight nodes is a known gap; see the design notes
+     *     in `docs/` / the issue thread.
+     *
+     * @par What "run() returned" does NOT mean
+     * A returned/joined `run()` call means the DAG stopped scheduling new
+     * work; it does **not** by itself mean every job's underlying OS thread
+     * has exited. A non-cancellable job that blows its `.timeout()` keeps
+     * running on a background thread that `run()` does not wait for --
+     * see `join_orphans()` for the second, "safe to free borrowed state"
+     * signal that Pouncer's borrow-for-the-duration-of-the-pipeline jobs
+     * (record buffers, DB connections, device state) need before they can
+     * be destroyed.
+     *
+     * @param executor  Execution backend.
+     * @param external  Stop token supplied by the caller (e.g. tied to the
+     *                  owning model's lifetime). A default-constructed,
+     *                  never-stoppable token behaves exactly like the
+     *                  two-argument `run()` overload.
+     * @param observer  Optional observer for progress and tracing.
+     */
+    [[nodiscard]] auto run(IExecutor& executor, std::stop_token external,
+                           IObserver* observer = nullptr)
+        -> std::expected<void, PipelineError>;
+
+    /**
      * @brief Run the pipeline synchronously on the calling thread (no executor required).
      *
      * Convenience overload that creates an inline sequential executor internally.
@@ -510,6 +555,53 @@ public:
      */
     [[nodiscard]] auto run_inline(IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
+
+    /**
+     * @brief `run_inline()` under an externally supplied stop token.
+     *
+     * Same structured-cancellation contract as `run(executor, external, observer)`,
+     * on the inline sequential executor. Because inline execution never leaves
+     * the calling thread, a `kCancelled` node's successors are pre-empted
+     * synchronously -- no dispatch, no thread, nothing left running when this
+     * call returns. (`join_orphans()` is still relevant if any job used
+     * `.timeout()` without being cancellable -- see that method's docs.)
+     */
+    [[nodiscard]] auto run_inline(std::stop_token external, IObserver* observer = nullptr)
+        -> std::expected<void, PipelineError>;
+
+    /**
+     * @brief Block until every "orphaned" timed-out job thread has actually exited.
+     *
+     * @par The second half of the structured-cancellation contract
+     * A non-cancellable job (one that does not take `std::stop_token`) that
+     * exceeds its `.timeout()` cannot be cooperatively signalled and cannot
+     * be force-terminated -- C++ has no portable way to kill a thread blocked
+     * in a syscall. `dispatchJob` reports `kTimeout` to the DAG promptly (so
+     * `run()` stays bounded and successors resolve), but the underlying
+     * `std::thread` is retained by the Pipeline instead of being detached.
+     *
+     * `run()` returning is therefore only the "cancellation requested /
+     * stop propagated" signal. `join_orphans()` is the "safe to free
+     * borrowed state" signal: call it after `run()`/`run_inline()` and
+     * before destroying anything a job closure captured by reference or
+     * pointer (record buffers, DB handles, device state, ...). It blocks
+     * for as long as the runaway thread takes to actually return control --
+     * which may be unbounded if the job's own I/O ignores the timeout, so
+     * callers with a hard deadline of their own must still enforce it
+     * (e.g. process-level abort) rather than assume this call returns.
+     *
+     * @return true if at least one thread was reaped by this call; false if
+     *         there was nothing pending (the common case).
+     */
+    bool join_orphans();
+
+    /**
+     * @brief Non-blocking check for `join_orphans()`.
+     * @return true if a non-cancellable job's timeout thread is still
+     *         running and has not yet been reaped. Safe to poll from any
+     *         thread.
+     */
+    [[nodiscard]] bool has_pending_orphans() const noexcept;
 
     /** @return Current status of a job (kPending before run()). */
     [[nodiscard]] auto status(Job j) const noexcept -> JobStatus;
@@ -717,6 +809,15 @@ private:
 
     Node&       node(uint32_t idx);
     const Node& node(uint32_t idx) const;
+
+    // Shared implementation for both run() overloads. `external` is nullptr
+    // when the caller used the no-stop-token overload -- a plain pointer
+    // (rather than duplicating the whole dispatch loop) keeps the two public
+    // overloads from drifting apart. Safe because run()/run_inline() are
+    // synchronous: the pointee outlives every use of the pointer.
+    [[nodiscard]] auto runImpl(IExecutor& executor, const std::stop_token* external,
+                               IObserver* observer)
+        -> std::expected<void, PipelineError>;
 };
 
 // ── JobGroup ────────────────────────────────────────────────────────────────
