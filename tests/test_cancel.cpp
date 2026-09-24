@@ -7,6 +7,11 @@
 #include "doctest.h"
 
 #include <chrono>
+#include <condition_variable>
+#include <future>
+#include <latch>
+#include <mutex>
+#include <thread>
 
 namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
 
@@ -36,7 +41,7 @@ TEST_CASE("Cancel: cancellable job receives stop_token")
 
 TEST_CASE("Cancel: kCancelled error code propagates correctly when job self-reports")
 {
-    // cancel() is designed for mid-run concurrent use; resetNode() creates a
+    // cancel() is designed for mid-run concurrent use; Run initialization creates a
     // fresh stop_source per epoch so pre-run cancel() is a no-op by design.
     // This test verifies the kCancelled error path via job self-report.
     RecordingExecutor exec;
@@ -55,7 +60,7 @@ TEST_CASE("Cancel: kCancelled error code propagates correctly when job self-repo
 
 TEST_CASE("Cancel: pre-run cancel() is a no-op -- stop_source resets at run() start")
 {
-    // resetNode() creates a fresh stop_source per epoch so that cancellation
+    // Run initialization creates a fresh stop_source per epoch so that cancellation
     // state from a previous run (or a mistaken pre-run cancel) does not bleed
     // into the next run. cancel() is intended for concurrent mid-run use.
     RecordingExecutor exec;
@@ -67,14 +72,14 @@ TEST_CASE("Cancel: pre-run cancel() is a no-op -- stop_source resets at run() st
         ++ran;
         return {};
     });
-    j.cancel();  // fired before run() -- will be reset by resetNode()
+    j.cancel();  // fired before run() -- will be reset by run initialization
 
     auto result = pipe.run(exec);
     CHECK(result.has_value());  // cancel had no effect
     CHECK(ran == 1);
 }
 
-TEST_CASE("Cancel: non-cancellable job ignores cancel() entirely")
+TEST_CASE("Cancel: pre-run cancellation also resets for plain functions")
 {
     RecordingExecutor exec;
     Pipeline pipe;
@@ -138,191 +143,221 @@ TEST_CASE("Timeout: cancellable job honours stop_token fired by DesktopExecutor 
         || result.error() == PipelineError::kTimeout));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Structured cancellation -- groundwork for issue #1
-// ═══════════════════════════════════════════════════════════════════════════════
-//
-// Pouncer's validate -> durable-commit -> device-ACK pipeline needs a hard
-// answer to: "if cancellation arrives in the window between commit
-// succeeding and its ACK stage running, does the ACK stage still run?"
-// These tests pin that answer down deterministically (no wall-clock sleeps,
-// no real threads -- run_inline()/SequentialExecutor only) and exercise the
-// two structured-cancellation signals this groundwork adds:
-//   1. "cancellation requested"    -- run()/run_inline() return kCancelled.
-//   2. "safe to free borrowed state" -- join_orphans() / has_pending_orphans().
-
-TEST_CASE("Cancel: KNOWN GAP -- Job::cancel() on a not-yet-reached successor is swallowed by its own epoch reset")
+// A firmware device validates records, commits durably, then acknowledges them.
+TEST_CASE("Cancel: successor cancellation survives run initialization")
 {
-    // This documents a genuine, still-open gap discovered while building the
-    // external-stop-token fix below (see the next test for the mechanism
-    // that IS fixed). resetNode() -- see src/sub0pipeline.cpp -- lazily
-    // assigns each node a *fresh* std::stop_source the first time that node
-    // is touched in the current epoch, specifically so that a cancel() from
-    // a PREVIOUS run (or before run() was called at all) cannot bleed into
-    // a new one ("Cancel: pre-run cancel() is a no-op" above).
-    //
-    // But that same reset fires for a successor's *first* touch during the
-    // CURRENT run too -- which happens lazily, only when its predecessor
-    // completes (Pipeline::runImpl's successor-dispatch loop). If
-    // Job::cancel() is called on that successor's handle *before* its
-    // predecessor finishes (i.e. exactly the "cancelled between
-    // commit-success and ACK-dispatch" window from issue #1, but delivered
-    // via a raw Job handle rather than an external token), the request lands
-    // on a stop_source that resetNode() is about to unconditionally replace
-    // -- so it is silently discarded and ack still runs.
-    //
-    // The external-stop_token overload added by this groundwork (next test)
-    // does NOT have this gap, because resetNode() consults the *live*
-    // external std::stop_token at reset time rather than relying on a
-    // per-node flag that reset can stomp on. Closing this gap for the
-    // Job::cancel()-on-a-handle path too would need the node to remember
-    // "a stop was requested during epoch N" independent of resetNode's
-    // stop_source replacement (e.g. a per-node cancel-epoch marker) --
-    // left as follow-up, not attempted here.
     Pipeline pipe;
     bool committed = false;
-    bool ackRan    = false;
-
-    Job ack; // assigned below; captured by reference so commit's body can cancel it
-    auto commit = pipe.emplace([&]() -> std::expected<void, PipelineError>
-    {
-        committed = true;
-        ack.cancel();  // "cancellation requested" arrives right here
-        return {};     // commit itself succeeded -- it is NOT rolled back
-    }).name("commit");
-
-    ack = pipe.emplace([&](std::stop_token) -> std::expected<void, PipelineError>
-    {
-        ackRan = true;
-        return {};
-    }).name("ack");
-    ack.succeed(commit);
-
-    auto result = pipe.run_inline();
-
-    CHECK(committed);
-    CHECK(ackRan);  // <-- the gap: ack still runs. See the next test for the
-                     //     mechanism that correctly closes this window.
-    REQUIRE(result.has_value());
-}
-
-TEST_CASE("Cancel: external stop token pre-empts a successor not yet dispatched")
-{
-    // Same race, but exercised through the new externally-supplied
-    // std::stop_token overload rather than a per-job Job::cancel() handle --
-    // this is the shape Pouncer would actually use: a token tied to the
-    // owning model's lifetime, not a handle to one specific successor.
-    Pipeline pipe;
-    std::stop_source extStop;
     bool ackRan = false;
-
-    auto commit = pipe.emplace([&]() -> std::expected<void, PipelineError>
-    {
-        extStop.request_stop();  // e.g. owning model starts tearing down here
-        return {};
-    }).name("commit");
-
-    auto ack = pipe.emplace([&](std::stop_token) -> std::expected<void, PipelineError>
-    {
-        ackRan = true;
-        return {};
-    }).name("ack");
+    Job ack;
+    auto commit = pipe.emplace([&] { committed = true; ack.cancel(); });
+    ack = pipe.emplace([&] { ackRan = true; });
     ack.succeed(commit);
-
-    auto result = pipe.run_inline(extStop.get_token());
-
+    auto result = pipe.run_inline();
+    CHECK(committed);
     CHECK_FALSE(ackRan);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kCancelled);
-    CHECK(pipe.status(ack) == JobStatus::kCancelled);
 }
 
-TEST_CASE("Cancel: external stop token cancels not-yet-started independent roots too")
+TEST_CASE("Cancel: queued roots and successors observe external stop")
 {
-    // Two independent root jobs (no dependency between them). The first
-    // fires the external token; the second must not start even though it
-    // has no predecessor relationship to the first -- an external token
-    // scopes to the whole run, not to one DAG edge.
-    Pipeline pipe;
-    std::stop_source extStop;
-    bool secondRan = false;
-
-    RecordingExecutor exec; // sequential, preserves dispatch order deterministically
-
-    auto first = pipe.emplace([&]() -> std::expected<void, PipelineError>
-    {
-        extStop.request_stop();
-        return {};
-    }).name("first");
-
-    auto second = pipe.emplace([&](std::stop_token) -> std::expected<void, PipelineError>
-    {
-        secondRan = true;
-        return {};
-    }).name("second");
-    // No edge between first/second -- both are roots. RecordingExecutor
-    // dispatches roots in emplace order, so "first" still runs before
-    // "second" gets a chance, deterministically.
-
-    auto result = pipe.run(exec, extStop.get_token());
-
-    CHECK_FALSE(secondRan);
-    CHECK_FALSE(result.has_value());
-    CHECK(result.error() == PipelineError::kCancelled);
-    CHECK(pipe.status(second) == JobStatus::kCancelled);
+    for (bool successor : {false, true}) {
+        Pipeline pipe;
+        QueuedExecutor executor;
+        std::stop_source stop;
+        bool ackRan = false;
+        auto commit = pipe.emplace([&] { stop.request_stop(); });
+        auto ack = pipe.emplace([&] { ackRan = true; });
+        if (successor) ack.succeed(commit);
+        auto result = pipe.run(executor, stop.get_token());
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == PipelineError::kCancelled);
+        CHECK_FALSE(ackRan);
+    }
 }
 
-TEST_CASE("Cancel: run() returning kTimeout is NOT the safe-to-free signal -- join_orphans() is")
+TEST_CASE("Cancel: every edge suppresses later device stages")
 {
-    // Reproduces the exact ambiguity issue #1 is about: a non-cancellable
-    // job (ignores its stop_token, as real blocked I/O might) that blows
-    // its timeout gets a hard packaged_task cutoff. Previously that thread
-    // was detach()'d -- run() would return kTimeout while the thread kept
-    // running and touching whatever it closed over. This test proves the
-    // two signals are now distinguishable:
-    //   - run() returns promptly (bounded by the declared timeout).
-    //   - has_pending_orphans() is true immediately after -- NOT safe to free.
-    //   - join_orphans() blocks until the thread actually exits, at which
-    //     point has_pending_orphans() is false and it IS safe to free.
-    //
-    // This test necessarily uses a real background thread and real wall-clock
-    // timing (DesktopExecutor + a genuinely blocked, non-cancellable job) --
-    // unlike the deterministic DAG-cancellation tests above, there is no way
-    // to prove an orphan OS thread's lifetime without a real thread.
-    auto exec = sub0pipeline::makeDesktopExecutor();
+    for (int edge = 0; edge != 3; ++edge) {
+        Pipeline pipe;
+        std::stop_source stop;
+        int calls = 0;
+        Job previous;
+        for (int stage = 0; stage != 4; ++stage) {
+            auto job = pipe.emplace([&, stage] {
+                ++calls;
+                if (stage == edge) stop.request_stop();
+            });
+            if (previous.valid()) job.succeed(previous);
+            previous = job;
+        }
+        auto result = pipe.run_inline(stop.get_token());
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == PipelineError::kCancelled);
+        CHECK(calls == edge + 1);
+    }
+}
+
+TEST_CASE("Cancel: optional cancellation is fatal but ordinary optional failure is not")
+{
+    for (auto error : {PipelineError::kCancelled, PipelineError::kJobFailed}) {
+        Pipeline pipe;
+        bool successorRan = false;
+        auto first = pipe.emplace([=]() -> std::expected<void, PipelineError> {
+            return std::unexpected(error);
+        }).optional();
+        auto next = pipe.emplace([&] { successorRan = true; }).succeed(first);
+        auto result = pipe.run_inline();
+        CHECK(result.has_value() == (error == PipelineError::kJobFailed));
+        CHECK(successorRan == (error == PipelineError::kJobFailed));
+        CHECK(pipe.status(next) == (successorRan ? JobStatus::kDone : JobStatus::kSkipped));
+    }
+}
+
+TEST_CASE("Cancel: external request releases an in-flight cooperative wait")
+{
     Pipeline pipe;
+    std::stop_source stop;
+    std::latch entered{1};
+    auto job = pipe.emplace([&](std::stop_token token) -> std::expected<void, PipelineError> {
+        std::mutex mutex;
+        std::condition_variable_any ready;
+        std::unique_lock lock{mutex};
+        entered.count_down();
+        ready.wait(lock, token, [] { return false; });
+        return std::unexpected(PipelineError::kCancelled);
+    });
+    std::expected<void, PipelineError> result;
+    std::jthread runner{[&] { result = pipe.run_inline(stop.get_token()); }};
+    entered.wait();
+    stop.request_stop();
+    runner.join();
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == PipelineError::kCancelled);
+    CHECK(pipe.status(job) == JobStatus::kCancelled);
+}
 
-    std::atomic<bool> jobStillRunning{true};
-    std::atomic<bool> jobActuallyFinished{false};
+TEST_CASE("Cancel: failed commit never acknowledges")
+{
+    Pipeline pipe;
+    bool ackRan = false;
+    auto commit = pipe.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    });
+    auto ack = pipe.emplace([&] { ackRan = true; }).succeed(commit);
+    CHECK_FALSE(pipe.run_inline().has_value());
+    CHECK_FALSE(ackRan);
+    CHECK(pipe.status(ack) == JobStatus::kSkipped);
+}
 
-    // Non-cancellable: does NOT take std::stop_token, so it cannot observe
-    // request_stop() -- exactly the "UDAW job functions time out at the
-    // syscall level" case the original Job::timeout() doc referred to.
-    auto j = pipe.emplace([&]() -> std::expected<void, PipelineError>
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds{80});
-        jobStillRunning.store(false);
-        jobActuallyFinished.store(true);
+TEST_CASE("Cancel: queued on-demand execution uses the same cancellation gate")
+{
+    Pipeline pipe;
+    QueuedExecutor executor;
+    bool ran = false;
+    auto job = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+        ran = true;
         return {};
     });
-    j.name("blocked_io").timeout(20ms);
+    pipe.arm(executor);
+    REQUIRE(pipe.trigger(job).has_value());
+    job.cancel();
+    executor.wait_all();
+    CHECK_FALSE(ran);
+    CHECK(pipe.status(job) == JobStatus::kCancelled);
+}
 
-    auto result = pipe.run(*exec);
-
-    CHECK_FALSE(result.has_value());
+TEST_CASE("Timeout: joining retains the pending signal until borrowed state is released")
+{
+    std::latch release{1};
+    std::atomic<bool> finished{false};
+    Pipeline pipe;
+    auto job = pipe.emplace([&] {
+        release.wait();
+        // A joiner must not clear the pending signal before this access ends.
+        CHECK(pipe.has_pending_orphans());
+        finished = true;
+    }).timeout(0ms);
+    auto result = pipe.run_inline();
+    REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kTimeout);
-    // run() returned well before the job's 80ms sleep finished -- "stop
-    // requested" (well, "timed out") but NOT "safe to free": the job
-    // closure captured jobStillRunning/jobActuallyFinished by reference,
-    // and the thread is still writing to them.
-    CHECK(jobStillRunning.load());
-    CHECK_FALSE(jobActuallyFinished.load());
     CHECK(pipe.has_pending_orphans());
-
-    // The explicit "safe to free borrowed state" signal: blocks until the
-    // orphaned thread has actually finished.
-    const bool joinedSomething = pipe.join_orphans();
-    CHECK(joinedSomething);
-    CHECK(jobActuallyFinished.load());
+    CHECK_FALSE(finished.load());
+    std::jthread joiner{[&] { CHECK(pipe.join_orphans()); }};
+    release.count_down();
+    joiner.join();
+    CHECK(finished.load());
     CHECK_FALSE(pipe.has_pending_orphans());
+    CHECK_FALSE(pipe.join_orphans());
+}
+
+TEST_CASE("Cancel: owner teardown joins before destroying borrowed members")
+{
+    struct Device {
+        std::latch entered{1};
+        std::stop_source stop;
+        int record = 42;
+        Pipeline pipe;
+        std::jthread runner;
+        Device() {
+            (void)pipe.emplace([this](std::stop_token token) -> std::expected<void, PipelineError> {
+                std::mutex mutex;
+                std::condition_variable_any ready;
+                std::unique_lock lock{mutex};
+                entered.count_down();
+                ready.wait(lock, token, [] { return false; });
+                CHECK(record == 42);
+                return std::unexpected(PipelineError::kCancelled);
+            });
+            runner = std::jthread{[this] { (void)pipe.run_inline(stop.get_token()); }};
+            entered.wait();
+        }
+        ~Device() {
+            stop.request_stop();
+            runner.join();
+            pipe.join_orphans();
+        }
+    };
+    auto device = std::make_unique<Device>();
+    device.reset();
+}
+
+TEST_CASE("Run: reentrant execution is rejected")
+{
+    Pipeline pipe;
+    (void)pipe.emplace([&] {
+        auto nested = pipe.run_inline();
+        REQUIRE_FALSE(nested.has_value());
+        CHECK(nested.error() == PipelineError::kBusy);
+    });
+    CHECK(pipe.run_inline().has_value());
+}
+
+TEST_CASE("Cancel: fan-in stays skipped and a fresh run can retry")
+{
+    Pipeline pipe;
+    QueuedExecutor executor;
+    std::stop_source stop;
+    int acknowledgements = 0;
+    auto decode = pipe.emplace([] {});
+    auto commit = pipe.emplace([&] { stop.request_stop(); });
+    auto ack = pipe.emplace([&] { ++acknowledgements; });
+    ack.succeed(decode).succeed(commit);
+    auto cancelled = pipe.run(executor, stop.get_token());
+    REQUIRE_FALSE(cancelled.has_value());
+    CHECK(acknowledgements == 0);
+    CHECK(pipe.status(ack) == JobStatus::kCancelled);
+    CHECK(pipe.run(executor).has_value());
+    CHECK(acknowledgements == 1);
+}
+
+TEST_CASE("Timeout: successful cooperative work does not wait for its deadline")
+{
+    Pipeline pipe;
+    // Completion must interrupt the watchdog, not sleep for this duration.
+    (void)pipe.emplace([](std::stop_token) -> std::expected<void, PipelineError> {
+        return {};
+    }).timeout(24h);
+    CHECK(pipe.run_inline().has_value());
 }

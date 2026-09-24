@@ -320,7 +320,7 @@ target_link_libraries(MyApp PRIVATE Sub0Pipeline::Sub0Pipeline)
 |----------|-------------|----------|-------------|
 | `SequentialExecutor` | `Sub0Pipeline::Headless` | Any | Inline, no threads. Deterministic. Tests & bare-metal. |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Desktop | One `std::thread` per job. Full parallelism. No priority ordering. |
-| `PriorityExecutor` | `Sub0Pipeline::Priority` | Desktop | Bounded thread pool; higher `.priority()` jobs start first. Ideal for mixed blocking/prefetch workloads (e.g. UDAW). |
+| `PriorityExecutor` | `Sub0Pipeline::Priority` | Desktop | Bounded thread pool; higher `.priority()` jobs start first. Ideal for mixed blocking/prefetch workloads. |
 | `FreeRtosExecutor` | ESP-IDF component | ESP32-P4 | `xTaskCreatePinnedToCore`. Dual-core. |
 | `ScopedExecutor` | `Sub0Pipeline::Sub0Pipeline` | Any | Wraps any executor; scopes `wait_all()` to locally-dispatched jobs. Required for sub-DAG execution from within a running job. |
 
@@ -472,3 +472,11 @@ examples/
 ## License
 
 MIT — see [LICENSE.md](LICENSE.md)
+
+### Cancellation and embedded execution constraints
+
+See [the cancellation contract and embedded design notes](docs/structured-cancellation.md)
+for external stop tokens, owner teardown, unreaped timeout jobs, fixed/custom
+allocation considerations and future interrupt handoff. Inline execution with
+timeouts can use helper threads. Scheduler operations are task-context APIs;
+heap-free execution and ISR-safe scheduling are not current guarantees.

@@ -7,3 +7,4 @@ build-asan/
 *.suo
 .vs/
 CMakeUserPresets.json
+build-tsan/

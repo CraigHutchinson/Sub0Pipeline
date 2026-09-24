@@ -79,6 +79,7 @@ enum class PipelineError : uint8_t
     kNotArmed,          ///< trigger() called before arm() -- no executor stored.
     kNotOnDemand,       ///< trigger() called on a job not registered via add_on_demand().
     kCancelled,         ///< Job was cancelled externally via Job::cancel() or a stop token.
+    kBusy,              ///< Another run is already active.
 };
 
 // Forward declarations for cross-references.
@@ -106,7 +107,7 @@ public:
      *
      * If the job function does not return within `t`, the engine returns
      * `kTimeout` / `kTimedOut` and cascades skip to all successors.
-     * The job thread is detached -- UDAW job functions are expected to
+     * The timed-out job remains owned until join_orphans(); functions must
      * also timeout at the syscall level (TCP connect, subprocess pipe).
      *
      * Default: `std::chrono::milliseconds::max()` (no timeout).
@@ -122,7 +123,7 @@ public:
     /** Set the executor task priority 1–24 (default 5). */
     Job& priority(uint8_t p) noexcept;
 
-    /** Mark as optional: failure does not block or skip dependents. */
+    /** Ordinary failure does not block dependents; cancellation remains fatal. */
     Job& optional(bool opt = true) noexcept;
 
     /** Set status text shown while this job runs (for observer display). */
@@ -134,8 +135,9 @@ public:
      * Thread-safe. Fires the job's `std::stop_source`, setting its
      * `stop_token` to stopped. Cancellable job functions (those taking
      * `std::stop_token`) check `stop_requested()` and return `kCancelled`.
-     * Non-cancellable functions ignore the signal; timeout enforcement
-     * remains active.
+     * Pending functions are suppressed regardless of their signature. Running
+     * non-cooperative functions cannot be interrupted. Pre-run requests reset
+     * at the start of the next run, before any job is dispatched.
      */
     void cancel() noexcept;
 
@@ -291,6 +293,7 @@ class ScopedExecutor final : public IExecutor
 {
 public:
     explicit ScopedExecutor(IExecutor& parent) noexcept : parent_{parent} {}
+    ~ScopedExecutor() override { wait_all(); }
 
     void dispatch(
         std::string_view      name,
@@ -307,6 +310,8 @@ public:
             [this, oc = std::move(onComplete)]() mutable
             {
                 if (oc) oc();
+                // Publish completion and notify before the waiter can destroy us.
+                std::lock_guard lock{mtx_};
                 if (localInFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U)
                     cv_.notify_all();
             },
@@ -495,45 +500,20 @@ public:
         -> std::expected<void, PipelineError>;
 
     /**
-     * @brief Execute the DAG under an externally supplied stop token.
+     * Execute with external cancellation. Pending jobs check cancellation before
+     * invoking their body, including functions without a stop-token parameter.
+     * Running cooperative jobs receive the request through their per-job token.
+     * A request racing with body entry may be observed by the body instead.
+     * Cancellation is fatal even for optional jobs; successors are skipped.
+     * A successful durable commit is not rolled back when its ACK is suppressed.
+     * Consumers must make retries idempotent using durable operation identifiers.
      *
-     * @par Structured cancellation contract (see GitHub issue #1)
-     * This is the "cancellation requested" half of a two-signal contract.
-     * When @p external is signalled:
-     *   - Every node not yet dispatched at the moment the signal is observed
-     *     is pre-cancelled: its job function is never invoked, and it
-     *     resolves as `JobStatus::kCancelled` / `PipelineError::kCancelled`.
-     *     This closes the exact race this issue names -- a job whose
-     *     predecessor already returned success but which has not yet been
-     *     handed to the executor cannot start after cancellation fires, even
-     *     if the job body itself never checks its `std::stop_token`.
-     *   - Cancellation is a fatal-style condition for the run: once any node
-     *     resolves as `kCancelled`, its successors are skipped (mirroring
-     *     failure propagation), and `run()` itself returns
-     *     `std::unexpected(PipelineError::kCancelled)`.
-     *   - A node **already dispatched and running** at the moment @p external
-     *     fires does *not* automatically observe it through this call --
-     *     only its own per-node token (armed via `Job::cancel()` or
-     *     `.timeout()`) reaches a job already in flight. Fanning an external
-     *     token out to in-flight nodes is a known gap; see the design notes
-     *     in `docs/` / the issue thread.
-     *
-     * @par What "run() returned" does NOT mean
-     * A returned/joined `run()` call means the DAG stopped scheduling new
-     * work; it does **not** by itself mean every job's underlying OS thread
-     * has exited. A non-cancellable job that blows its `.timeout()` keeps
-     * running on a background thread that `run()` does not wait for --
-     * see `join_orphans()` for the second, "safe to free borrowed state"
-     * signal that Pouncer's borrow-for-the-duration-of-the-pipeline jobs
-     * (record buffers, DB connections, device state) need before they can
-     * be destroyed.
-     *
-     * @param executor  Execution backend.
-     * @param external  Stop token supplied by the caller (e.g. tied to the
-     *                  owning model's lifetime). A default-constructed,
-     *                  never-stoppable token behaves exactly like the
-     *                  two-argument `run()` overload.
-     * @param observer  Optional observer for progress and tracing.
+     * run() waits for executor callbacks, but timed-out non-cooperative jobs may
+     * remain: call join_orphans() before releasing borrowed state. Subsequent
+     * runs join previous orphans before resetting state; concurrent runs return
+     * kBusy. The executor, observer, Pipeline and borrowed state must remain
+     * alive until run() and join_orphans() have completed. Owner teardown must
+     * request stop and join its run thread before destroying those members.
      */
     [[nodiscard]] auto run(IExecutor& executor, std::stop_token external,
                            IObserver* observer = nullptr)
@@ -543,7 +523,8 @@ public:
      * @brief Run the pipeline synchronously on the calling thread (no executor required).
      *
      * Convenience overload that creates an inline sequential executor internally.
-     * Jobs execute in dependency order on the calling thread with no parallelism.
+     * Untimed jobs execute in dependency order on the calling thread. Timeout
+     * enforcement may create helper threads; join_orphans() still applies.
      * Useful for request-scoped pipelines, tests, and embedded contexts where
      * creating an executor explicitly would be boilerplate.
      *
@@ -556,50 +537,21 @@ public:
     [[nodiscard]] auto run_inline(IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
-    /**
-     * @brief `run_inline()` under an externally supplied stop token.
-     *
-     * Same structured-cancellation contract as `run(executor, external, observer)`,
-     * on the inline sequential executor. Because inline execution never leaves
-     * the calling thread, a `kCancelled` node's successors are pre-empted
-     * synchronously -- no dispatch, no thread, nothing left running when this
-     * call returns. (`join_orphans()` is still relevant if any job used
-     * `.timeout()` without being cancellable -- see that method's docs.)
+    /** Execute with external cancellation using the inline executor.
+     * Timed jobs may use helper threads; the run()/join_orphans() contract applies.
      */
     [[nodiscard]] auto run_inline(std::stop_token external, IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
-    /**
-     * @brief Block until every "orphaned" timed-out job thread has actually exited.
-     *
-     * @par The second half of the structured-cancellation contract
-     * A non-cancellable job (one that does not take `std::stop_token`) that
-     * exceeds its `.timeout()` cannot be cooperatively signalled and cannot
-     * be force-terminated -- C++ has no portable way to kill a thread blocked
-     * in a syscall. `dispatchJob` reports `kTimeout` to the DAG promptly (so
-     * `run()` stays bounded and successors resolve), but the underlying
-     * `std::thread` is retained by the Pipeline instead of being detached.
-     *
-     * `run()` returning is therefore only the "cancellation requested /
-     * stop propagated" signal. `join_orphans()` is the "safe to free
-     * borrowed state" signal: call it after `run()`/`run_inline()` and
-     * before destroying anything a job closure captured by reference or
-     * pointer (record buffers, DB handles, device state, ...). It blocks
-     * for as long as the runaway thread takes to actually return control --
-     * which may be unbounded if the job's own I/O ignores the timeout, so
-     * callers with a hard deadline of their own must still enforce it
-     * (e.g. process-level abort) rather than assume this call returns.
-     *
-     * @return true if at least one thread was reaped by this call; false if
-     *         there was nothing pending (the common case).
+    /** Join timed-out non-cooperative jobs after run() or executor.wait_all().
+     * May block indefinitely if a job never returns. Concurrent joiners are
+     * serialized. Do not call from a job, or start new work during teardown.
+     * Returns whether this call reaped any threads.
      */
     bool join_orphans();
 
-    /**
-     * @brief Non-blocking check for `join_orphans()`.
-     * @return true if a non-cancellable job's timeout thread is still
-     *         running and has not yet been reaped. Safe to poll from any
-     *         thread.
+    /** True while timed-out threads remain unreaped, including during a join.
+     * Thread-safe query, not a substitute for joining or synchronizing producers.
      */
     [[nodiscard]] bool has_pending_orphans() const noexcept;
 
@@ -747,7 +699,7 @@ public:
      * `.timeout()`. Sets `kFlagCancellable` so the watchdog path is used rather
      * than the hard packaged_task cutoff.
      *
-     * Primary use case: UDAW FetchQueue drainer that must exit cleanly when
+     * Primary use case: a device transfer queue drainer that must exit cleanly when
      * a client session disconnects.
      */
     [[nodiscard]] Job add_on_demand(
@@ -810,12 +762,8 @@ private:
     Node&       node(uint32_t idx);
     const Node& node(uint32_t idx) const;
 
-    // Shared implementation for both run() overloads. `external` is nullptr
-    // when the caller used the no-stop-token overload -- a plain pointer
-    // (rather than duplicating the whole dispatch loop) keeps the two public
-    // overloads from drifting apart. Safe because run()/run_inline() are
-    // synchronous: the pointee outlives every use of the pointer.
-    [[nodiscard]] auto runImpl(IExecutor& executor, const std::stop_token* external,
+    // Both public overloads use the same cancellation and execution path.
+    [[nodiscard]] auto runImpl(IExecutor& executor, std::stop_token external,
                                IObserver* observer)
         -> std::expected<void, PipelineError>;
 };
@@ -908,7 +856,7 @@ std::unique_ptr<IExecutor> makeSequentialExecutor();
  * Jobs with a larger `.priority()` value are started before lower-priority
  * jobs that are still queued. Running jobs are not preempted.
  *
- * Typical UDAW usage: blocking fetches (.priority(10)) preempt prefetch
+ * Typical device usage: blocking fetches (.priority(10)) preempt prefetch
  * hints (.priority(5)) when the thread pool is under load.
  *
  * @param threadCount    Worker thread count. 0 = `hardware_concurrency()`.
