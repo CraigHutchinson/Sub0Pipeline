@@ -23,8 +23,9 @@ scheduler cannot make external side effects idempotent.
   moves or destruction with a run. `Job::cancel()` can run concurrently while
   the Pipeline and handles remain valid.
 - `trigger()` shares invocation, timeout and status logic with DAG jobs. Wait on
-  its executor and join orphans before teardown. It remains an individual job
-  invocation, not a token-scoped DAG run.
+  its executor and join orphans before teardown/retry. Each accepted invocation
+  resets cancellation; queued/running duplicates and foreign handles are rejected.
+  It remains an individual job invocation, not a token-scoped DAG run.
 - Stop callbacks execute synchronously in the requesting thread. Keep them
   bounded; do not join or block on the run owner from a stop callback.
 - Cancellation cannot release arbitrary non-cooperative I/O. Transports need
@@ -35,13 +36,55 @@ borrowed members are destroyed. Destroying a Pipeline while another thread is
 inside `run()` is unsupported. The regression suite tests the explicit owner
 shutdown sequence with borrowed state under sanitizers.
 
-## Remaining acceptance work
+## Injected deadlines
 
-- Injected deadline service for deterministic timeout tests and threadless targets.
-  Current timeout enforcement creates native helper threads, including inline runs.
-- Bounded Qt and Zephyr adapter examples with cooperative I/O and shutdown tests.
-- If needed, an owned asynchronous run scope whose completion covers jobs,
-  queued callbacks and stop registrations, without GUI-thread join deadlocks.
+Include `sub0pipeline/deadline.hpp` and configure `set_deadline_service()` while
+idle. Services receive a caller-owned stack registration and a relative execution
+duration; queue time is excluded. Return false on capacity exhaustion with no
+retained pointer. This fails closed with `kDeadlineUnavailable`. Zero/negative
+relative durations should expire synchronously. Untimed jobs bypass the service.
+
+`cancel_and_wait()` must remove the registration and drain all expiry activity,
+including when it already fired. `Deadline::expire()` requests stop synchronously:
+use task context, release service locks first, and keep consumer callbacks bounded.
+A single-thread manual clock is appropriate only with sequential execution; a
+concurrent executor requires a thread-safe service. The service must outlive the
+Pipeline's active work. Core registration storage itself does not allocate.
+
+An injected service avoids watchdog threads for cooperative bodies. Plain timed
+bodies still run in a native worker; expiry or external cancellation may return
+before that worker ends, so joining remains mandatory. Timed cooperative bodies
+return `kTimeout` after expiry even if they return success. Cancellation alone
+retains the body's cooperative result. Neither mechanism interrupts arbitrary I/O.
+
+## Owned run scope
+
+`sub0pipeline/run_scope.hpp` provides opt-in `RunScope`: one owned run thread,
+`request_stop()`, `join()` and `complete()`. Destruction requests stop and joins
+executor callbacks, drained deadline registrations and orphan workers. Declare the
+scope after borrowed members or explicitly join before member teardown. A rejected
+concurrent run does not join another run's workers. Do not overlap run/trigger or
+graph mutation; do not join from a worker/stop callback or a GUI thread required by
+that run. Jobs and observer callbacks must not throw, as with threaded executors.
+
+## Acceptance evidence and platform boundaries
+
+- `tests/test_cancel.cpp`: cancellation at roots and DAG edges, fan-in retry,
+  optional cancellation, blocked cooperative I/O, failed commit → no ACK and joins.
+- `tests/test_deadline.cpp`: manually advanced single-thread deadlines at the exact
+  boundary, success-before-expiry, immediate expiry, exhaustion, on-demand timeout,
+  fresh retries and structured owner teardown. Concurrent tests use latches to
+  exercise callback draining and retained non-cooperative borrowed state.
+- `examples/qt_bounded`: real Qt pool saturation, cooperative I/O and RunScope
+  shutdown without a GUI event loop.
+- `examples/zephyr_bounded`: real Zephyr native simulator, fixed-slot saturation,
+  cooperative semaphore waits, ACK suppression and explicit on-demand shutdown.
+
+Adapters bound queued/worker resources, not recursive caller-runs stack depth or
+all callable/stop-state allocation. Native simulator success is not hardware proof.
+Qt/Zephyr remain optional; no framework/RTOS dependency enters the core. CI builds
+and runs both examples. Fixed-capacity execution, full custom-allocation coverage
+and ISR handoff remain version-next design work below.
 
 # Embedded extensions: version-next design
 

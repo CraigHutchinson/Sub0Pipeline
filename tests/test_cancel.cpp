@@ -130,8 +130,10 @@ TEST_CASE("Timeout: cancellable job honours stop_token fired by DesktopExecutor 
     // Job polls stop_token in a tight loop; watchdog fires it after 50ms.
     auto j = pipe.emplace([](std::stop_token st) -> std::expected<void, PipelineError>
     {
-        while (!st.stop_requested())
-            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+        std::mutex mutex;
+        std::condition_variable_any ready;
+        std::unique_lock lock{mutex};
+        ready.wait(lock, st, [] { return false; });
         return std::unexpected(PipelineError::kCancelled);
     });
     j.name("slow_fetch").timeout(50ms);

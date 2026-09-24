@@ -9,6 +9,8 @@ project(Sub0Pipeline VERSION 1.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
+option(SUB0PIPELINE_BUILD_QT_EXAMPLE "Build bounded Qt adapter example/test" OFF)
+
 option(SUB0PIPELINE_BUILD_TESTING  "Build unit-tests"   ON)
 option(SUB0PIPELINE_BUILD_EXAMPLES "Build examples"     OFF)
 option(SUB0PIPELINE_BUILD_BENCHMARKS "Build benchmarks" OFF)
@@ -115,4 +117,8 @@ if(NOT IS_SUBPROJECT)
             "${CMAKE_INSTALL_INCLUDEDIR}"
     )
 
+endif()
+
+if(SUB0PIPELINE_BUILD_QT_EXAMPLE)
+    add_subdirectory(examples/qt_bounded)
 endif()

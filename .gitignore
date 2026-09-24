@@ -11,3 +11,6 @@ build-tsan/
 build-perf/
 benchmark-results/
 build-noexcept/
+
+build-qt/
+build-zephyr/

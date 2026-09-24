@@ -79,11 +79,13 @@ enum class PipelineError : uint8_t
     kNotArmed,          ///< trigger() called before arm() -- no executor stored.
     kNotOnDemand,       ///< trigger() called on a job not registered via add_on_demand().
     kCancelled,         ///< Job was cancelled externally via Job::cancel() or a stop token.
-    kBusy,              ///< Another run is already active.
+    kBusy,              ///< Another run or invocation is already active.
+    kDeadlineUnavailable, ///< Injected deadline service has no free registration.
 };
 
 // Forward declarations for cross-references.
 class Pipeline;
+class IDeadlineService;
 
 // ── Job handle ────────────────────────────────────────────────────────────────
 
@@ -231,7 +233,7 @@ enum class JobStatus : uint8_t
  * Contract:
  *   - dispatch() MUST increment its in-flight counter before returning.
  *   - dispatch() MUST eventually call onComplete() from the dispatched context.
- *   - wait_all() MUST NOT return until all dispatched onComplete() calls have fired.
+ *   - wait_all() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
  */
 class IExecutor
 {
@@ -255,7 +257,7 @@ public:
         uint8_t                       priority,
         uint32_t                      stackBytes = 4096U) = 0;
 
-    /** Block until all previously dispatched jobs have called onComplete(). */
+    /** Block until dispatched jobs and their completion callbacks have returned. */
     virtual void wait_all() = 0;
 
     /** @return Number of parallel execution slots (cores / thread pool size). */
@@ -436,7 +438,7 @@ public:
      * @brief Add a cancellable job whose function receives a `std::stop_token`.
      *
      * The stop token is signalled when:
-     *   - The job's `.timeout()` expires (cooperative signal before hard cutoff).
+     *   - The job's `.timeout()` expires (cooperative stop request; the body must return).
      *   - `Job::cancel()` is called from any thread.
      *
      * The function should poll `token.stop_requested()` at checkpoints and
@@ -478,6 +480,13 @@ public:
     /** @return Total number of jobs currently in the DAG. */
     [[nodiscard]] std::size_t size() const noexcept;
 
+    /** Borrow an optional deadline service. Set only while idle, with no
+     * pending callbacks or orphans. nullptr restores native timeout helpers.
+     * Cooperative timed bodies use no helper thread with an injected service;
+     * plain timed bodies still need a native worker to enforce a cutoff.
+     */
+    void set_deadline_service(IDeadlineService* service);
+
     // ── Execution ────────────────────────────────────────────────────────
 
     /**
@@ -487,9 +496,8 @@ public:
      * predecessors complete. Blocks until all jobs finish or a required job fails.
      *
      * Re-runnable: calling run() again re-executes the entire DAG using an
-     * epoch-based reset — no separate reset() call is needed. Each run
-     * increments an internal epoch; nodes lazily reset their state when
-     * first touched, avoiding an O(N) bulk reset pass.
+     * fresh cancellation/dependency state before dispatch. No separate reset()
+     * call is needed. Validation is cached until the topology changes.
      *
      * @param executor  Execution backend (threaded, sequential, custom, …).
      * @param observer  Optional observer for progress and tracing.
