@@ -716,9 +716,11 @@ public:
     /**
      * @brief Dispatch an on-demand job via the armed executor.
      *
-     * Safe to call from any thread. Requires arm() to have been called first.
-     * Returns an error if the pipeline has not been armed or the job is not
-     * an on-demand job.
+     * Requires arm(), a stable graph and a thread-safe executor for concurrent
+     * submissions. Do not overlap run(), mutation or destruction. Returns kBusy
+     * for a queued/running duplicate or unreaped timeout work; foreign handles
+     * return kUnknownJob. Each accepted invocation starts fresh cancellation.
+     * Wait for executor completion and reap orphans before retry or teardown.
      *
      * The job executes asynchronously; completion is reported via the observer
      * passed to arm() (if any).

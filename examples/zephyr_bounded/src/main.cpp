@@ -3,7 +3,7 @@
 #include <atomic>
 
 using namespace sub0pipeline;
-int main() {
+static int exercise() {
     ZephyrExecutor<2> executor;
     Pipeline pipe;
     std::atomic<int> calls{0};
@@ -47,6 +47,15 @@ int main() {
     executor.wait_all();
     io.join_orphans();
     if (io.status(event) != JobStatus::kCancelled) return 4;
+    return 0;
+}
+
+int main() {
+    if (const int error = exercise()) {
+        printk("Sub0Pipeline Zephyr bounded: FAIL %d\n", error);
+        return error;
+    }
+    // Report only after executor destruction has joined the worker.
     printk("Sub0Pipeline Zephyr bounded: PASS\n");
     return 0;
 }

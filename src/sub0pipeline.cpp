@@ -234,7 +234,7 @@ struct Pipeline::Impl
     std::atomic_flag          running_ = ATOMIC_FLAG_INIT;
     std::mutex                stopMtx_;
     bool                      rootsCached_{false};
-    IDeadlineService*         deadlines_{nullptr};
+    IDeadlineService*          deadlines_{nullptr};
     IExecutor*                armedExecutor_{nullptr};
     IObserver*                armedObserver_{nullptr};
 
@@ -368,6 +368,14 @@ struct Pipeline::Impl
         if (node.timeout_ == std::chrono::milliseconds::max())
             return node.fn_(token);
 
+        return invokeTimed(node, token);
+    }
+
+    // Keep opt-in machinery out of the small untimed invocation path so that
+    // compilers can inline the cancellation gate and ordinary callable dispatch.
+    auto invokeTimed(Node& node, const std::stop_token& token)
+        -> std::expected<void, PipelineError>
+    {
         if (deadlines_) return invokeWithDeadline(node);
 
         if (node.isCancellable()) {
