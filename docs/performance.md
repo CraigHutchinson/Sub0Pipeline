@@ -77,3 +77,11 @@ are separate gates. Shared-runner timings are advisory and do not automatically
 pass or fail a PR. Memory allocation/resource accounting and real target
 measurements remain necessary before claiming fixed-capacity, heap-free,
 interrupt-safe or hard real-time behavior.
+
+
+## Structured cancellation completion follow-up
+
+The deadline/run-scope follow-up is measured against the merged baseline, rather
+than the original draft. See [the new capture and investigation](performance-deadlines.md)
+for the default-path regression found during development, its fixes, final
+same-host figures and retained raw evidence.
