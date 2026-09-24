@@ -34,6 +34,12 @@ jobs:
       - name: Capture five alternating samples
         run: |
           python3 scripts/capture_benchmarks.py --current build-perf/tests/Sub0Pipeline_Bench --current-ref "$(git rev-parse HEAD)" --baseline /tmp/sub0-benchmark-baseline/build-perf/tests/Sub0Pipeline_Bench --baseline-ref "$(cat /tmp/sub0-benchmark-baseline-sha)" --features --repeats 5 --output benchmark-results
+      - name: Audit C++ allocation calls (current revision)
+        run: |
+          cmake --build build-perf --target Sub0Pipeline_AllocationAudit --parallel 2
+          for sample in 1 2 3; do
+            build-perf/tests/Sub0Pipeline_AllocationAudit > "benchmark-results/allocations-$sample.csv"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: performance-evidence

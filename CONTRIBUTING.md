@@ -72,6 +72,13 @@ runner measurements are advisory; do not enforce a universal nanosecond limit.
 Investigate substantial regressions or variance. Explain an intentional cost
 with the guarantee it buys. Keep required lifetime safety enabled by default.
 
+For allocation-sensitive work, also run `Sub0Pipeline_AllocationAudit` from the
+benchmark build in three independent processes. Retain CSV, compiler/library and
+source revision; distinguish requested bytes from live/peak memory and C++ `new`
+from platform/allocator calls it cannot observe. Do not time instrumented runs.
+See [the audit method and limits](docs/allocation-audit.md). These counts supplement,
+not replace, fixed-budget exhaustion and real-target tests.
+
 ## 5. Deliver
 
 Update the root README's feature set, opt-in costs, API descriptions, real

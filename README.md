@@ -147,6 +147,11 @@ Fixed/custom storage and interrupt handoff need additional platform contracts;
 reserving graph containers alone would not eliminate allocations from callables,
 stop states, scratch or executor queues.
 
+The [allocation audit](docs/allocation-audit.md) separates graph construction,
+first execution, warmed execution, cancellation, diagnostics and helper costs.
+On the recorded GCC/libstdc++ host, a warmed ten-job chain still makes ten C++
+allocation calls per run; graph reservation alone cannot make execution heap-free.
+
 ## Executors and use-case boundaries
 
 | Executor | Target / location | Behavior |
