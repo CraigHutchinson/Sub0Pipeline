@@ -14,6 +14,7 @@
 #endif
 
 #include <sub0pipeline/sub0pipeline.hpp>
+#include <sub0pipeline/deadline.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -233,6 +234,7 @@ struct Pipeline::Impl
     std::atomic_flag          running_ = ATOMIC_FLAG_INIT;
     std::mutex                stopMtx_;
     bool                      rootsCached_{false};
+    IDeadlineService*          deadlines_{nullptr};
     IExecutor*                armedExecutor_{nullptr};
     IObserver*                armedObserver_{nullptr};
 
@@ -292,18 +294,94 @@ struct Pipeline::Impl
         return invoke(node);
     }
 
+    auto invokeWithDeadline(Node& node) -> std::expected<void, PipelineError>
+    {
+        Deadline deadline{node.stopSource_};
+        if (!deadlines_->arm(deadline, node.timeout_))
+            return std::unexpected(PipelineError::kDeadlineUnavailable);
+        struct Registration {
+            IDeadlineService& service;
+            Deadline& deadline;
+            bool active = true;
+            void reset() noexcept {
+                if (std::exchange(active, false)) service.cancel_and_wait(deadline);
+            }
+            ~Registration() { reset(); }
+        } registration{*deadlines_, deadline};
+        const auto token = node.stopSource_.get_token();
+        if (token.stop_requested()) {
+            registration.reset();
+            return std::unexpected(deadline.expired() ? PipelineError::kTimeout
+                                                     : PipelineError::kCancelled);
+        }
+        if (node.isCancellable()) {
+            auto result = node.fn_(token);
+            registration.reset();
+            return deadline.expired() ? std::unexpected(PipelineError::kTimeout) : result;
+        }
+        // The worker may outlive dispatch, so its completion state is owned.
+        struct Completion {
+            std::mutex mutex;
+            std::condition_variable_any ready;
+            bool done = false;
+        };
+        auto completion = std::make_shared<Completion>();
+        std::packaged_task<std::expected<void, PipelineError>()> task{
+            [fn = node.fn_, token] { return fn(token); }
+        };
+        auto result = task.get_future();
+        std::jthread thread{[task = std::move(task), completion]() mutable {
+            task();
+            std::lock_guard lock{completion->mutex};
+            completion->done = true;
+            completion->ready.notify_all();
+        }};
+        bool done;
+        {
+            std::unique_lock lock{completion->mutex};
+            done = completion->ready.wait(lock, token, [&] { return completion->done; });
+        }
+        registration.reset();
+        if (done) {
+            thread.join();
+            auto value = result.get();
+            return deadline.expired() ? std::unexpected(PipelineError::kTimeout) : value;
+        }
+        retain(std::move(thread));
+        return std::unexpected(deadline.expired() ? PipelineError::kTimeout
+                                                 : PipelineError::kCancelled);
+    }
+
+    void retain(std::jthread thread)
+    {
+        std::lock_guard lock{orphanMtx_};
+        orphanThreads_.push_back(std::move(thread));
+        pendingOrphans_.fetch_add(1, std::memory_order_release);
+    }
+
     auto invoke(Node& node) -> std::expected<void, PipelineError>
     {
-        const auto token = node.stopSource_.get_token();
+        auto token = node.stopSource_.get_token();
         if (token.stop_requested())
             return std::unexpected(PipelineError::kCancelled);
 
         if (node.timeout_ == std::chrono::milliseconds::max())
-            return node.fn_(token);
+            return node.fn_(std::move(token));
+
+        return invokeTimed(node, token);
+    }
+
+    // Keep opt-in machinery out of the small untimed invocation path so that
+    // compilers can inline the cancellation gate and ordinary callable dispatch.
+    auto invokeTimed(Node& node, const std::stop_token& token)
+        -> std::expected<void, PipelineError>
+    {
+        if (deadlines_) return invokeWithDeadline(node);
 
         if (node.isCancellable()) {
+            std::atomic<bool> expired{false};
             // Interrupt the deadline wait when the job finishes or is cancelled.
-            std::jthread watchdog{[source = node.stopSource_, duration = node.timeout_]
+            std::jthread watchdog{[source = node.stopSource_, duration = node.timeout_, &expired]
                 (std::stop_token finished) mutable {
                 std::mutex mutex;
                 std::condition_variable_any wake;
@@ -312,12 +390,19 @@ struct Pipeline::Impl
                     wake.notify_all();
                 }};
                 std::unique_lock lock{mutex};
-                wake.wait_for(lock, finished, duration,
+                const bool stopped = wake.wait_for(lock, finished, duration,
                               [&] { return source.stop_requested(); });
                 lock.unlock();
-                if (!finished.stop_requested()) source.request_stop();
+                if (!stopped && !finished.stop_requested()) {
+                    expired.store(true, std::memory_order_release);
+                    source.request_stop();
+                }
             }};
-            return node.fn_(token);
+            auto result = node.fn_(token);
+            watchdog.request_stop();
+            watchdog.join();
+            return expired.load(std::memory_order_acquire)
+                ? std::unexpected(PipelineError::kTimeout) : result;
         }
 
         std::packaged_task<std::expected<void, PipelineError>()> task{
@@ -330,15 +415,17 @@ struct Pipeline::Impl
             return result.get();
         }
         node.stopSource_.request_stop();
-        {
-            std::lock_guard lock{orphanMtx_};
-            orphanThreads_.push_back(std::move(thread));
-            pendingOrphans_.fetch_add(1, std::memory_order_release);
-        }
+        retain(std::move(thread));
         return std::unexpected(PipelineError::kTimeout);
     }
 
 };
+
+void Pipeline::set_deadline_service(IDeadlineService* service)
+{
+    if (!impl_) impl_ = std::make_unique<Impl>();
+    impl_->deadlines_ = service;
+}
 
 // ── Job builder methods ───────────────────────────────────────────────────────
 
@@ -741,14 +828,14 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
 auto Pipeline::status(Job j) const noexcept -> JobStatus
 {
-    if (!impl_ || !j.valid() || j.idx_ >= impl_->nodes_.size())
+    if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return JobStatus::kPending;
     return impl_->nodes_[j.idx_].jobStatus_.load(std::memory_order_acquire);
 }
 
 auto Pipeline::name(Job j) const noexcept -> std::string_view
 {
-    if (!impl_ || !j.valid() || j.idx_ >= impl_->nodes_.size())
+    if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return {};
     return impl_->nodes_[j.idx_].nameStr_;
 }
@@ -910,7 +997,7 @@ Job Pipeline::add_on_demand(
 
 auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
 {
-    if (!impl_ || !j.valid() || j.idx_ >= impl_->nodes_.size())
+    if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return std::unexpected(PipelineError::kUnknownJob);
 
     if (!impl_->armedExecutor_)
@@ -919,6 +1006,17 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
     auto& nd = impl_->nodes_[j.idx_];
     if (!nd.isOnDemand())
         return std::unexpected(PipelineError::kNotOnDemand);
+
+    if (impl_->running_.test(std::memory_order_acquire) || has_pending_orphans())
+        return std::unexpected(PipelineError::kBusy);
+    {
+        std::lock_guard lock{impl_->stopMtx_};
+        const auto status = nd.jobStatus_.load(std::memory_order_acquire);
+        if (status == JobStatus::kReady || status == JobStatus::kRunning)
+            return std::unexpected(PipelineError::kBusy);
+        nd.stopSource_ = std::stop_source{};
+        nd.jobStatus_.store(JobStatus::kReady, std::memory_order_release);
+    }
 
     IExecutor*  exec = impl_->armedExecutor_;
     IObserver*  obs  = impl_->armedObserver_;

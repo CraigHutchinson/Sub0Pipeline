@@ -1,0 +1,5 @@
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core)
+add_executable(Sub0Pipeline_QtBounded main.cpp)
+target_link_libraries(Sub0Pipeline_QtBounded PRIVATE Sub0Pipeline::Sub0Pipeline Qt6::Core)
+add_test(NAME Sub0Pipeline_QtBounded COMMAND Sub0Pipeline_QtBounded)
+set_tests_properties(Sub0Pipeline_QtBounded PROPERTIES TIMEOUT 30)

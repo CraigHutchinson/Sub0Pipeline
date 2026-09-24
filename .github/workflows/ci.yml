@@ -89,3 +89,44 @@ jobs:
         run: cmake --build --preset ci-tsan
       - name: Test
         run: ctest --preset ci-tsan --timeout 30
+
+  qt-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+      - name: Configure and build
+        run: |
+          cmake -S . -B build-qt -DCMAKE_BUILD_TYPE=Release -DSUB0PIPELINE_BUILD_QT_EXAMPLE=ON
+          cmake --build build-qt --parallel 2
+      - name: Test
+        run: ctest --test-dir build-qt --output-on-failure --timeout 30
+
+  zephyr-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: zephyrproject-rtos/zephyr
+          ref: v4.1.0
+          path: zephyr-source
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build device-tree-compiler
+          python3 -m venv /tmp/sub0-zephyr-env
+          /tmp/sub0-zephyr-env/bin/pip install -r zephyr-source/scripts/requirements-base.txt
+      - name: Build native simulator with full C++23 library
+        env:
+          ZEPHYR_BASE: ${{ github.workspace }}/zephyr-source
+          ZEPHYR_TOOLCHAIN_VARIANT: host
+        run: |
+          cmake -S examples/zephyr_bounded -B build-zephyr -GNinja -DBOARD=native_sim/native/64 -DPython3_EXECUTABLE=/tmp/sub0-zephyr-env/bin/python
+          cmake --build build-zephyr --parallel 2
+      - name: Test saturation, cooperative I/O and teardown
+        run: |
+          timeout 30 build-zephyr/zephyr/zephyr.exe -stop_at=2 | tee zephyr-test.log
+          grep -q 'Sub0Pipeline Zephyr bounded: PASS' zephyr-test.log
