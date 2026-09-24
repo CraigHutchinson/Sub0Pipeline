@@ -48,6 +48,12 @@ add_test(NAME Sub0Pipeline_DslTests COMMAND Sub0Pipeline_DslTests)
 # ── Benchmarks (not run by ctest — run manually) ──────────────────────────────
 
 if(SUB0PIPELINE_BUILD_BENCHMARKS)
+    # Replaces global new/delete in this standalone executable only.
+    if(SUB0PIPELINE_EXCEPTIONS)
+        add_executable(Sub0Pipeline_AllocationAudit audit_allocations.cpp)
+        target_link_libraries(Sub0Pipeline_AllocationAudit PRIVATE Sub0Pipeline::Sub0Pipeline)
+    endif()
+
     add_executable(Sub0Pipeline_Bench bench_pipeline.cpp)
     target_link_libraries(Sub0Pipeline_Bench
         PRIVATE
