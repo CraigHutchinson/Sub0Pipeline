@@ -354,3 +354,25 @@ TEST_CASE("Pipeline: re-run fan-in (many predecessors -> one sink)")
         CHECK(pipeline.status(sink) == JobStatus::kDone);
     }
 }
+
+TEST_CASE("Pipeline: topology edits invalidate cached roots and validation")
+{
+    for (bool usePrecede : {false, true}) {
+        Pipeline pipeline;
+        RecordingExecutor executor;
+        auto first = pipeline.emplace([] {}).name("first");
+        auto second = pipeline.emplace([] {}).name("second");
+        REQUIRE(pipeline.run(executor).has_value());
+        if (usePrecede) second.precede(first);
+        else first.succeed(second);
+        executor.clear();
+        REQUIRE(pipeline.run(executor).has_value());
+        REQUIRE(executor.order().size() == 2);
+        CHECK(executor.order()[0] == "second");
+        CHECK(executor.order()[1] == "first");
+        first.precede(second);
+        auto cycle = pipeline.run(executor);
+        REQUIRE_FALSE(cycle.has_value());
+        CHECK(cycle.error() == PipelineError::kCyclicDependency);
+    }
+}

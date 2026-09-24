@@ -1,0 +1,40 @@
+name: Performance capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Baseline commit with compatible benchmark APIs
+        required: true
+        default: d1f5ba0ce08c8e44c05928b18f1968562a9dcd49
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build both revisions with the same harness
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+        run: |
+          baseline_sha=$(git rev-parse --verify --end-of-options "${BASELINE_REF}^{commit}")
+          git worktree add --detach /tmp/sub0-benchmark-baseline "$baseline_sha"
+          cp tests/bench_pipeline.cpp /tmp/sub0-benchmark-baseline/tests/bench_pipeline.cpp
+          cmake -S . -B build-perf -DCMAKE_BUILD_TYPE=Release -DSUB0PIPELINE_BUILD_BENCHMARKS=ON -DSUB0PIPELINE_BUILD_EXAMPLES=OFF
+          cmake --build build-perf --target Sub0Pipeline_Bench --parallel 2
+          cmake -S /tmp/sub0-benchmark-baseline -B /tmp/sub0-benchmark-baseline/build-perf -DCMAKE_BUILD_TYPE=Release -DSUB0PIPELINE_BUILD_BENCHMARKS=ON -DSUB0PIPELINE_BUILD_EXAMPLES=OFF
+          cmake --build /tmp/sub0-benchmark-baseline/build-perf --target Sub0Pipeline_Bench --parallel 2
+          printf '%s\n' "$baseline_sha" > /tmp/sub0-benchmark-baseline-sha
+      - name: Capture five alternating samples
+        run: |
+          python3 scripts/capture_benchmarks.py --current build-perf/tests/Sub0Pipeline_Bench --current-ref "$(git rev-parse HEAD)" --baseline /tmp/sub0-benchmark-baseline/build-perf/tests/Sub0Pipeline_Bench --baseline-ref "$(cat /tmp/sub0-benchmark-baseline-sha)" --features --repeats 5 --output benchmark-results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: performance-evidence
+          path: benchmark-results/

@@ -3,13 +3,14 @@
 #include <sub0pipeline/sub0pipeline.hpp>
 
 #include <cstdio>
+#include <fstream>
+#include <string_view>
 #include <string>
 #include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
 #elif defined(__linux__)
-#include <fstream>
 #include <unistd.h>
 #elif defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -103,12 +104,28 @@ public:
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    std::string output;
+    bool features = false;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view argument{argv[i]};
+        if (argument == "--features") features = true;
+        else if (argument == "--json" && i + 1 < argc) output = argv[++i];
+        else {
+            std::fprintf(stderr, "Usage: %s [--json PATH] [--features]\n", argv[0]);
+            return 2;
+        }
+    }
     printSystemInfo();
 
     ankerl::nanobench::Bench bench;
-    bench.warmup(100).minEpochIterations(10'000);
+    bench.warmup(1'000).minEpochIterations(100'000);
+    std::vector<ankerl::nanobench::Result> results;
+    const auto capture = [&] {
+        const auto& section = bench.results();
+        results.insert(results.end(), section.begin(), section.end());
+    };
 
     InlineExecutor exec;
 
@@ -140,6 +157,7 @@ int main()
 
     // ── Sequential execution ──────────────────────────────────────────────────
 
+    capture();
     bench.title("Sequential execution (InlineExecutor)");
 
     {
@@ -201,6 +219,7 @@ int main()
 
     // ── Validation ────────────────────────────────────────────────────────────
 
+    capture();
     bench.title("Validation");
 
     {
@@ -215,6 +234,62 @@ int main()
         {
             ankerl::nanobench::doNotOptimizeAway(pipeline.validate());
         });
+    }
+
+    capture();
+
+    if (features) {
+        using namespace sub0pipeline;
+        struct Observer final : IObserver {
+            std::size_t calls = 0;
+            void onStart(std::string_view) override { ++calls; }
+            void onFinish(std::string_view, JobStatus, float) override { ++calls; }
+        } observer;
+        Pipeline pipeline;
+        Job previous;
+        for (int i = 0; i < 10; ++i) {
+            auto job = pipeline.emplace([] {});
+            if (previous.valid()) job.succeed(previous);
+            previous = job;
+        }
+        std::stop_source stop;
+        bench.title("Opt-in features (10-job chain)");
+        bench.run("external stoppable token, no request", [&] {
+            (void)pipeline.run(exec, stop.get_token());
+        });
+        bench.run("observer callbacks, no external token", [&] {
+            (void)pipeline.run(exec, &observer);
+            ankerl::nanobench::doNotOptimizeAway(observer.calls);
+        });
+        capture();
+
+        // Helper-thread startup dominates these opt-in timeout measurements.
+        // Keep sampling separate from the inexpensive DAG benchmarks.
+        bench.title("Opt-in timeout helpers (one immediate job)");
+        bench.warmup(2).minEpochIterations(10);
+        Pipeline cooperative;
+        (void)cooperative.emplace([](std::stop_token) -> std::expected<void, PipelineError> {
+            return {};
+        }).timeout(std::chrono::milliseconds{10});
+        bench.run("cooperative timeout configured", [&] {
+            (void)cooperative.run(exec);
+        });
+        Pipeline plain;
+        (void)plain.emplace([] {}).timeout(std::chrono::milliseconds{10});
+        bench.run("plain timeout configured plus join", [&] {
+            (void)plain.run(exec);
+            plain.join_orphans();
+        });
+        capture();
+    }
+
+    if (!output.empty()) {
+        std::ofstream file{output};
+        ankerl::nanobench::render(ankerl::nanobench::templates::json(), results, file);
+        if (!file) {
+            std::fprintf(stderr, "Cannot write benchmark JSON: %s\n", output.c_str());
+            return 1;
+        }
     }
 
     return 0;

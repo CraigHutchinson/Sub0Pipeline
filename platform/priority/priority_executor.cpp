@@ -4,7 +4,7 @@
 // Higher-priority jobs (larger uint8_t value) preempt lower-priority ones
 // that have not yet started executing.
 //
-// Primary use case: UDAW distinguishes "blocking" fetches (Editor is waiting,
+// Primary use case: A device distinguishes "blocking" fetches (a client is waiting,
 // priority 10) from "prefetch" hints (background, priority 5). The pool runs
 // both but always starts the blocking fetch first.
 
@@ -49,11 +49,20 @@ public:
                     }
                     job.fn();
                     if (job.onComplete) job.onComplete();
+                    std::lock_guard done{doneMtx_};
                     if (inFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U)
                         doneCv_.notify_all();
                 }
             });
         }
+    }
+
+    ~PriorityExecutor() override
+    {
+        wait_all();
+        for (auto& worker : workers_) worker.request_stop();
+        // Join while all synchronization members are still alive.
+        workers_.clear();
     }
 
     void dispatch(

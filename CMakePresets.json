@@ -1,6 +1,10 @@
 {
     "version": 3,
-    "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
     "configurePresets": [
         {
             "name": "default",
@@ -77,6 +81,25 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
             }
+        },
+        {
+            "name": "ci-tsan",
+            "displayName": "CI - ThreadSanitizer",
+            "binaryDir": "${sourceDir}/build-tsan",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread",
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "OFF",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "OFF",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
         }
     ],
     "buildPresets": [
@@ -102,6 +125,10 @@
         {
             "name": "ci-asan",
             "configurePreset": "ci-asan"
+        },
+        {
+            "name": "ci-tsan",
+            "configurePreset": "ci-tsan"
         }
     ],
     "testPresets": [
@@ -109,29 +136,46 @@
             "name": "default",
             "configurePreset": "default",
             "configuration": "Release",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
         },
         {
             "name": "debug",
             "configurePreset": "debug",
             "configuration": "Debug",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
         },
         {
             "name": "ci-msvc",
             "configurePreset": "ci-msvc",
             "configuration": "Release",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
         },
         {
             "name": "ci-unix",
             "configurePreset": "ci-unix",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
         },
         {
             "name": "ci-asan",
             "configurePreset": "ci-asan",
-            "output": { "outputOnFailure": true }
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "ci-tsan",
+            "configurePreset": "ci-tsan",
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }

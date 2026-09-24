@@ -36,7 +36,7 @@ int main()
     workers.reserve(kWorkers);
     for (int i = 0; i < kWorkers; ++i) {
         workers.push_back(
-            pipeline.emplace([i, &workersDone] {
+            pipeline.emplace([i, &workersDone, kWorkDuration] {
                 std::this_thread::sleep_for(kWorkDuration);
                 std::printf("  [worker_%d] done\n", i);
                 workersDone.fetch_add(1, std::memory_order_relaxed);

@@ -1,0 +1,34 @@
+== System Info ==
+OS: Linux
+Compiler: GCC 13.3.0
+CPU: AMD EPYC 9V74 80-Core Processor
+Threads: 9
+Build: Release
+==
+
+
+|               ns/op |                op/s |    err% |     total | DAG construction
+|--------------------:|--------------------:|--------:|----------:|:-----------------
+|              987.19 |        1,012,976.20 |    0.4% |      1.19 | `construct 10-job linear chain`
+|            1,146.16 |          872,479.06 |    1.0% |      1.41 | `construct 10-job fan-out (1 root + 9 leaves)`
+
+|               ns/op |                op/s |    err% |     total | Sequential execution (InlineExecutor)
+|--------------------:|--------------------:|--------:|----------:|:--------------------------------------
+|              346.34 |        2,887,313.25 |    0.6% |      0.42 | `10-job linear chain`
+|              326.27 |        3,064,949.31 |    2.8% |      0.40 | `10-job fan-out (1 root + 9 leaves)`
+|              321.87 |        3,106,874.16 |    0.8% |      0.39 | `10-job fan-in (9 roots + 1 sink)`
+|              146.03 |        6,847,867.68 |    1.5% |      0.18 | `4-job diamond`
+
+|               ns/op |                op/s |    err% |     total | Validation
+|--------------------:|--------------------:|--------:|----------:|:-----------
+|              105.60 |        9,469,870.49 |    1.3% |      0.13 | `validate 20-job chain`
+
+|               ns/op |                op/s |    err% |     total | Opt-in features (10-job chain)
+|--------------------:|--------------------:|--------:|----------:|:-------------------------------
+|              593.79 |        1,684,086.41 |    2.1% |      0.72 | `external stoppable token, no request`
+|              366.60 |        2,727,776.57 |    1.2% |      0.45 | `observer callbacks, no external token`
+
+|               ns/op |                op/s |    err% |     total | Opt-in timeout helpers (one immediate job)
+|--------------------:|--------------------:|--------:|----------:|:-------------------------------------------
+|           36,886.80 |           27,109.97 |   10.6% |      0.01 | :wavy_dash: `cooperative timeout configured` (Unstable with ~28.2 iters. Increase `minEpochIterations` to e.g. 282)
+|           34,069.88 |           29,351.44 |    4.7% |      0.01 | `plain timeout configured plus join`
