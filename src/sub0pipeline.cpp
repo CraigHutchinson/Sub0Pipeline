@@ -361,12 +361,12 @@ struct Pipeline::Impl
 
     auto invoke(Node& node) -> std::expected<void, PipelineError>
     {
-        const auto token = node.stopSource_.get_token();
+        auto token = node.stopSource_.get_token();
         if (token.stop_requested())
             return std::unexpected(PipelineError::kCancelled);
 
         if (node.timeout_ == std::chrono::milliseconds::max())
-            return node.fn_(token);
+            return node.fn_(std::move(token));
 
         return invokeTimed(node, token);
     }
