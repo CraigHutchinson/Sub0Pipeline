@@ -1,482 +1,267 @@
 # Sub0Pipeline
 
-**A lightweight C++23 DAG job scheduler with an expressive operator DSL.**
+A product-agnostic **C++23 DAG job scheduler** with explicit dependencies,
+pluggable executors, cancellation and an optional operator DSL. Use it for device
+initialization, finite data-processing batches and ordered application work.
 
-Build complex dependency graphs in a single expression. Execute them in parallel with pluggable backends. Sub-microsecond scheduler overhead.
+Define the graph once, then run it in dependency order. Independent jobs can
+execute concurrently when the selected executor supports it. The library uses
+`std::expected` for job results and standard C++ ownership/cancellation facilities.
+Jobs and observers should not throw across executor callbacks; report job failures
+through `std::expected`.
 
-```cpp
-Pipeline pipe;
-pipe >> "load"_job(load_data)
-     >> "parse"_job(parse).timeout(500ms) + "validate"_job(validate).timeout(500ms)
-     >> "commit"_job(commit);
-// load -> {parse || validate} -> commit
-```
+## Feature set
 
----
+| Capability | Implemented behavior |
+|---|---|
+| Dependency graphs | Chains, fan-out, fan-in, diamonds and runtime-sized graphs; `succeed()` / `precede()` and `JobGroup` |
+| Graph validation and reuse | Cycle validation before the first run and after topology edits; cached roots/validation on unchanged graphs; fresh per-run cancellation state |
+| Optional DSL | Separate `dsl.hpp`; `>>`, `+`, `_job`, job groups, tuples and structured bindings |
+| Job results | `std::expected<void, PipelineError>`; void jobs are wrapped as successful jobs |
+| Failure propagation | Required failures skip successors; optional ordinary failures allow them to continue; cancellation remains fatal |
+| Cancellation | Per-job `cancel()` and external stop tokens for `run`, `run_inline` and `run_until`; queued plain jobs are also suppressible |
+| Timeouts | Cooperative watchdogs for token-taking jobs; owned helper threads for plain jobs; explicit reaping after a non-cooperative timeout |
+| Completion and reuse | `run()` waits for executor callbacks; `join_orphans()` waits for timed-out helper jobs; subsequent runs reap old work; concurrent/reentrant runs return `kBusy` |
+| Executors | Inline/headless, desktop thread-per-job, priority worker pool, scoped adapter, and an ESP32-P4 FreeRTOS source adapter |
+| Job hints | Names, status text, timeout, priority, core affinity and stack size; platform hints depend on the executor |
+| Observation and diagnostics | Start/finish/failure hooks, status/name queries, snapshots, first failure name, error context and text DAG dump |
+| On-demand jobs | `add_on_demand`, `arm`, `trigger`; excluded from normal roots and invoked individually |
+| Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with `add_tick` / `run_loop` |
+| Build and validation | CMake targets/install support, optional executor builds, no-exception core configuration, examples, functional/sanitizer suites and opt-in benchmarks |
 
-## Why Sub0Pipeline?
+**Not current guarantees:** allocation-free execution, custom graph allocators,
+ISR-safe scheduling, hard real-time deadlines, forced interruption of arbitrary
+I/O, work stealing, distributed jobs, or automatic idempotency of external writes.
+`dump_trace()` is a stub and the dependency observer hook is not currently emitted.
+Qt/Zephyr adapters and injected deadline services remain follow-up work. See
+[embedded and cancellation design notes](docs/structured-cancellation.md).
 
-- **One-line DAGs** — Express fan-out, fan-in, diamonds, and layered graphs with `>>` and `+` operators
-- **Structured binding capture** — `auto [a, b, c] = pipe >> specs` gives you handles to every job
-- **220 ns per 4-job diamond** — Sub-microsecond DAG dispatch overhead
-- **Platform-injectable executors** — Same pipeline code runs with std::thread, sequential/inline, or custom RTOS backends
-- **Zero-overhead when you don't need it** — The DSL lives in its own namespace and header. Just `#include <sub0pipeline/dsl.hpp>` to use it.
-- **C++23** — `std::expected` error handling, concepts, structured bindings
-
-Part of the **Sub0** C++ library family.
-
----
-
-## Use-case fit
-
-A quick reference for where Sub0Pipeline is the right tool and where it is not.
-
-**Fit key:** ✅ Strong &nbsp; 📝 Conditional (works with caveats) &nbsp; ❌ Weak / not the right tool
-
-### Initialization and sequencing
-
-| Use case | Fit | Notes |
-|---|---|---|
-| Boot / init sequence with dependency ordering | ✅ | The primary use case -- `auth >> load_config >> {mount || tcp} >> ready` |
-| Staged shutdown (reverse-ordered teardown) | ✅ | Reverse the edges; `run()` handles the ordering |
-| Feature flag / canary rollout stages | ✅ | One pipeline per stage; `optional()` for non-blocking gates |
-| Plugin / module loading with inter-dependencies | ✅ | Each plugin is a job; `succeed()` encodes load order |
-
-### Batch and data processing
-
-| Use case | Fit | Notes |
-|---|---|---|
-| Single-shot ETL / data pipeline (ingest → transform → validate → store) | ✅ | Natural fit; fan-out for parallel transform, fan-in for aggregate |
-| Asset import pipeline (per-batch: dedup → fetch → cache → notify) | ✅ | Finite DAG per batch; `IObserver` provides per-job progress telemetry |
-| Build systems (compile → link → test → package) | ✅ | Dependency graph maps directly; `validate()` catches cycles at construction |
-| Fan-out / scatter-gather parallelism | ✅ | `a >> b + c + d >> sink`; first-class in the DSL |
-| Map-reduce (N workers → aggregate) | ✅ | Fan-out N jobs, fan-in to one; structured bindings give handles to all N |
-| Processing items of unknown count at runtime | ✅ | Job function creates an inner `Pipeline` of runtime-determined size and runs it via `ScopedExecutor`; shape and count fully dynamic |
-| Dynamic sub-DAG generation (coarse outer DAG drives dynamic inner workloads) | ✅ | `ScopedExecutor` scopes `wait_all()` to inner jobs only -- no deadlock when an outer job runs an inner pipeline on the shared thread pool |
-
-### Event-driven and I/O
-
-| Use case | Fit | Notes |
-|---|---|---|
-| Hardware / ISR / network event dispatch | 📝 | `trigger()` returns `std::expected` confirming dispatch acceptance; job completion is fire-and-forget (no future returned -- observe via `IObserver`) |
-| Multi-client concurrent dispatch (N threads all calling `trigger()` on the same pipeline) | 📝 | `trigger()` is thread-safe -- concurrent callers contend only on the armed executor's lock; no pipeline-level mutex needed |
-| One pipeline per request (HTTP handler, RPC call) | ✅ | `pipe.run_inline()` runs synchronously on the calling thread with no executor setup; or inject `SequentialExecutor` for observer access |
-| Streaming / continuous I/O (audio decode, video encode, network receive loop) | 📝 | `run_until(exec, stop_token)` re-runs the DAG in a loop; pacing is the caller's responsibility |
-| Producer-consumer queues (bounded, multi-consumer) | 📝 | `add_on_demand()` + `trigger()` dispatches a drainer job on each enqueue; no built-in queue storage |
-
-### Long-running services and daemons
-
-| Use case | Fit | Notes |
-|---|---|---|
-| Periodic tick tasks at fixed intervals | 📝 | `add_tick()` + `run_loop()` -- 1 ms granularity; no sub-millisecond cadence |
-| Health-check / keep-alive at long intervals (e.g. 30 s VCS ping) | ✅ | `add_tick({.interval = 30s, .fn = checkBackend})` -- interval range is 1 ms to hours |
-| Daemon startup then event loop | ✅ | `run()` for the startup DAG, `run_loop()` for steady-state ticks, `trigger()` for events |
-| Perpetual background worker threads | 📝 | `run_until(exec, stop_token)` loops `run()` until stopped; combine with `std::jthread` for lifecycle |
-| Work-stealing thread pools (unbounded runtime queue) | ❌ | DAG topology is defined before execution; not a general task queue |
-
-### Real-time and embedded
-
-| Use case | Fit | Notes |
-|---|---|---|
-| RTOS task scheduling (FreeRTOS, ESP32) | 📝 | `FreeRtosExecutor` available; `core()` and `priority()` map to `xTaskCreatePinnedToCore`; no preemption |
-| Fixed-rate game / simulation update (update → physics → render) | 📝 | DAG-per-frame works; overhead is 220--500 ns for small graphs; re-run support confirmed |
-| Hard real-time deadlines (< 10 µs response) | 📝 | `SequentialExecutor` gives deterministic sub-microsecond dispatch; `DesktopExecutor` has OS scheduling jitter |
-| ISR-safe, zero-allocation dispatch | 📝 | Allocations happen at construction (`emplace`), not at dispatch; `run()` itself is allocation-free after the DAG is built |
-
-### Concurrency patterns
-
-| Use case | Fit | Notes |
-|---|---|---|
-| Fork-join parallelism | ✅ | `executor.wait_all()` at the end of `run()`; all forks joined before return |
-| Diamond dependency (A → {B ∥ C} → D) | ✅ | Core benchmark topology; 220 ns overhead |
-| Priority-ordered execution | ✅ | `PriorityExecutor` (bounded pool) honours `.priority()` -- higher-value jobs start first; `DesktopExecutor` and `SequentialExecutor` still ignore it |
-| Retry / reconnect loop (detect failure >> backoff >> reconnect >> reload) | 📝 | `run_until(exec, stop_token)` drives the outer retry loop; `optional()` marks the backoff step; retry logic lives in the job function |
-| Cross-process job distribution | ❌ | Single-process only; no serialization, no remote dispatch |
-| Dynamic graph modification after execution starts | ❌ | Outer DAG structure is immutable once `run()` is called; use sub-DAGs via `ScopedExecutor` for dynamic inner workloads |
-
-### Testing and determinism
-
-| Use case | Fit | Notes |
-|---|---|---|
-| Unit-testable pipelines (swap executor for determinism) | ✅ | `SequentialExecutor` runs jobs inline, in order; no threads, no non-determinism |
-| Reproducible execution order verification | ✅ | `RecordingExecutor` pattern (see tests) captures dispatch order before execution |
-| Timeout and cancellation | ✅ | `.timeout(dur)` enforced by the engine (watchdog fires stop_token cooperatively, then hard packaged_task cutoff); `Job::cancel()` fires stop_token from any thread for mid-run cancellation; cancellable jobs take `(std::stop_token)` and poll `stop_requested()` |
-
----
-
-## Quick Start
-
-### Core API
+## Quick start
 
 ```cpp
 #include <sub0pipeline/sub0pipeline.hpp>
 using namespace sub0pipeline;
 
 Pipeline pipe;
+auto decode = pipe.emplace([] { /* decode a device record */ });
+auto validate = pipe.emplace([] { /* validate decoded fields */ });
+auto commit = pipe.emplace([]() -> std::expected<void, PipelineError> {
+    // Persist the validated record. Return unexpected(...) on failure.
+    return {};
+});
+validate.succeed(decode);
+commit.succeed(validate);
 
-auto load     = pipe.emplace(load_data).name("load");
-auto parse    = pipe.emplace(parse_input).name("parse").timeout(500ms);
-auto validate = pipe.emplace(validate_input).name("validate").timeout(500ms);
-auto commit   = pipe.emplace(commit_result).name("commit");
-
-parse.succeed(load);
-validate.succeed(load);
-commit.succeed(parse, validate);    // commit waits for both
-
-auto exec   = makeDesktopExecutor();
-auto result = pipe.run(*exec);      // returns std::expected<void, PipelineError>
+auto result = pipe.run_inline();
 ```
 
-### DSL Extension
+Choose an executor explicitly for parallel work:
+
+```cpp
+auto executor = makePriorityExecutor(2); // two workers; queue is dynamically sized
+// Keep the executor, pipeline and anything borrowed by jobs alive through joining.
+auto result = pipe.run(*executor);
+pipe.join_orphans();
+```
+
+### Optional DSL
 
 ```cpp
 #include <sub0pipeline/dsl.hpp>
+using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;
 
 Pipeline pipe;
-pipe >> "load"_job(load_data)
-     >> "parse"_job(parse_input).timeout(500ms) + "validate"_job(validate_input).timeout(500ms)
-     >> "commit"_job(commit_result);
+pipe >> "load"_job([] {})
+    >> ("parse"_job([] {}) + "check"_job([] {}))
+    >> "commit"_job([] {});
+// load -> {parse, check} -> commit
 ```
 
-A single `using namespace sub0pipeline::dsl;` activates everything: operators, the `_job` UDL, and helper types.
+Use `JobSpec`, `JobSpecGroup`, `JobTuple`, `JobTupleChain` and `JobGroup` to compose
+larger graphs. See the [DSL example](examples/dsl_operators/main.cpp) for supported
+composition and structured-binding patterns. The DSL adds no separate scheduler;
+it builds the same graph as the core API.
 
----
-
-## DSL Syntax Guide
-
-The DSL uses two operators whose C++ precedence works in your favour:
-
-| Operator | Precedence | Purpose |
-|----------|------------|---------|
-| `+`      | 6 (tighter) | Group parallel jobs — no dependencies between them |
-| `>>`     | 7 (looser)  | Sequence — left side runs before right side |
-
-Because `+` binds tighter than `>>`, **no parentheses are needed** for common patterns:
+## Cancellation, deadlines and lifetimes
 
 ```cpp
-// Linear chain
-a >> b >> c >> d;
-
-// Fan-out (a before both b and c)
-a >> b + c;                       // parses as: a >> (b + c)
-
-// Fan-in (both a and b before c)
-a + b >> c;                       // parses as: (a + b) >> c
-
-// Diamond — one expression
-nvs >> display + network >> app;  // nvs -> {display || network} -> app
-```
-
-### Named Jobs with `_job` UDL
-
-```cpp
-// Create a named job spec, then emplace into a pipeline
-auto j = pipe.emplace("init"_job(init_fn).timeout(500ms).optional());
-
-// Structured bindings with multi-emplace
-auto [a, b, c] = pipe.emplace(
-    "sensor"_job(read_sensor),
-    "gps"_job(read_gps).timeout(2s),
-    "imu"_job(read_imu)
-);
-a + b + c >> pipe.emplace("fuse"_job(sensor_fusion));
-```
-
-### Inline Pipe Syntax
-
-Build and wire an entire graph in a single expression — no intermediate variables needed:
-
-```cpp
-// Fire-and-forget: emplace + wire, no handles stored
-pipe >> "A"_job(fn_a) >> "B"_job(fn_b) >> "C"_job(fn_c);
-
-// Unnamed jobs
-pipe >> job(fn_a) >> job(fn_b) >> job(fn_c);
-
-// Full inline with fan-out/in
-pipe >> "setup"_job(init)
-     >> "parse"_job(parse) + "validate"_job(validate)
-     >> "commit"_job(commit);
-```
-
-### Structured Binding Capture
-
-Capture job handles from parallel groups via `JobTuple`:
-
-```cpp
-// Single layer
-auto [a, b, c] = pipe >> "A"_job(fn) + "B"_job(fn) + "C"_job(fn);
-
-// Capture + wire to sink
-auto [a, b, c] = pipe >> "A"_job(fn) + "B"_job(fn) + "C"_job(fn) >> sink;
-
-// Multi-layer capture via JobTupleChain
-auto [l1, l2] = pipe >> "A"_job(fn) + "B"_job(fn) + "C"_job(fn)
-                      >> "D"_job(fn) + "E"_job(fn) + "F"_job(fn)
-                      >> sink;
-auto [a, b, c] = l1;
-auto [d, e, f] = l2;
-```
-
-### Job Groups with `parallel()`
-
-Group jobs in the core API without the DSL:
-
-```cpp
-auto io = parallel(display, network, audio);
-io.succeed(nvs);      // all three depend on nvs
-app.succeed(io);      // app depends on all three
-```
-
----
-
-## Benchmarks
-
-Measured on Intel Core Ultra 9 275HX, MSVC 1950, Release build, Windows 11.
-
-### DAG Construction
-
-| Benchmark | Time | Throughput |
-|-----------|------|------------|
-| Construct 10-job linear chain | 2.8 us | 356K ops/s |
-| Construct 10-job fan-out | 2.4 us | 408K ops/s |
-
-### Sequential Execution (InlineExecutor)
-
-| Benchmark | Time | Throughput |
-|-----------|------|------------|
-| 10-job linear chain | 429 ns | 2.3M ops/s |
-| 10-job fan-out (1 root + 9 leaves) | 527 ns | 1.9M ops/s |
-| 10-job fan-in (9 roots + 1 sink) | 528 ns | 1.9M ops/s |
-| 4-job diamond | 220 ns | 4.5M ops/s |
-
-### Validation
-
-| Benchmark | Time | Throughput |
-|-----------|------|------------|
-| Validate 20-job DAG (Kahn's algorithm) | 265 ns | 3.8M ops/s |
-
-> **Key takeaway:** A 10-job pipeline executes in ~500 ns of scheduler overhead.
-> The bottleneck is always your job functions, not the scheduler.
-
-Run benchmarks yourself:
-```bash
-cmake --preset default -DSUB0PIPELINE_BUILD_BENCHMARKS=ON
-cmake --build --preset default
-./build/tests/Release/Sub0Pipeline_Bench     # Windows
-./build/tests/Sub0Pipeline_Bench             # Linux/macOS
-```
-
----
-
-## Build
-
-```bash
-cmake --preset default          # Configure (Release + tests)
-cmake --build --preset default  # Build
-ctest --preset default          # Run tests
-```
-
-### CMake Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `SUB0PIPELINE_BUILD_TESTING` | `ON` | Build unit tests |
-| `SUB0PIPELINE_BUILD_EXAMPLES` | `OFF` | Build examples |
-| `SUB0PIPELINE_BUILD_BENCHMARKS` | `OFF` | Build nanobench benchmarks |
-| `SUB0PIPELINE_PLATFORM_DESKTOP` | `ON` | Build `DesktopExecutor` (std::thread) |
-
-### Test Coverage
-
-123 test cases across two suites:
-
-| Suite | Focus | Cases |
-|-------|-------|-------|
-| `Sub0Pipeline_Tests` | Core DAG engine, JobGroup, re-runnability, error propagation, on-demand jobs, sub-DAG execution | 88 |
-| `Sub0Pipeline_DslTests` | Operators, `_job` UDL, JobTuple, JobTupleChain, inline pipe | 35 |
-
-Tested topologies include linear chains, fan-out/in, diamonds, double-diamonds, W-shapes, hourglasses, binary trees (31 nodes), and stress tests (100+ nodes). Error propagation covers required/optional failure cascading, mid-graph failures, multi-root failure ordering, and full recovery on re-run. The epoch-based re-runnability is verified across all topologies with counter, ordering, and status assertions.
-
----
-
-## CMake Integration
-
-```cmake
-# As a subdirectory
-add_subdirectory(Sub0Pipeline)
-target_link_libraries(MyApp PRIVATE Sub0Pipeline::Sub0Pipeline Sub0Pipeline::Desktop)
-
-# Via find_package (after install)
-find_package(Sub0Pipeline REQUIRED)
-target_link_libraries(MyApp PRIVATE Sub0Pipeline::Sub0Pipeline)
-```
-
----
-
-## Platform Executors
-
-| Executor | CMake Target | Platform | Description |
-|----------|-------------|----------|-------------|
-| `SequentialExecutor` | `Sub0Pipeline::Headless` | Any | Inline, no threads. Deterministic. Tests & bare-metal. |
-| `DesktopExecutor` | `Sub0Pipeline::Desktop` | Desktop | One `std::thread` per job. Full parallelism. No priority ordering. |
-| `PriorityExecutor` | `Sub0Pipeline::Priority` | Desktop | Bounded thread pool; higher `.priority()` jobs start first. Ideal for mixed blocking/prefetch workloads. |
-| `FreeRtosExecutor` | ESP-IDF component | ESP32-P4 | `xTaskCreatePinnedToCore`. Dual-core. |
-| `ScopedExecutor` | `Sub0Pipeline::Sub0Pipeline` | Any | Wraps any executor; scopes `wait_all()` to locally-dispatched jobs. Required for sub-DAG execution from within a running job. |
-
-### Sub-DAG pattern (dynamic inner workloads)
-
-A job function can create and run an inner `Pipeline` whose structure is determined at runtime. Use `ScopedExecutor` to share the outer thread pool without deadlocking on the parent's global `inFlight_` counter:
-
-```cpp
-auto exec = makeDesktopExecutor();
-Pipeline outer;
-
-outer.emplace([&exec, &items]() -> std::expected<void, PipelineError>
-{
-    ScopedExecutor scoped{*exec};   // shares thread pool; local wait_all()
-    Pipeline inner;
-    for (auto& item : items)        // shape and count determined at runtime
-        inner.emplace([&item]{ process(item); });
-    return inner.run(scoped);       // inner jobs run in parallel; no deadlock
-}).name("dynamic_batch");
-
-outer.run(*exec);
-```
-
-**Why `ScopedExecutor` is required with `DesktopExecutor`:** the outer job thread T is tracked in `DesktopExecutor::inFlight_`. If T calls `outerExec.wait_all()` directly from within its own lambda, it waits for `inFlight_` to reach zero -- but T itself contributes 1 and cannot decrement until it returns. `ScopedExecutor` maintains its own `inFlight_` counter covering only inner jobs, so `wait_all()` resolves without waiting for T.
-
-See [PLATFORM_ROADMAP.md](PLATFORM_ROADMAP.md) for planned executors.
-
----
-
-## API Reference
-
-### Pipeline
-
-| Method | Description |
-|--------|-------------|
-| `emplace(fn)` | Add a job; returns a `Job` handle |
-| `emplace(spec)` | Add a job from a `JobSpec` (DSL) |
-| `emplace(specs...)` | Multi-emplace; returns `std::tuple<Job...>` for structured bindings |
-| `run(executor, observer?)` | Execute DAG; returns `std::expected<void, PipelineError>` |
-| `run_inline(observer?)` | Execute synchronously on the calling thread -- no executor needed |
-| `validate()` | Check for cycles (Kahn's algorithm; called automatically by `run()`) |
-| `status(job)` / `name(job)` | Query job state and name |
-| `add_tick(tick)` | Register a recurring tick job for the event loop |
-| `run_loop()` | Enter the tick event loop (`[[noreturn]]`) |
-| `run_until(executor, stop_token)` | Re-run the pipeline in a loop until the stop token is signalled |
-| `arm(executor, observer?)` | Store executor for later `trigger()` calls |
-| `add_on_demand(fn)` | Register a job excluded from `run()`; dispatched only via `trigger()` |
-| `trigger(job)` | Dispatch an on-demand job via the armed executor; returns `std::expected` |
-| `dump_text()` | Print DAG structure to stdout |
-
-### Job (fluent builder)
-
-```cpp
-job.name("task")
-   .timeout(5s)
-   .core(1)           // CPU affinity (-1 = any)
-   .stack(8192)        // executor stack bytes
-   .priority(10)       // executor priority (1-24)
-   .optional()         // failure won't block dependents
-   .succeed(other)     // this job runs after other
-   .precede(other)     // other runs after this job
-```
-
-### DSL Types
-
-| Type | Description |
-|------|-------------|
-| `JobSpec<F>` | Named job descriptor with builder methods. Created by `"name"_job(fn)` or `job(fn)`. |
-| `JobSpecGroup<Fs...>` | Deferred parallel group. Created by `spec + spec`. |
-| `JobTuple<N>` | Fixed-size job group with structured binding support. Returned by `pipe >> specs`. |
-| `JobTupleChain<Layers...>` | Multi-layer accumulator. Returned by `tuple >> specs`. |
-| `JobGroup` | Runtime-sized job group. Created by `parallel()` or `job + job`. |
-
-### Error Handling
-
-Jobs return `std::expected<void, PipelineError>`. Void-returning lambdas are auto-wrapped as always-succeeding.
-
-```cpp
-auto job = pipe.emplace([]() -> std::expected<void, PipelineError> {
-    if (failed) return std::unexpected(PipelineError::kJobFailed);
+std::stop_source shutdown;
+Pipeline pipe;
+auto transfer = pipe.emplace([](std::stop_token stop)
+    -> std::expected<void, PipelineError> {
+    if (stop.stop_requested())
+        return std::unexpected(PipelineError::kCancelled);
+    // Use stop-aware transport waits for real blocking I/O.
     return {};
 });
+auto result = pipe.run_inline(shutdown.get_token());
+pipe.join_orphans(); // before destroying anything borrowed by a timed-out job
 ```
 
-| Error | Meaning |
-|-------|---------|
-| `kTimeout` | Job exceeded its declared timeout |
-| `kJobFailed` | Job function returned an error |
-| `kDependencyFailed` | A required predecessor failed |
-| `kCyclicDependency` | DAG contains a cycle |
-| `kDuplicateJob` | Job added more than once |
-| `kUnknownJob` | Operation on invalid handle |
-| `kNotArmed` | `trigger()` called before `arm()` |
-| `kNotOnDemand` | `trigger()` called on a regular (non-on-demand) job |
-| `kTimeout` | Job exceeded its declared timeout (hard cutoff via packaged_task) |
-| `kCancelled` | Job returned `kCancelled` or cooperatively exited after stop_token fired |
+An external request reaches executing cooperative jobs through their token.
+Pending jobs check cancellation before body entry, even without a token
+parameter. A request racing with entry may arrive after the body has started.
+Per-job cancellation before a run resets during initialization; requests during
+the run survive until the job is reached.
 
----
+`run()` returning and **all borrowed state being safe to release are distinct**
+when non-cooperative jobs time out. `has_pending_orphans()` reports unreaped work,
+including threads being joined; it is not a replacement for synchronization.
+`join_orphans()` can block indefinitely if a job never returns. The next run joins
+old timed-out work before reinitializing. Untimed inline jobs stay on the calling
+thread; timeout enforcement can create native helper threads even inline.
 
-## Examples
+Owner teardown must request stop, join its run thread, then join orphans **before
+borrowed members are destroyed**. Destroying a Pipeline concurrently with `run()`
+is unsupported. Stop callbacks run synchronously in the requesting thread; they
+must not block on the run they are cancelling. Avoid overlapping graph edits,
+`arm`, `trigger`, moves or destruction with an active run.
 
-| Example | Description |
-|---------|-------------|
-| [`minimal_pipeline`](examples/minimal_pipeline/) | Linear A -> B -> C chain |
-| [`boot_sequence`](examples/boot_sequence/) | Parallel fan-out/in: A -> {B &#124;&#124; C} -> D |
-| [`parallel_tasks`](examples/parallel_tasks/) | Fan-out + fan-in with atomic counters |
-| [`dsl_operators`](examples/dsl_operators/) | DSL syntax: inline pipe, structured bindings, `_job` UDL |
-| [`error_handling`](examples/error_handling/) | Required/optional failures, propagation |
-| [`validate_dag`](examples/validate_dag/) | Cycle detection, `dump_text()` |
-| [`observer_profiling`](examples/observer_profiling/) | Custom `IObserver` with progress bar |
-| [`job_options`](examples/job_options/) | Every builder method demonstrated |
-| [`on_demand_jobs`](examples/on_demand_jobs/) | Event-triggered jobs: `arm()` + `trigger()` with atomic counters |
-| [`tick_loop`](examples/tick_loop/) | Recurring tick tasks after pipeline completion |
+For a device's validate → durable commit → ACK sequence, failed required commit
+suppresses ACK. Cancellation can suppress ACK after commit succeeds; the write
+is not rolled back. The consumer must supply durable deduplication/idempotent
+retry behavior. See the [complete contract](docs/structured-cancellation.md).
 
----
+## Costs and opt-in behavior
 
-## Project Structure
+| Path or feature | Selection | Cost / limit |
+|---|---|---|
+| Core DAG execution | Always | Job state, dependency counters, cancellation checks, run guard and fresh stop states; dynamic allocations remain |
+| Validation | Automatic on topology change; explicit `validate()` available | Traverses the graph and allocates scratch; cached for unchanged repeated runs |
+| External cancellation forwarding | Supply a stoppable token | Stop callback registration per executing job; skipped for the no-token path |
+| Observer callbacks | Supply an `IObserver*` | Virtual calls and user callback work; absent when no observer is supplied; callbacks can run concurrently |
+| Timeout enforcement | Set a finite `.timeout()` | Native helper-thread startup and synchronization; no helpers for untimed jobs |
+| Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
+| Priority worker pool | Select `makePriorityExecutor(n)` | Fixed worker count, dynamic priority queue; no queue-capacity/backpressure guarantee |
+| Desktop execution | Select `makeDesktopExecutor()` | One native thread per dispatched job |
+| Snapshots / text diagnostics | Call the API | Snapshot allocation or formatting/I/O; not automatic |
+| DSL | Include `dsl.hpp` | Compile-time composition; ordinary graph-construction costs still apply |
+| Benchmarks | Build option + manual execution/CI | Not part of library execution; expensive timeout samples require `--features` |
 
+Correctness and lifetime guarantees are not disabled to improve benchmark scores.
+Fixed/custom storage and interrupt handoff need additional platform contracts;
+reserving graph containers alone would not eliminate allocations from callables,
+stop states, scratch or executor queues.
+
+## Executors and use-case boundaries
+
+| Executor | Target / location | Behavior |
+|---|---|---|
+| `SequentialExecutor` | `Sub0Pipeline::Headless` | Executes inline; deterministic untimed test scheduling |
+| `DesktopExecutor` | `Sub0Pipeline::Desktop` | Thread per job; joins dispatched work; ignores priority/affinity hints |
+| `PriorityExecutor` | `Sub0Pipeline::Priority` | Configurable worker count; higher priorities start first; already-running work is not preempted |
+| `ScopedExecutor` | Core header | Reuses a parent executor and waits only for locally dispatched jobs |
+| `FreeRtosExecutor` | `platform/esp32p4` | ESP-IDF/FreeRTOS source adapter with task priority, affinity and stack hints; not validated by host CI |
+
+`ScopedExecutor` supports inner pipelines without waiting for the outer job's
+own completion count. It does **not** solve worker starvation: if all workers in
+a bounded pool synchronously wait for inner work, no worker remains to run it.
+Use inline inner work, reserved capacity or a separate execution resource.
+
+`trigger()` accepts an individual on-demand invocation; observe completion or
+wait on the armed executor, then reap timeout jobs. Concurrent submissions need
+a thread-safe executor, stable graph and thread-safe job/observer state. There
+is no per-invocation future and repeated submissions may overlap.
+
+`run_until()` reruns a graph until stopped; the caller supplies pacing.
+`run_loop()` is a blocking tick loop with approximately millisecond polling and
+no stop-token overload. These are not hard real-time scheduling guarantees.
+Scheduler APIs are **task-context only**. ISR integration should enqueue a bounded
+event for later task-context dispatch using platform-proven primitives.
+
+## Build and integration
+
+CMake 3.21+ and a C++23 standard library with `std::expected` are required.
+
+```sh
+cmake --preset ci-unix
+cmake --build --preset ci-unix
+ctest --preset ci-unix --timeout 30
 ```
-include/sub0pipeline/
-  sub0pipeline.hpp          Public API (Pipeline, Job, JobGroup, IExecutor, IObserver)
-  dsl.hpp                   DSL extension (operators, _job UDL, JobSpec, JobTuple)
-src/
-  sub0pipeline.cpp          DAG engine implementation
-platform/
-  desktop/                  std::thread executor
-  headless/                 Inline sequential executor
-  esp32p4/                  FreeRTOS executor
-tests/
-  test_pipeline.cpp         Core DAG + JobGroup + parallel() tests
-  test_dsl.cpp              DSL operators, _job UDL, JobTuple, JobTupleChain tests
-  test_failure.cpp          Error propagation tests
-  test_validation.cpp       Cycle detection tests
-  test_observer.cpp         Observer hook tests
-  test_concurrent.cpp       Thread-safety tests
-  bench_pipeline.cpp        nanobench performance benchmarks
-examples/
-  10 worked examples (see table above)
+
+Use `ci-msvc` on Windows. The `default` preset also enables benchmarks; the CMake
+option itself defaults to OFF.
+
+```cmake
+add_subdirectory(Sub0Pipeline)
+target_link_libraries(MyDevice PRIVATE Sub0Pipeline::Sub0Pipeline)
+# Add Sub0Pipeline::Headless, ::Desktop or ::Priority when using its factory.
 ```
 
----
+Installed builds also support `find_package(Sub0Pipeline REQUIRED)`.
 
-## Sister Libraries
+| CMake option | Default | Purpose |
+|---|---|---|
+| `SUB0PIPELINE_BUILD_TESTING` | `ON` | Functional and DSL tests |
+| `SUB0PIPELINE_BUILD_EXAMPLES` | `OFF` | Available source examples |
+| `SUB0PIPELINE_BUILD_BENCHMARKS` | `OFF` | Nanobench executable; requires test build enabled |
+| `SUB0PIPELINE_PLATFORM_DESKTOP` | `ON` | Desktop executor target |
+| `SUB0PIPELINE_PLATFORM_PRIORITY` | `ON` | Priority executor target |
+| `SUB0PIPELINE_EXCEPTIONS` | `ON` | Library hard-error throwing; OFF supports a core `-fno-exceptions` build |
 
-- **[Sub0Pub](https://github.com/CraigHutchinson/Sub0Pub)** — Zero-overhead typed publish-subscribe
+Tests exercise all host executors and require their targets. A lean consumer
+build can disable testing, examples, benchmarks and unused executor targets.
+No-exception configuration does not by itself bound memory or make allocation
+exhaustion recoverable.
 
----
+## API map
 
-## License
+| Area | Entry points |
+|---|---|
+| Construct / connect | `emplace`, `emplace_void`, `succeed`, `precede`, `parallel`, `size` |
+| Execute / cancel | `run`, `run_inline`, `run_until`, `Job::cancel` |
+| Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `snapshot` |
+| Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text` |
+| Events / ticks | `add_on_demand`, `arm`, `trigger`, `add_tick`, `run_loop` |
+| Job configuration | `name`, `status`, `timeout`, `optional`, `priority`, `core`, `stack` |
 
-MIT — see [LICENSE.md](LICENSE.md)
+Job statuses distinguish pending, ready, running, done, failed, skipped, timed
+out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
+`kCyclicDependency`, `kUnknownJob`, `kNotArmed`, `kNotOnDemand` and `kBusy`.
+`kDependencyFailed` and `kDuplicateJob` are also declared error values; they are
+not a promise of additional runtime duplicate/dependency diagnostics.
 
-### Cancellation and embedded execution constraints
+`IObserver` provides dispatch start, finish/progress and failure hooks. With
+parallel executors, callbacks may overlap and must protect shared state.
+A dispatch-start notification does not prove that a cancelled job body ran.
+See the [public header](include/sub0pipeline/sub0pipeline.hpp) for signatures.
 
-See [the cancellation contract and embedded design notes](docs/structured-cancellation.md)
-for external stop tokens, owner teardown, unreaped timeout jobs, fixed/custom
-allocation considerations and future interrupt handoff. Inline execution with
-timeouts can use helper threads. Scheduler operations are task-context APIs;
-heap-free execution and ISR-safe scheduling are not current guarantees.
+## Performance evidence
+
+See [measured baseline/current results](docs/performance.md), including machine,
+compiler, source revisions, five alternating process samples, observed ranges
+and the costs of optional features. Figures describe no-op host workloads, not
+application throughput, worst-case latency or target-device guarantees.
+
+```sh
+cmake -S . -B build-perf -DCMAKE_BUILD_TYPE=Release \
+  -DSUB0PIPELINE_BUILD_BENCHMARKS=ON -DSUB0PIPELINE_BUILD_EXAMPLES=OFF
+cmake --build build-perf --target Sub0Pipeline_Bench
+./build-perf/tests/Sub0Pipeline_Bench --json results.json --features
+```
+
+The benchmark build reuses the vendored nanobench dependency. The capture script
+and manually triggered CI workflow retain machine-readable evidence. Follow
+[CONTRIBUTING.md](CONTRIBUTING.md) for comparisons and regression review.
+
+## Examples, tests and contribution
+
+| Example | Demonstrates |
+|---|---|
+| [minimal_pipeline](examples/minimal_pipeline/main.cpp) | Linear dependencies |
+| [boot_sequence](examples/boot_sequence/main.cpp) | Initialization fan-out/fan-in |
+| [parallel_tasks](examples/parallel_tasks/main.cpp) | Desktop parallel workers and aggregation |
+| [on_demand_jobs](examples/on_demand_jobs/main.cpp) | Armed event jobs |
+| [dsl_operators](examples/dsl_operators/main.cpp) | DSL composition and structured bindings |
+
+The current suites contain **118 core cases and 35 DSL cases**. Coverage includes
+repeat runs, topology-cache invalidation, failure/cancellation edges, queued and
+cooperative work, owner teardown, scoped execution and worker completion. Release,
+ASan/UBSan and ThreadSanitizer are separate validation configurations; performance
+runs use unsanitized Release binaries.
+
+[AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the PR template codify
+C++23/reuse, product-agnostic wording, ownership, embedded constraints, performance
+evidence and documentation gates. Remaining cancellation/adapter work is tracked
+in [issue #1](https://github.com/CraigHutchinson/Sub0Pipeline/issues/1).

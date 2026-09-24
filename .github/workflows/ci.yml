@@ -10,6 +10,7 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         compiler: [gcc, clang]
         include:
@@ -17,10 +18,13 @@ jobs:
             cc: gcc
             cxx: g++
           - compiler: clang
-            cc: clang
-            cxx: clang++
+            cc: clang-19
+            cxx: clang++-19
     steps:
       - uses: actions/checkout@v4
+      - name: Install C++23 Clang toolchain
+        if: matrix.compiler == 'clang'
+        run: sudo apt-get update && sudo apt-get install -y clang-19
       - name: Configure
         run: cmake --preset ci-unix
         env:

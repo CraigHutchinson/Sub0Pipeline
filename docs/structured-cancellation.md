@@ -10,6 +10,8 @@ scheduler cannot make external side effects idempotent.
 - External cancellation reaches executing cooperative jobs through stop callbacks.
   Queued jobs check the live request before body entry, including plain functions.
   A request racing with entry may be observed cooperatively by the body instead.
+- Validation and roots are cached until a topology edit; per-run cancellation
+  state is always refreshed. External forwarding and timeout helpers are opt-in.
 - Per-job cancellation during a run survives until the job is reached. Pre-run
   requests reset before dispatch. Cancellation is fatal even for optional jobs;
   ordinary optional failures retain their existing behavior.
