@@ -66,3 +66,22 @@ jobs:
         run: cmake --build --preset ci-asan
       - name: Test
         run: ctest --preset ci-asan
+      - name: Build core without exceptions
+        run: |
+          cmake -S . -B build-noexcept -DSUB0PIPELINE_BUILD_TESTING=OFF -DSUB0PIPELINE_BUILD_EXAMPLES=OFF -DSUB0PIPELINE_EXCEPTIONS=OFF -DCMAKE_CXX_FLAGS=-fno-exceptions
+          cmake --build build-noexcept --target Sub0Pipeline
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure ThreadSanitizer
+        run: cmake --preset ci-tsan
+        env:
+          CC: gcc
+          CXX: g++
+      - name: Build
+        run: cmake --build --preset ci-tsan
+      - name: Test
+        run: ctest --preset ci-tsan --timeout 30

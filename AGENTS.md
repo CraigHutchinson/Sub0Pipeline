@@ -35,3 +35,24 @@ Do not introduce consumer product names or consumer-specific dependencies.
   the PR. A passing sanitizer run is evidence, not proof of race freedom.
 - Keep commits focused and descriptions current. Do not close an issue while
   its acceptance criteria remain unfulfilled.
+
+## Performance and delivery workflow
+
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the review and validation gates.
+- For scheduler, allocation, synchronization or executor changes, capture a
+  same-machine baseline and current Release build using the shared benchmark
+  harness and `scripts/capture_benchmarks.py`. Keep at least five alternating
+  process samples, raw JSON/logs, source refs, compiler/build and machine details.
+- Report medians and observed ranges, feature settings and measurement limits.
+  Investigate material regressions; explain intentional safety costs. Never use
+  a faster result to justify weaker ownership or cancellation guarantees.
+- Keep costly optional work opt-in: observer callbacks, external-stop forwarding,
+  timeout helper threads, extra executor targets and benchmark runs. Required
+  correctness checks may be cached only with complete invalidation tests.
+- Audit memory behavior separately from timing. No universal “zero overhead”,
+  “allocation-free”, “hard real-time” or optimality claims without evidence.
+- Update the root README feature/cost matrix, compatibility notes and examples
+  whenever the public behavior changes. Clearly label stubs and future features.
+- Keep performance jobs manual/advisory on shared CI runners; compare controlled
+  environments before applying a regression threshold. Do not weaken functional
+  or sanitizer gates to make a performance result look better.

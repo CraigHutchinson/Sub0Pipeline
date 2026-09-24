@@ -261,6 +261,7 @@ struct Pipeline::Impl
 
     bool joinOrphans()
     {
+        if (pendingOrphans_.load(std::memory_order_acquire) == 0) return false;
         // Serialize joiners, but never hold the registry lock while waiting.
         std::lock_guard joining{joinMtx_};
         std::vector<std::jthread> batch;
@@ -282,11 +283,18 @@ struct Pipeline::Impl
     auto execute(Node& node, std::stop_token external = {})
         -> std::expected<void, PipelineError>
     {
-        auto source = stopSource(node);
-        std::stop_callback forwardStop{external, [source]() mutable {
-            source.request_stop();
+        // Node stop sources are immutable between run initialization and join.
+        // External forwarding is paid for only when a stoppable token is supplied.
+        if (!external.stop_possible()) return invoke(node);
+        std::stop_callback forwardStop{external, [&node] {
+            node.stopSource_.request_stop();
         }};
-        const auto token = source.get_token();
+        return invoke(node);
+    }
+
+    auto invoke(Node& node) -> std::expected<void, PipelineError>
+    {
+        const auto token = node.stopSource_.get_token();
         if (token.stop_requested())
             return std::unexpected(PipelineError::kCancelled);
 
@@ -295,7 +303,7 @@ struct Pipeline::Impl
 
         if (node.isCancellable()) {
             // Interrupt the deadline wait when the job finishes or is cancelled.
-            std::jthread watchdog{[source, duration = node.timeout_]
+            std::jthread watchdog{[source = node.stopSource_, duration = node.timeout_]
                 (std::stop_token finished) mutable {
                 std::mutex mutex;
                 std::condition_variable_any wake;
@@ -321,7 +329,7 @@ struct Pipeline::Impl
             thread.join();
             return result.get();
         }
-        source.request_stop();
+        node.stopSource_.request_stop();
         {
             std::lock_guard lock{orphanMtx_};
             orphanThreads_.push_back(std::move(thread));
@@ -394,6 +402,7 @@ Job& Job::succeed(Job other)
     if (!pipeline_ || !valid() || !other.valid()) return *this;
     auto& selfNode  = pipeline_->node(idx_);
     auto& otherNode = pipeline_->node(other.idx_);
+    pipeline_->impl_->rootsCached_ = false;
     ++selfNode.predecessorCount_;
     otherNode.successors_.push_back(static_cast<uint16_t>(idx_), pipeline_->impl_->succPool_);
     return *this;
@@ -404,6 +413,7 @@ Job& Job::precede(Job other)
     if (!pipeline_ || !valid() || !other.valid()) return *this;
     auto& selfNode  = pipeline_->node(idx_);
     auto& otherNode = pipeline_->node(other.idx_);
+    pipeline_->impl_->rootsCached_ = false;
     selfNode.successors_.push_back(static_cast<uint16_t>(other.idx_), pipeline_->impl_->succPool_);
     ++otherNode.predecessorCount_;
     return *this;
@@ -585,12 +595,11 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     } running{impl_->running_};
     // A new epoch must not reuse borrowed state while an old job still runs.
     impl_->joinOrphans();
-    if (auto v = validate(); !v) return v;
-
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
 
     if (!impl_->rootsCached_) {
+        if (auto result = validate(); !result) return result;
         impl_->roots_.clear();
         for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
             const auto& nd = impl_->nodes_[i];

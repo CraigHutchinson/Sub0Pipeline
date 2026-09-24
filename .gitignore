@@ -8,3 +8,6 @@ build-asan/
 .vs/
 CMakeUserPresets.json
 build-tsan/
+build-perf/
+benchmark-results/
+build-noexcept/
