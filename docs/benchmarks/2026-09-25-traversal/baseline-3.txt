@@ -1,0 +1,34 @@
+== System Info ==
+OS: Linux
+Compiler: GCC 13.3.0
+CPU: AMD EPYC 9V74 80-Core Processor
+Threads: 9
+Build: Release
+==
+
+
+|               ns/op |                op/s |    err% |     total | DAG construction
+|--------------------:|--------------------:|--------:|----------:|:-----------------
+|              967.37 |        1,033,729.72 |    1.1% |      1.19 | `construct 10-job linear chain`
+|            1,098.83 |          910,057.83 |    0.9% |      1.32 | `construct 10-job fan-out (1 root + 9 leaves)`
+
+|               ns/op |                op/s |    err% |     total | Sequential execution (InlineExecutor)
+|--------------------:|--------------------:|--------:|----------:|:--------------------------------------
+|              342.20 |        2,922,273.81 |    1.1% |      0.42 | `10-job linear chain`
+|              319.18 |        3,133,019.87 |    4.1% |      0.41 | `10-job fan-out (1 root + 9 leaves)`
+|              312.55 |        3,199,484.11 |    1.5% |      0.38 | `10-job fan-in (9 roots + 1 sink)`
+|              135.37 |        7,387,344.97 |    0.6% |      0.16 | `4-job diamond`
+
+|               ns/op |                op/s |    err% |     total | Validation
+|--------------------:|--------------------:|--------:|----------:|:-----------
+|              105.14 |        9,511,189.32 |    1.6% |      0.12 | `validate 20-job chain`
+
+|               ns/op |                op/s |    err% |     total | Opt-in features (10-job chain)
+|--------------------:|--------------------:|--------:|----------:|:-------------------------------
+|              618.52 |        1,616,758.05 |    1.9% |      0.74 | `external stoppable token, no request`
+|              373.53 |        2,677,144.18 |    1.6% |      0.45 | `observer callbacks, no external token`
+
+|               ns/op |                op/s |    err% |     total | Opt-in timeout helpers (one immediate job)
+|--------------------:|--------------------:|--------:|----------:|:-------------------------------------------
+|           27,140.00 |           36,845.98 |    2.8% |      0.01 | `cooperative timeout configured`
+|           26,207.67 |           38,156.77 |    3.3% |      0.01 | `plain timeout configured plus join`
