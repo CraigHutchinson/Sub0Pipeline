@@ -88,3 +88,9 @@ g++ -std=c++23 -O3 -DNDEBUG -pthread -Iinclude \
 The manual Performance capture workflow builds the audit and retains three CSV
 runs alongside timing evidence. Timing still uses five alternating baseline/current
 samples; deterministic allocation counts use three process runs to check stability.
+
+## Follow-up
+
+[Reusable traversal storage](traversal-storage.md) updates validation and failure
+scratch after this baseline capture. Original measurements above remain retained
+as historical evidence; use the follow-up report for the changed paths.

@@ -24,7 +24,6 @@
 #include <condition_variable>
 #include <future>
 #include <mutex>
-#include <queue>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -230,6 +229,11 @@ struct Pipeline::Impl
     std::vector<Node>         nodes_;
     std::vector<TickJob>      ticks_;
     std::vector<uint32_t>     roots_;
+    // Graph-sized scratch retains capacity across validations/runs. Validation
+    // has its own lock; failure traversal is serialized by DispatchContext.
+    mutable std::mutex       validationMtx_;
+    mutable std::vector<uint32_t> validationDegrees_, validationReady_;
+    std::vector<uint32_t>     skipped_;
     std::vector<uint16_t>     succPool_;    ///< Flat arena for overflow successor indices (see PoolSuccessors).
     std::atomic_flag          running_ = ATOMIC_FLAG_INIT;
     std::mutex                stopMtx_;
@@ -624,24 +628,27 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
     const auto n = impl_->nodes_.size();
 
     // Kahn's algorithm: topological sort — cycle detected if not all nodes visited.
-    std::vector<uint32_t> inDegree(n, 0U);
+    std::lock_guard lock{impl_->validationMtx_};
+    auto& inDegree = impl_->validationDegrees_;
+    auto& ready = impl_->validationReady_;
+    inDegree.assign(n, 0U);
+    ready.clear();
+    ready.reserve(n);
     for (const auto& nd : impl_->nodes_) {
         for (auto succ : nd.successors_.range(impl_->succPool_))
             ++inDegree[succ];
     }
 
-    std::queue<uint32_t> ready;
     for (uint32_t i = 0U; i < n; ++i) {
-        if (inDegree[i] == 0U) ready.push(i);
+        if (inDegree[i] == 0U) ready.push_back(i);
     }
 
     uint32_t visited = 0U;
-    while (!ready.empty()) {
-        const auto idx = ready.front();
-        ready.pop();
+    while (visited < ready.size()) {
+        const auto idx = ready[visited];
         ++visited;
         for (auto succ : impl_->nodes_[idx].successors_.range(impl_->succPool_)) {
-            if (--inDegree[succ] == 0U) ready.push(succ);
+            if (--inDegree[succ] == 0U) ready.push_back(succ);
         }
     }
 
@@ -684,6 +691,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     impl_->joinOrphans();
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
+    impl_->skipped_.clear();
 
     if (!impl_->rootsCached_) {
         if (auto result = validate(); !result) return result;
@@ -728,24 +736,48 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         std::mutex&         fatalMtx;
         std::stop_token externalStop;
 
+        std::mutex skipMutex;
+        std::size_t skipRead = 0;
+        bool drainingSkips = false;
+
+        // Called with skipMutex held. Claim before appending, so even shared
+        // descendants appear at most once and scratch never exceeds total nodes.
+        void enqueueSkip(uint32_t idx)
+        {
+            auto& status = impl.nodes_[idx].jobStatus_;
+            auto previous = status.load(std::memory_order_acquire);
+            while (previous == JobStatus::kPending || previous == JobStatus::kReady) {
+                if (status.compare_exchange_weak(previous, JobStatus::kSkipped,
+                                                  std::memory_order_acq_rel)) {
+                    impl.skipped_.push_back(idx);
+                    return;
+                }
+            }
+        }
+
         void skipNode(uint32_t startIdx)
         {
-            std::queue<uint32_t> toSkip;
-            toSkip.push(startIdx);
-            while (!toSkip.empty()) {
-                const auto idx = toSkip.front(); toSkip.pop();
+            std::unique_lock lock{skipMutex};
+            // Grow only on failure, then reuse on later runs. Reserve before
+            // claiming statuses so append cannot allocate mid-traversal.
+            impl.skipped_.reserve(total);
+            enqueueSkip(startIdx);
+            if (drainingSkips) return;
+            drainingSkips = true;
+            while (skipRead < impl.skipped_.size()) {
+                const auto idx = impl.skipped_[skipRead++];
                 auto& nd = impl.nodes_[idx];
-                auto previous = nd.jobStatus_.load(std::memory_order_acquire);
-                while (previous == JobStatus::kPending || previous == JobStatus::kReady) {
-                    if (nd.jobStatus_.compare_exchange_weak(previous, JobStatus::kSkipped,
-                                                           std::memory_order_acq_rel)) break;
-                }
-                if (previous != JobStatus::kPending && previous != JobStatus::kReady) continue;
-                const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
+                for (auto succ : nd.successors_.range(impl.succPool_)) enqueueSkip(succ);
+                const auto done = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
                 const auto progress = static_cast<float>(done) / static_cast<float>(total);
+                // Observers may cancel jobs or validate the graph. Never call
+                // user code under a traversal lock. Other workers may enqueue;
+                // this drainer remains an active executor callback until done.
+                lock.unlock();
                 if (observer) observer->onFinish(nd.nameStr_, JobStatus::kSkipped, progress);
-                for (auto succIdx : nd.successors_.range(impl.succPool_)) toSkip.push(succIdx);
+                lock.lock();
             }
+            drainingSkips = false;
         }
 
         void dispatchJob(uint32_t idx)
@@ -753,7 +785,9 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
             auto& nd = impl.nodes_[idx];
             if (hasFatalFailure.load(std::memory_order_acquire)) { skipNode(idx); return; }
 
-            nd.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
+            auto ready = JobStatus::kReady;
+            if (!nd.jobStatus_.compare_exchange_strong(ready, JobStatus::kRunning,
+                                                       std::memory_order_acq_rel)) return;
             if (observer) observer->onStart(nd.nameStr_);
 
             auto result = impl.execute(nd, externalStop);

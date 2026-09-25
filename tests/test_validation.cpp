@@ -4,6 +4,7 @@
 
 #include <sub0pipeline/sub0pipeline.hpp>
 #include "doctest.h"
+#include <thread>
 
 using namespace sub0pipeline;
 
@@ -105,4 +106,28 @@ TEST_CASE("Validation: run() calls validate() implicitly")
     auto result = pipeline.run(exec);
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kCyclicDependency);
+}
+
+TEST_CASE("Validation: scratch survives graph growth, cycles and concurrent queries")
+{
+    Pipeline pipe;
+    auto first = pipe.emplace([] {});
+    auto previous = first;
+    for (int i = 0; i < 128; ++i) {
+        auto next = pipe.emplace([] {}).succeed(previous);
+        CHECK(pipe.validate().has_value());
+        previous = next;
+    }
+    std::vector<std::jthread> readers;
+    for (int i = 0; i < 4; ++i)
+        readers.emplace_back([&] {
+            for (int pass = 0; pass < 50; ++pass) CHECK(pipe.validate().has_value());
+        });
+    readers.clear();
+    first.succeed(previous);
+    for (int i = 0; i < 3; ++i) {
+        auto result = pipe.validate();
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == PipelineError::kCyclicDependency);
+    }
 }
