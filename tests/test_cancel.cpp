@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <future>
 #include <latch>
+#include <barrier>
 #include <mutex>
 #include <thread>
 
@@ -362,4 +363,52 @@ TEST_CASE("Timeout: successful cooperative work does not wait for its deadline")
         return {};
     }).timeout(24h);
     CHECK(pipe.run_inline().has_value());
+}
+
+TEST_CASE("Failure: concurrent shared descendants finish exactly once before return")
+{
+    Pipeline pipe;
+    auto executor = makeDesktopExecutor();
+    std::barrier failures{2};
+    std::latch observerEntered{1}, releaseObserver{1};
+    std::atomic<int> skipped{0};
+    std::atomic<bool> returned{false};
+    struct Observer final : IObserver {
+        Pipeline& pipe;
+        std::atomic<int>& skipped;
+        std::latch& entered;
+        std::latch& release;
+        Observer(Pipeline& p, std::atomic<int>& n, std::latch& e, std::latch& r)
+            : pipe{p}, skipped{n}, entered{e}, release{r} {}
+        void onStart(std::string_view) override {}
+        void onFinish(std::string_view, JobStatus status, float) override {
+            if (status != JobStatus::kSkipped) return;
+            CHECK(pipe.validate().has_value());
+            if (skipped.fetch_add(1) == 0) { entered.count_down(); release.wait(); }
+        }
+    } observer{pipe, skipped, observerEntered, releaseObserver};
+    auto fail = [&]() -> std::expected<void, PipelineError> {
+        failures.arrive_and_wait();
+        return std::unexpected(PipelineError::kJobFailed);
+    };
+    auto a = pipe.emplace(fail);
+    auto b = pipe.emplace(fail);
+    auto sink = pipe.emplace([] { CHECK(false); });
+    for (int i = 0; i < 64; ++i) {
+        auto child = pipe.emplace([] { CHECK(false); });
+        child.succeed(a).succeed(b).precede(sink);
+    }
+    std::jthread runner{[&] {
+        CHECK_FALSE(pipe.run(*executor, &observer).has_value());
+        returned = true;
+    }};
+    observerEntered.wait();
+    CHECK_FALSE(returned.load());
+    releaseObserver.count_down();
+    runner.join();
+    CHECK(skipped.load() == 65);
+    CHECK(pipe.status(sink) == JobStatus::kSkipped);
+    // A second failure run must reuse storage without keeping prior queue state.
+    CHECK_FALSE(pipe.run(*executor, &observer).has_value());
+    CHECK(skipped.load() == 130);
 }

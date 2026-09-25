@@ -14,3 +14,5 @@ build-noexcept/
 
 build-qt/
 build-zephyr/
+
+build-traversal/

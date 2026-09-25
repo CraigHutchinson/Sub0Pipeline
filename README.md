@@ -130,7 +130,8 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 | Path or feature | Selection | Cost / limit |
 |---|---|---|
 | Core DAG execution | Always | Job state, dependency counters, cancellation checks, run guard and fresh stop states; dynamic allocations remain |
-| Validation | Automatic on topology change; explicit `validate()` available | Traverses the graph and allocates scratch; cached for unchanged repeated runs |
+| Validation | Automatic on topology change; explicit `validate()` available | Retains reusable graph-sized scratch; validation queries serialize; automatic validation is cached for unchanged repeated runs |
+| Failure propagation | Required failure/cancellation | Lazily reserves a graph-sized worklist, reuses it across runs, and drains callbacks before completion |
 | External cancellation forwarding | Supply a stoppable token | Stop callback registration per executing job; skipped for the no-token path |
 | Observer callbacks | Supply an `IObserver*` | Virtual calls and user callback work; absent when no observer is supplied; callbacks can run concurrently |
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
@@ -151,6 +152,9 @@ The [allocation audit](docs/allocation-audit.md) separates graph construction,
 first execution, warmed execution, cancellation, diagnostics and helper costs.
 On the recorded GCC/libstdc++ host, a warmed ten-job chain still makes ten C++
 allocation calls per run; graph reservation alone cannot make execution heap-free.
+
+See [reusable traversal storage](docs/traversal-storage.md) for the next reduction
+in validation/failure allocations and its retained-memory tradeoff.
 
 ## Executors and use-case boundaries
 
