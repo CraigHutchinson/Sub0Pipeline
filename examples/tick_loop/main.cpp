@@ -15,7 +15,7 @@
 // mechanism, so this example can only terminate by detaching a thread that
 // borrows `pipeline` and calling std::exit. AGENTS.md forbids detaching work
 // that can still access borrowed state. Re-enable once run_loop() can be
-// stopped and joined.
+// stopped and joined. Tracked by issue #8: https://github.com/CraigHutchinson/Sub0Pipeline/issues/8
 //
 // Expected tick counts over ~1 100 ms:
 //   heartbeat   every 200 ms  →  ~5 ticks

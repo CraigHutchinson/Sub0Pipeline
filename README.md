@@ -300,7 +300,7 @@ and manually triggered CI workflow retain machine-readable evidence. Follow
 | [validate_dag](examples/validate_dag/main.cpp) | `validate()`, cycle detection and `dump_text()` |
 | [observer_profiling](examples/observer_profiling/main.cpp) | Custom `IObserver` progress and per-job timing |
 | [job_options](examples/job_options/main.cpp) | Job builder methods, `precede()`/`succeed()` and optional chains |
-| [tick_loop](examples/tick_loop/main.cpp) | **Disabled — not built.** `add_tick()`/`run_loop()`; needs a `run_loop()` stop mechanism |
+| [tick_loop](examples/tick_loop/main.cpp) | **Disabled — not built.** `add_tick()`/`run_loop()`; needs a `run_loop()` stop mechanism ([#8](https://github.com/CraigHutchinson/Sub0Pipeline/issues/8)) |
 
 The suites include core and DSL regression tests plus optional Qt and Zephyr
 adapter executions. Coverage includes
