@@ -5,9 +5,13 @@
 // parallelism. Deterministic execution order makes this ideal for unit tests
 // and environments where std::thread is unavailable (bare-metal, CI).
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include <sub0pipeline/executor.hpp>
+#include <sub0pipeline/executor_factory.hpp>
 
+#include <cstdint>
+#include <functional>
 #include <memory>
+#include <string_view>
 
 namespace sub0pipeline {
 

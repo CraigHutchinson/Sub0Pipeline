@@ -4,13 +4,19 @@
 // Each dispatched job runs as a joinable std::thread.
 // Used for desktop simulation and integration testing with real parallelism.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include <sub0pipeline/executor.hpp>
+#include <sub0pipeline/executor_factory.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace sub0pipeline {

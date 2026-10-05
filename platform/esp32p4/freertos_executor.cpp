@@ -4,11 +4,18 @@
 // Each dispatched job runs as a pinned FreeRTOS task with configurable
 // priority and core affinity. Tasks self-delete on completion.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include <sub0pipeline/executor.hpp>
+#include <sub0pipeline/executor_factory.hpp>
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <memory>
+#include <new>
+#include <string_view>
+#include <utility>
 
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
