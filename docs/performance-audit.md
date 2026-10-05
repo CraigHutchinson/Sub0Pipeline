@@ -238,6 +238,43 @@ Removing the queue lock itself means per-worker queues with stealing, which
 cannot keep the executor's strict priority order. That is a different executor,
 tracked as `ThreadPoolExecutor` in the platform roadmap.
 
+## Outcome
+
+Timings at [`ccee8c2`](https://github.com/CraigHutchinson/Sub0Pipeline/commit/ccee8c2),
+with every change above merged, against the audit capture at `7a373d2`. Same
+host, build and method; these are two separate captures rather than alternating
+samples, so read small differences as noise.
+[Final summary](benchmarks/2026-10-05-audit/final/timing-summary.json) and
+[allocation counts](benchmarks/2026-10-05-audit/final/allocations.csv) are retained.
+
+| Case | Audit | Final | Change |
+|---|---:|---:|---:|
+| Run 10-job chain, inline | 691 ns [678–699] | 284 ns [279–312] | −59% |
+| Run 300-job fan-out, inline | 20.5 µs [20.0–20.9] | 8.4 µs [7.9–8.8] | −59% |
+| Run 1000-job layered DAG, inline | 80.1 µs [78.2–80.5] | 39.1 µs [37.7–40.5] | −51% |
+| Run 10-job chain, external stop token | 1,055 ns [1,040–1,080] | 341 ns [331–349] | −68% |
+| Run 10-job chain, counting observer | 771 ns [750–781] | 354 ns [342–374] | −54% |
+| Construct 10-job chain | 1.93 µs [1.82–2.17] | 1.69 µs [1.57–1.76] | −12% |
+| Construct 10-job fan-out | 2.18 µs [2.13–2.38] | 1.66 µs [1.59–1.78] | −24% |
+| `PriorityExecutor(4)`, 10-job chain | 16.1 µs [14.6–17.6] | 13.1 µs [10.8–14.8] | −18% |
+| `PriorityExecutor(4)`, 1000-job layered DAG | 557 µs [488–571] | 372 µs [354–386] | −33% |
+| `PriorityExecutor(4)`, 300-job fan-out | 214 µs [199–241] | 95 µs [75–128] | −56% |
+
+Allocation calls: a warm 10-job run 10 to 0, with or without an external token;
+constructing a 10-job pipeline 28 to 18; a failing run with a skipped successor
+2 to 0.
+
+Not improved: validation, snapshots, timeout helpers and `DesktopExecutor`,
+none of which was targeted. The on-demand trigger case reads 5.1 µs [3.8–8.5]
+in the audit capture and 8.4 µs [8.0–9.9] here. It read 8.7 µs [6.5–10.1] on
+the audit revision in the first follow-up comparison and stayed within its
+range through every later step, so the audit figure was a fast sample of a
+bimodal case and not a regression introduced here.
+
+Two limits found by the audit are gone: one job now accepts 32,767 successors,
+and the library's inline executors no longer use stack in proportion to chain
+length.
+
 ## Limits of this audit
 
 - One host, one compiler, one operating system. GCC and Clang inline and
