@@ -24,7 +24,8 @@ Any commit that changes the public API surface in `include/sub0pipeline/`
 - `sub0pipeline::IExecutor` / `sub0pipeline::IObserver` — virtual interfaces
 - `sub0pipeline::PipelineError` / `sub0pipeline::JobStatus` enumerators
 - `sub0pipeline::TickJob`
-- Factory functions: `make_desktop_executor()`, `make_sequential_executor()`, `make_freertos_executor()`
+- Factory functions: `makeDesktopExecutor()`, `makeSequentialExecutor()`, `makePriorityExecutor()`,
+  `makeFreeRtosExecutor()`
 
 ### Style
 Follow `STYLE_GUIDE.md` for all C++ code. Key points:
