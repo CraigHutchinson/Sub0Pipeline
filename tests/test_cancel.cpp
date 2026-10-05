@@ -380,8 +380,8 @@ TEST_CASE("Failure: concurrent shared descendants finish exactly once before ret
         std::latch& release;
         Observer(Pipeline& p, std::atomic<int>& n, std::latch& e, std::latch& r)
             : pipe{p}, skipped{n}, entered{e}, release{r} {}
-        void onStart(std::string_view) override {}
-        void onFinish(std::string_view, JobStatus status, float) override {
+        void onJobStart(RunId, JobId, std::string_view) override {}
+        void onJobFinish(RunId, JobId, std::string_view, JobStatus status, float) override {
             if (status != JobStatus::kSkipped) return;
             CHECK(pipe.validate().has_value());
             if (skipped.fetch_add(1) == 0) { entered.count_down(); release.wait(); }

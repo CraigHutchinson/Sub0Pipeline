@@ -25,7 +25,7 @@ through `std::expected`.
 | Completion and reuse | `run()` waits for executor callbacks; `join_orphans()` waits for timed-out helper jobs; subsequent runs reap old work; concurrent/reentrant runs return `kBusy` |
 | Executors | Inline/headless, desktop thread-per-job, priority worker pool, scoped adapter, and an ESP32-P4 FreeRTOS source adapter |
 | Job hints | Names, status text, timeout, priority, core affinity and stack size; platform hints depend on the executor |
-| Observation and diagnostics | Start/finish/failure hooks, status/name queries, snapshots, first failure name, error context and text DAG dump |
+| Observation and diagnostics | Optional identity-aware run/job/dependency events, status/name queries, snapshots, first failure name, error context and caller-selected text DAG output |
 | On-demand jobs | `add_on_demand`, `arm`, `trigger`; excluded from normal roots and invoked individually |
 | Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with `add_tick` / `run_loop(stop_token)` |
 | Build and validation | CMake targets/install support, optional executor builds, no-exception core configuration, examples, functional/sanitizer suites and opt-in benchmarks |
@@ -33,9 +33,10 @@ through `std::expected`.
 **Not current guarantees:** allocation-free execution, custom graph allocators,
 ISR-safe scheduling, hard real-time deadlines, forced interruption of arbitrary
 I/O, work stealing, distributed jobs, or automatic idempotency of external writes.
-`dump_trace()` is a stub and the dependency observer hook is not currently emitted.
-Bounded Qt/Zephyr examples and injected deadline services are available; hardware
-validation and fixed-capacity execution remain separate work. See
+Runtime trace storage, serialization and visualization are caller-owned; no
+recorder or trace dependency is installed in the scheduler. Bounded Qt/Zephyr
+examples and injected deadline services are available; hardware validation and
+fixed-capacity execution remain separate work. See
 [embedded and cancellation design notes](docs/structured-cancellation.md).
 
 ## Remaining work
@@ -48,9 +49,12 @@ validation and fixed-capacity execution remain separate work. See
   that pass are not interrupted, and the platform yield may delay return by one
   interval. The legacy no-argument `run_loop()` stays non-returning for
   compatibility ([issue #8](https://github.com/CraigHutchinson/Sub0Pipeline/issues/8)).
-- [Issue #9](https://github.com/CraigHutchinson/Sub0Pipeline/issues/9) tracks
-  the no-op `dump_trace()` API and the `IObserver::onDependency()` hook, which
-  is declared but not currently emitted.
+- The optional observer supports identity-aware job/run events and one batched
+  dependency callback per completed node with successors. Static graph output
+  uses `dump_text(std::ostream&)`; bounded capture and Chrome Trace export are
+  demonstrated in [trace_capture](examples/trace_capture/main.cpp). See the
+  [observability guide](docs/observability.md) for capture, transport and
+  embedded-use guidance.
 
 ## Quick start
 
@@ -147,7 +151,7 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 | Validation | Automatic on topology change; explicit `validate()` available | Retains reusable graph-sized scratch; validation queries serialize; automatic validation is cached for unchanged repeated runs |
 | Failure propagation | Required failure/cancellation | Lazily reserves a graph-sized worklist, reuses it across runs, and drains callbacks before completion |
 | External cancellation forwarding | Supply a stoppable token | Stop callback registration per executing job; skipped for the no-token path |
-| Observer callbacks | Supply an `IObserver*` | Virtual calls and user callback work; absent when no observer is supplied; callbacks can run concurrently |
+| Observer callbacks and tracing | Supply an `IObserver*` | Absent when no observer is supplied; an attached observer receives concurrent callbacks and pays its own capture/formatting costs |
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |
 | Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
@@ -244,7 +248,7 @@ exhaustion recoverable.
 | Construct / connect | `emplace`, `emplace_void`, `succeed`, `precede`, `parallel`, `size` |
 | Execute / cancel | `run`, `run_inline`, `run_until`, `Job::cancel` |
 | Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `snapshot` |
-| Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text` |
+| Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text(std::ostream&)` |
 | Events / ticks | `add_on_demand`, `arm`, `trigger`, `add_tick`, `run_loop(stop_token)`; legacy non-returning `run_loop()` |
 | Job configuration | `name`, `status`, `timeout`, `optional`, `priority`, `core`, `stack` |
 
@@ -254,10 +258,15 @@ out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
 `kDependencyFailed` and `kDuplicateJob` are also declared error values; they are
 not a promise of additional runtime duplicate/dependency diagnostics.
 
-`IObserver` provides dispatch start, finish/progress and failure hooks. With
-parallel executors, callbacks may overlap and must protect shared state.
-A dispatch-start notification does not prove that a cancelled job body ran.
-See the [public header](include/sub0pipeline/sub0pipeline.hpp) for signatures.
+`IObserver` provides run, identity-aware job start/finish and dependency
+resolution hooks, plus failure details. Existing name-only callbacks remain
+supported. With parallel executors, callbacks may overlap and must protect
+shared state. A dispatch-start notification does not prove that a cancelled
+job body ran. `trace_capture` demonstrates bounded event capture, Chrome Trace
+JSON export and display-rate snapshot polling without recording or rendering
+inside the scheduler. The no-observer path stores no trace state or events and
+does not read a clock. See the [observability contract](docs/observability.md)
+and [public header](include/sub0pipeline/sub0pipeline.hpp).
 
 ## Injected deadlines and owned runs
 
@@ -313,8 +322,9 @@ and manually triggered CI workflow retain machine-readable evidence. Follow
 | [on_demand_jobs](examples/on_demand_jobs/main.cpp) | Armed event jobs |
 | [dsl_operators](examples/dsl_operators/main.cpp) | DSL composition and structured bindings |
 | [error_handling](examples/error_handling/main.cpp) | Required/optional failure propagation and `std::expected` jobs |
-| [validate_dag](examples/validate_dag/main.cpp) | `validate()`, cycle detection and `dump_text()` |
+| [validate_dag](examples/validate_dag/main.cpp) | `validate()`, cycle detection and `dump_text(std::ostream&)` |
 | [observer_profiling](examples/observer_profiling/main.cpp) | Custom `IObserver` progress and per-job timing |
+| [trace_capture](examples/trace_capture/main.cpp) | Bounded concurrent event capture, Chrome Trace JSON and live snapshot polling |
 | [job_options](examples/job_options/main.cpp) | Job builder methods, `precede()`/`succeed()` and optional chains |
 | [tick_loop](examples/tick_loop/main.cpp) | Recurring ticks with joinable `std::jthread` shutdown |
 

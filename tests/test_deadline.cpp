@@ -161,8 +161,8 @@ TEST_CASE("RunScope: completion includes non-cooperative timeout work") {
     struct Observer final : IObserver {
         std::latch& timedOut;
         explicit Observer(std::latch& latch) : timedOut{latch} {}
-        void onStart(std::string_view) override {}
-        void onFinish(std::string_view, JobStatus status, float) override {
+        void onJobStart(RunId, JobId, std::string_view) override {}
+        void onJobFinish(RunId, JobId, std::string_view, JobStatus status, float) override {
             if (status == JobStatus::kTimedOut) timedOut.count_down();
         }
     } observer{timedOut};

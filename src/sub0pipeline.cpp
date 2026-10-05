@@ -24,7 +24,9 @@
 #include <condition_variable>
 #include <exception>
 #include <future>
+#include <limits>
 #include <mutex>
+#include <ostream>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -64,6 +66,20 @@ JobStatus statusOf(const std::expected<void, PipelineError>& result) noexcept
         case PipelineError::kTimeout: return JobStatus::kTimedOut;
         default: return JobStatus::kFailed;
     }
+}
+
+void notifyDependencies(IObserver& observer, Pipeline& pipeline, RunId runId,
+                       JobId from, std::string_view fromName)
+{
+    auto successors = pipeline.successors(from);
+    if (!successors.empty())
+        observer.onDependenciesResolved(runId, from, fromName, successors);
+}
+
+void ensureNodeIndexFitsSuccessorStorage(std::size_t nodeCount)
+{
+    if (nodeCount > std::numeric_limits<std::uint16_t>::max())
+        SUB0PIPELINE_THROW("Pipeline exceeds the 65536-job uint16_t index range");
 }
 } // namespace
 
@@ -575,6 +591,7 @@ const Pipeline::Node& Pipeline::node(uint32_t idx) const
 Job Pipeline::emplace(std::function<std::expected<void, PipelineError>()> fn)
 {
     if (!impl_) impl_ = std::make_unique<Impl>();
+    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
     auto& nd    = impl_->nodes_.back();
@@ -592,6 +609,7 @@ Job Pipeline::emplace(
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
     if (!impl_) impl_ = std::make_unique<Impl>();
+    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
     auto& nd           = impl_->nodes_.back();
@@ -605,6 +623,7 @@ Job Pipeline::emplace(
 Job Pipeline::emplace_void(std::function<void()> fn)
 {
     if (!impl_) impl_ = std::make_unique<Impl>();
+    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
     auto& nd    = impl_->nodes_.back();
@@ -729,8 +748,10 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     struct DispatchContext
     {
         Impl&               impl;
+        Pipeline&           pipeline;
         IExecutor&          executor;
         IObserver*          observer;
+        RunId               runId;
         uint32_t            total;
         std::atomic<bool>&  hasFatalFailure;
         PipelineError&      fatalError;
@@ -775,7 +796,10 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 // user code under a traversal lock. Other workers may enqueue;
                 // this drainer remains an active executor callback until done.
                 lock.unlock();
-                if (observer) observer->onFinish(nd.nameStr_, JobStatus::kSkipped, progress);
+                if (observer) {
+                    observer->onJobFinish(runId, idx, nd.nameStr_, JobStatus::kSkipped, progress);
+                    notifyDependencies(*observer, pipeline, runId, idx, nd.nameStr_);
+                }
                 lock.lock();
             }
             drainingSkips = false;
@@ -789,7 +813,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
             auto ready = JobStatus::kReady;
             if (!nd.jobStatus_.compare_exchange_strong(ready, JobStatus::kRunning,
                                                        std::memory_order_acq_rel)) return;
-            if (observer) observer->onStart(nd.nameStr_);
+            if (observer) observer->onJobStart(runId, idx, nd.nameStr_);
 
             auto result = impl.execute(nd, externalStop);
 
@@ -803,12 +827,16 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
             const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
             const auto progress = static_cast<float>(done) / static_cast<float>(total);
-            if (observer) observer->onFinish(nd.nameStr_, jobStatus, progress);
+            if (observer) {
+                observer->onJobFinish(runId, idx, nd.nameStr_, jobStatus, progress);
+                notifyDependencies(*observer, pipeline, runId, idx, nd.nameStr_);
+            }
 
             if (!result && (!nd.isOptional() || result.error() == PipelineError::kCancelled)) {
                 // Report failure detail through the dedicated hook -- zero cost when
                 // no observer is attached or observer's onFailure is the default no-op.
-                if (observer) observer->onFailure(nd.nameStr_, result.error(), jobErrorCtx);
+                if (observer)
+                    observer->onJobFailure(runId, idx, nd.nameStr_, result.error(), jobErrorCtx);
 
                 bool expected = false;
                 if (hasFatalFailure.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
@@ -837,7 +865,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         }
     };
 
-    DispatchContext ctx{*impl_, executor, observer,
+    const RunId runId = observer ? observer->onRunStart() : 0U;
+    DispatchContext ctx{*impl_, *this, executor, observer, runId,
                         static_cast<uint32_t>(total),
                         hasFatalFailure, fatalError, fatalMtx, external};
 
@@ -861,6 +890,12 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
 // ── Status queries ────────────────────────────────────────────────────────────
 
+auto DependencyRange::Iterator::operator*() const noexcept -> Target
+{
+    const auto id = static_cast<JobId>(range_->ids_[index_]);
+    return {id, range_->pipeline_->name(id)};
+}
+
 auto Pipeline::status(Job j) const noexcept -> JobStatus
 {
     if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
@@ -873,6 +908,21 @@ auto Pipeline::name(Job j) const noexcept -> std::string_view
     if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return {};
     return impl_->nodes_[j.idx_].nameStr_;
+}
+
+auto Pipeline::name(JobId id) const noexcept -> std::string_view
+{
+    if (!impl_ || id >= impl_->nodes_.size())
+        return {};
+    return impl_->nodes_[id].nameStr_;
+}
+
+auto Pipeline::successors(JobId id) const noexcept -> DependencyRange
+{
+    if (!impl_ || id >= impl_->nodes_.size())
+        return {};
+    const auto range = impl_->nodes_[id].successors_.range(impl_->succPool_);
+    return DependencyRange{this, range.begin(), impl_->nodes_[id].successors_.size()};
 }
 
 std::string_view Pipeline::first_failure_name() const noexcept
@@ -1011,6 +1061,7 @@ void Pipeline::arm(IExecutor& executor, IObserver* observer) noexcept
 Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> fn)
 {
     if (!impl_) impl_ = std::make_unique<Impl>();
+    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
     auto& nd       = impl_->nodes_.back();
@@ -1028,6 +1079,7 @@ Job Pipeline::add_on_demand(
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
     if (!impl_) impl_ = std::make_unique<Impl>();
+    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
     const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
     impl_->nodes_.emplace_back();
     auto& nd    = impl_->nodes_.back();
@@ -1070,17 +1122,26 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
     // add_on_demand() is called before the dispatch lambda executes.
     exec->dispatch(
         nd.nameStr_,
-        [impl = impl_.get(), idx = j.idx_, obs]
+        [impl = impl_.get(), pipeline = this, idx = j.idx_, obs]
         {
             auto& n = impl->nodes_[idx];
             n.jobStatus_.store(JobStatus::kRunning, std::memory_order_release);
-            if (obs) obs->onStart(n.nameStr_);
+            const RunId runId = obs ? obs->onRunStart() : 0U;
+            if (obs) obs->onJobStart(runId, idx, n.nameStr_);
 
             auto result = impl->execute(n);
 
             const auto status = statusOf(result);
             n.jobStatus_.store(status, std::memory_order_release);
-            if (obs) obs->onFinish(n.nameStr_, status, 1.0f);
+            auto jobErrorCtx = std::move(t_jobError);
+            if (obs) {
+                obs->onJobFinish(runId, idx, n.nameStr_, status, 1.0f);
+                notifyDependencies(*obs, *pipeline, runId, idx, n.nameStr_);
+                if (!result && (!n.isOptional() ||
+                                result.error() == PipelineError::kCancelled)) {
+                    obs->onJobFailure(runId, idx, n.nameStr_, result.error(), jobErrorCtx);
+                }
+            }
         },
         [] {},
         nd.coreAffinity_,
@@ -1092,22 +1153,18 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
 
 // ── Diagnostics ───────────────────────────────────────────────────────────────
 
-void Pipeline::dump_text() const
+void Pipeline::dump_text(std::ostream& output) const
 {
     if (!impl_) return;
-    std::printf("Pipeline DAG (%zu jobs):\n", impl_->nodes_.size());
+    output << "Pipeline DAG (" << impl_->nodes_.size() << " jobs):\n";
     for (uint32_t i = 0U; i < static_cast<uint32_t>(impl_->nodes_.size()); ++i) {
         const auto& nd = impl_->nodes_[i];
-        std::printf("  [%u] %s (predecessors: %u) -> (", i, nd.nameStr_.c_str(), nd.predecessorCount_);
-        for (auto s : nd.successors_.range(impl_->succPool_))
-            std::printf(" %s", impl_->nodes_[s].nameStr_.c_str());
-        std::printf(")\n");
+        output << "  [" << i << "] " << nd.nameStr_ << " (predecessors: "
+               << nd.predecessorCount_ << ") -> (";
+        for (auto successor : nd.successors_.range(impl_->succPool_))
+            output << ' ' << impl_->nodes_[successor].nameStr_;
+        output << ")\n";
     }
-}
-
-void Pipeline::dump_trace() const
-{
-    // TODO: emit trace events representing the DAG structure + execution timeline.
 }
 
 } // namespace sub0pipeline

@@ -248,8 +248,8 @@ TEST_CASE("Pipeline: re-run with observer receives callbacks each run")
 
     struct CountingObserver final : IObserver {
         int starts = 0, finishes = 0;
-        void onStart(std::string_view) override { ++starts; }
-        void onFinish(std::string_view, JobStatus, float) override { ++finishes; }
+        void onJobStart(RunId, JobId, std::string_view) override { ++starts; }
+        void onJobFinish(RunId, JobId, std::string_view, JobStatus, float) override { ++finishes; }
     } obs;
 
     // Run 1
