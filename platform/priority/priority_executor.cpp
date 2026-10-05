@@ -19,7 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <stop_token>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -42,32 +41,18 @@ public:
     PriorityExecutor(unsigned int threadCount, std::function<void()> onThreadStart)
     {
         workers_.reserve(threadCount);
-        for (unsigned int i = 0; i < threadCount; ++i) {
-            workers_.emplace_back([this, onThreadStart](std::stop_token st) {
-                if (onThreadStart) onThreadStart();
-                while (!st.stop_requested()) {
-                    QueuedJob job;
-                    {
-                        std::unique_lock lk{mtx_};
-                        cv_.wait(lk, st, [this]{ return !queue_.empty(); });
-                        if (queue_.empty()) break; // stop requested
-                        job = std::move(const_cast<QueuedJob&>(queue_.top()));
-                        queue_.pop();
-                    }
-                    job.fn();
-                    if (job.onComplete) job.onComplete();
-                    std::lock_guard done{doneMtx_};
-                    if (inFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U)
-                        doneCv_.notify_all();
-                }
-            });
-        }
+        for (unsigned int i = 0; i < threadCount; ++i)
+            workers_.emplace_back([this, onThreadStart] { work(onThreadStart); });
     }
 
     ~PriorityExecutor() override
     {
         wait_all();
-        for (auto& worker : workers_) worker.request_stop();
+        {
+            std::lock_guard lk{mtx_};
+            stopping_ = true;
+        }
+        wake_.notify_all();
         // Join while all synchronization members are still alive.
         workers_.clear();
     }
@@ -81,11 +66,15 @@ public:
         uint32_t                      /*stackBytes*/) override
     {
         inFlight_.fetch_add(1U, std::memory_order_relaxed);
+        bool wake;
         {
             std::lock_guard lk{mtx_};
             queue_.push(QueuedJob{std::move(fn), std::move(onComplete), priority});
+            // A busy worker re-checks the queue before it sleeps, so a wake-up
+            // is only needed when some worker is already asleep.
+            wake = idle_ != 0U;
         }
-        cv_.notify_one();
+        if (wake) wake_.notify_one();
     }
 
     void wait_all() override
@@ -100,9 +89,37 @@ public:
     }
 
 private:
-    std::priority_queue<QueuedJob>  queue_;
+    void work(const std::function<void()>& onThreadStart)
+    {
+        if (onThreadStart) onThreadStart();
+        for (;;) {
+            QueuedJob job;
+            {
+                std::unique_lock lk{mtx_};
+                ++idle_;
+                wake_.wait(lk, [this]{ return stopping_ || !queue_.empty(); });
+                --idle_;
+                if (queue_.empty()) return; // stopping, and nothing left to drain
+                job = std::move(const_cast<QueuedJob&>(queue_.top()));
+                queue_.pop();
+            }
+            job.fn();
+            if (job.onComplete) job.onComplete();
+            // Only the completion that empties the executor has a waiter to
+            // wake. Taking doneMtx_ there orders the notify after the waiter's
+            // predicate check, so it cannot be missed.
+            if (inFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+                std::lock_guard done{doneMtx_};
+                doneCv_.notify_all();
+            }
+        }
+    }
+
+    std::priority_queue<QueuedJob>  queue_;             ///< Guarded by mtx_.
     std::mutex                      mtx_;
-    std::condition_variable_any     cv_;
+    std::condition_variable         wake_;              ///< Work queued, or stopping.
+    unsigned int                    idle_{0U};          ///< Workers waiting on wake_; guarded by mtx_.
+    bool                            stopping_{false};   ///< Guarded by mtx_.
     std::vector<std::jthread>       workers_;
     std::atomic<uint32_t>           inFlight_{0U};
     std::mutex                      doneMtx_;
