@@ -210,6 +210,22 @@ audit. "Unchanged" means the ranges overlap. Summaries with every sample are in
 | 1 | Successor blocks double, growing in place when last in the arena; the arena is addressed with 32 bits | One job accepts 32,767 successors (was about 360). Construct 300-job fan-out 88.9 µs [83.5–96.5] to 46.1 µs [44.9–48.2]; every other case unchanged |
 | 3 | Plain jobs keep their stop state until a stop is requested and are handed an empty token; jobs that take a `std::stop_token` still get new state every run | Run 10-job chain 672 ns [668–680] to 299 ns [296–301]; 1000-job layered DAG 78.0 µs to 39.9 µs; external-token chain 1,029 ns to 654 ns; observer chain 745 ns to 372 ns. Warm run allocations 10 to 0. Construction, validation and timeout cases unchanged |
 | 4 | One external-stop registration per run, which requests stop on every node, instead of one per job | External-token 10-job chain 650 ns [642–660] to 331 ns [326–334], now 49 ns above the plain chain (was 351 ns). Plain 10-job chain 299 ns to 282 ns; other cases unchanged |
+| 5 | `PriorityExecutor`: plain condition variable with a stop flag, completion lock taken only when the in-flight count reaches zero, and no wake-up when every worker is busy | 10-job chain 14.2 µs [13.2–14.7] to 12.5 µs [11.6–13.1]; 1000-job layered DAG 410 µs [395–452] to 337 µs [301–356]; 300-job fan-out 131 µs [115–161] to 77 µs [66–121], ranges overlapping. Inline and desktop cases unchanged |
+
+Finding 5 is not exhausted. A threading profile after the change still puts all
+lock wait on the single queue mutex, split evenly between `dispatch` and the
+worker loop. Two further candidates were considered and not taken:
+
+- Letting a worker keep one job it dispatches instead of queueing it. A job that
+  dispatches and then blocks on the result, as a nested `ScopedExecutor` run
+  does, would wait on work that no other thread had been told about.
+- Spinning before sleeping. It would cut the wake-up cost of a chain but burns
+  CPU on every idle worker, which is the wrong default for a library that also
+  targets battery and embedded hosts.
+
+Removing the queue lock itself means per-worker queues with stealing, which
+cannot keep the executor's strict priority order. That is a different executor,
+tracked as `ThreadPoolExecutor` in the platform roadmap.
 
 ## Limits of this audit
 
