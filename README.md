@@ -30,14 +30,6 @@ through `std::expected`.
 | Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with `add_tick` / `run_loop(stop_token)` |
 | Build and validation | CMake targets/install support, optional executor builds, no-exception core configuration, examples, functional/sanitizer suites and opt-in benchmarks |
 
-### The scheduler in motion
-
-The animation is rendered from the opt-in Chrome Trace events produced by the
-`trace_capture` example. It shows dependency gating, independent branches running
-in parallel, fan-in, and the live job/edge state an observer can capture.
-
-![Animated Sub0Pipeline DAG run: root dispatches two parallel branches, both complete, then release the join; an opt-in observer reports progress and resolved edges.](docs/media/sub0pipeline-overview.gif)
-
 **Not current guarantees:** allocation-free execution, custom graph allocators,
 ISR-safe scheduling, hard real-time deadlines, forced interruption of arbitrary
 I/O, work stealing, distributed jobs, or automatic idempotency of external writes.
