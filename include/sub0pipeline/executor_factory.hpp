@@ -1,7 +1,8 @@
 // include/sub0pipeline/executor_factory.hpp
 //
 // Factory functions for the bundled platform executors. Each is defined in its
-// platform library (Sub0Pipeline::Desktop / ::Headless / ::Priority); link the one you call.
+// platform library (Sub0Pipeline::Desktop / ::Headless / ::Priority, or the
+// esp32p4 ESP-IDF component); link the one you call.
 #pragma once
 
 #include <sub0pipeline/executor.hpp>
@@ -46,5 +47,9 @@ std::unique_ptr<IExecutor> makeSequentialExecutor();
  */
 std::unique_ptr<IExecutor> makePriorityExecutor(
     unsigned int threadCount = 0, std::function<void()> onThreadStart = nullptr);
+
+/// Returns a `FreeRtosExecutor` (one FreeRTOS task per job). Defined in
+/// `platform/esp32p4/`, which builds only as an ESP-IDF component.
+std::unique_ptr<IExecutor> makeFreeRtosExecutor();
 
 } // namespace sub0pipeline

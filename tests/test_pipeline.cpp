@@ -78,10 +78,10 @@ TEST_CASE("Pipeline: size tracks emplace count")
 {
     Pipeline pipeline;
     CHECK(pipeline.size() == 0U);
-    pipeline.emplace([] {});
+    (void)pipeline.emplace([] {});
     CHECK(pipeline.size() == 1U);
-    pipeline.emplace([] {});
-    pipeline.emplace([] {});
+    (void)pipeline.emplace([] {});
+    (void)pipeline.emplace([] {});
     CHECK(pipeline.size() == 3U);
 }
 

@@ -47,6 +47,7 @@ Follow `STYLE_GUIDE.md` for all C++ code. Key points:
 |---|---|---|
 | `SequentialExecutor` | Tests, bare-metal | `Sub0Pipeline::Headless` |
 | `DesktopExecutor` | Desktop, CI | `Sub0Pipeline::Desktop` |
+| `PriorityExecutor` | Bounded pool, priority order | `Sub0Pipeline::Priority` |
 | `FreeRtosExecutor` | ESP32-P4 | ESP-IDF component only |
 
 See `PLATFORM_ROADMAP.md` for planned future executors.

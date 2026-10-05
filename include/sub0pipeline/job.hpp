@@ -115,10 +115,10 @@ public:
     [[nodiscard]] constexpr Pipeline* pipeline() const noexcept { return pipeline_; }
 
     /** Declare that this job runs AFTER every job in @p group. */
-    Job& succeed(class JobGroup const& group);
+    Job& succeed(JobGroup const& group);
 
     /** Declare that every job in @p group runs AFTER this job. */
-    Job& precede(class JobGroup const& group);
+    Job& precede(JobGroup const& group);
 
 private:
     friend class Pipeline;

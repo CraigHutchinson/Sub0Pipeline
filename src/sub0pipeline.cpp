@@ -16,48 +16,50 @@
 #include <sub0pipeline/sub0pipeline.hpp>
 #include <sub0pipeline/deadline.hpp>
 
-#include <algorithm>
 #include <atomic>
-#include <cassert>
 #include <chrono>
-#include <cstdio>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <expected>
+#include <functional>
 #include <future>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
-
-// ── Thread-local job error context ────────────────────────────────────────────
-// Jobs call Pipeline::set_current_job_error() on the failure branch only.
-// The string is read once (inside dispatchJob, after the job fn returns) and
-// immediately cleared.  On the success path the string is never touched --
-// zero allocation, zero reads, branch-predictor-friendly empty check.
-namespace { thread_local std::string t_jobError; }
 
 #if __has_include(<freertos/FreeRTOS.h>)
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#else
-#include <thread>
-#endif
-
-#if __has_include(<trace/nn_trace.hpp>)
-#include <trace/nn_trace.hpp>
-#else
-#define NN_TRACE_SCOPE(...)   ((void)0)
-#define NN_TRACE_INSTANT(...) ((void)0)
-#define NN_TRACE_COUNTER(...) ((void)0)
 #endif
 
 namespace sub0pipeline {
 
 namespace {
+// Jobs call Pipeline::set_current_job_error() on the failure branch only.
+// The string is read once (inside dispatchJob, after the job fn returns) and
+// immediately cleared.  On the success path the string is never touched --
+// zero allocation, zero reads, branch-predictor-friendly empty check.
+thread_local std::string t_jobError;
+
+// Yield between tick-loop passes: one RTOS tick, or 1 ms elsewhere.
+void yieldTickLoop()
+{
+#if __has_include(<freertos/FreeRTOS.h>)
+    vTaskDelay(1);
+#else
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+#endif
+}
+
 JobStatus statusOf(const std::expected<void, PipelineError>& result) noexcept
 {
     if (result) return JobStatus::kDone;
@@ -92,11 +94,6 @@ void ensureNodeIndexFitsSuccessorStorage(std::size_t nodeCount)
 //   [0..1]  size_    -- bit[15] = pool-mode flag; bits[14:0] = count (max 32767)
 //   [2..3]  poolIdx_ -- uint16_t start offset in Impl::succPool_ (pool mode)
 //   [4..11] inline_[4] -- 4 × uint16_t inline entries (8 bytes)
-//
-// Rationale for uint16_t size_:
-//   The previous uint8_t layout used bit[7] as the pool flag, limiting count to
-//   127 before silent bit-collision. uint16_t raises that to 32767 -- unreachable
-//   in any real pipeline -- without changing the 12-byte struct size.
 
 struct PoolSuccessors
 {
@@ -242,6 +239,12 @@ struct Pipeline::Node
 
 struct Pipeline::Impl
 {
+    using JobFn = std::function<std::expected<void, PipelineError>(std::stop_token)>;
+
+    // Raise only for an intentional new field; do not raise to paper over bloat.
+    static_assert(sizeof(Node) <= 168,
+        "Pipeline::Node exceeded size budget -- check padding or new large fields");
+
     // Build-time / init-time fields (written once, read during run setup).
     std::vector<Node>         nodes_;
     std::vector<TickJob>      ticks_;
@@ -281,6 +284,34 @@ struct Pipeline::Impl
     std::atomic<std::size_t>  pendingOrphans_{0};
 
     ~Impl() { joinOrphans(); }
+
+    // A moved-from Pipeline has no Impl; mutating calls recreate it.
+    static Impl& ensure(std::unique_ptr<Impl>& impl)
+    {
+        if (!impl) impl = std::make_unique<Impl>();
+        return *impl;
+    }
+
+    // Adapt a plain job to the stop-token signature. The token is ignored, so
+    // kFlagCancellable stays clear and timeouts use the hard cutoff.
+    static JobFn ignoringStop(std::function<std::expected<void, PipelineError>()> fn)
+    {
+        return [f = std::move(fn)](std::stop_token) { return f(); };
+    }
+
+    // Append a node named "<namePrefix><index>". Any new node may be a root
+    // (on-demand nodes must leave the root set), so the cached roots are dropped.
+    uint32_t addNode(JobFn fn, std::string_view namePrefix, uint8_t flags)
+    {
+        ensureNodeIndexFitsSuccessorStorage(nodes_.size());
+        const auto idx = static_cast<uint32_t>(nodes_.size());
+        auto& nd    = nodes_.emplace_back();
+        nd.fn_      = std::move(fn);
+        nd.flags_   = flags;
+        nd.nameStr_ = std::string{namePrefix} + std::to_string(idx);
+        rootsCached_ = false;
+        return idx;
+    }
 
     bool joinOrphans()
     {
@@ -444,8 +475,7 @@ struct Pipeline::Impl
 
 void Pipeline::set_deadline_service(IDeadlineService* service)
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    impl_->deadlines_ = service;
+    Impl::ensure(impl_).deadlines_ = service;
 }
 
 // ── Job builder methods ───────────────────────────────────────────────────────
@@ -590,48 +620,21 @@ const Pipeline::Node& Pipeline::node(uint32_t idx) const
 
 Job Pipeline::emplace(std::function<std::expected<void, PipelineError>()> fn)
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
-    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
-    impl_->nodes_.emplace_back();
-    auto& nd    = impl_->nodes_.back();
-    // Wrap non-cancellable fn in the unified (stop_token) signature.
-    // kFlagCancellable is NOT set -- dispatchJob uses hard packaged_task cutoff
-    // for timeout enforcement since the wrapped fn ignores the token.
-    nd.fn_      = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
-                  { return f(); };
-    nd.nameStr_ = "job_" + std::to_string(idx);
-    impl_->rootsCached_ = false; // new node may be a root; invalidate cached set
-    return Job{idx, this};
+    return Job{Impl::ensure(impl_).addNode(Impl::ignoringStop(std::move(fn)), "job_", 0U), this};
 }
 
 Job Pipeline::emplace(
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
-    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
-    impl_->nodes_.emplace_back();
-    auto& nd           = impl_->nodes_.back();
-    nd.fn_             = std::move(fn);
-    nd.flags_         |= Node::kFlagCancellable;
-    nd.nameStr_        = "job_" + std::to_string(idx);
-    impl_->rootsCached_ = false;
-    return Job{idx, this};
+    return Job{Impl::ensure(impl_).addNode(std::move(fn), "job_", Node::kFlagCancellable), this};
 }
 
 Job Pipeline::emplace_void(std::function<void()> fn)
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
-    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
-    impl_->nodes_.emplace_back();
-    auto& nd    = impl_->nodes_.back();
-    nd.fn_      = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
-                  { f(); return {}; };
-    nd.nameStr_ = "job_" + std::to_string(idx);
-    impl_->rootsCached_ = false;
-    return Job{idx, this};
+    return Job{Impl::ensure(impl_).addNode(
+        [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
+        { f(); return {}; },
+        "job_", 0U), this};
 }
 
 std::size_t Pipeline::size() const noexcept
@@ -695,11 +698,6 @@ auto Pipeline::run(IExecutor& executor, std::stop_token external, IObserver* obs
 auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver* observer)
     -> std::expected<void, PipelineError>
 {
-    // Previous: 272B (original) → 176B (first pass) → 168B (pool/arena pass).
-    // Raise only for an intentional new field; do not raise to paper over bloat.
-    static_assert(sizeof(Node) <= 168,
-        "Pipeline::Node exceeded size budget -- check padding or new large fields");
-
     if (!impl_ || impl_->nodes_.empty()) return {};
     if (impl_->running_.test_and_set(std::memory_order_acquire))
         return std::unexpected(PipelineError::kBusy);
@@ -739,12 +737,9 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     std::mutex        fatalMtx;
     impl_->failedJobName_.clear();
 
-    // DispatchContext: replaces the previous std::function<void(uint32_t)>
-    // self-referential lambda. Defined as a local struct inside run() so it
-    // has access to Pipeline's private Impl and Node types.
-    //
-    // executor.dispatch() receives [&ctx, si] (pointer + uint32_t = 12 bytes)
-    // which fits in std::function SSO, eliminating one heap alloc per dispatch.
+    // A local struct so it can name Pipeline's private Impl and Node types.
+    // executor.dispatch() receives [&ctx, si] (pointer + uint32_t), which fits
+    // std::function's small buffer: no heap allocation per dispatch.
     struct DispatchContext
     {
         Impl&               impl;
@@ -944,7 +939,6 @@ std::vector<Pipeline::JobSnapshot> Pipeline::snapshot() const noexcept
     std::vector<JobSnapshot> out;
     out.reserve(impl_->nodes_.size());
     for (const auto& nd : impl_->nodes_) {
-        // Skip on-demand nodes that have not yet been triggered.
         out.push_back({nd.nameStr_, nd.jobStatus_.load(std::memory_order_relaxed)});
     }
     return out;
@@ -954,8 +948,7 @@ std::vector<Pipeline::JobSnapshot> Pipeline::snapshot() const noexcept
 
 void Pipeline::add_tick(TickJob tick)
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    impl_->ticks_.push_back(std::move(tick));
+    Impl::ensure(impl_).ticks_.push_back(std::move(tick));
 }
 
 void Pipeline::run_loop()
@@ -967,13 +960,7 @@ void Pipeline::run_loop()
 void Pipeline::run_loop(std::stop_token stop)
 {
     if (!impl_) {
-        while (!stop.stop_requested()) {
-#if __has_include(<freertos/FreeRTOS.h>)
-            vTaskDelay(1);
-#else
-            std::this_thread::sleep_for(std::chrono::milliseconds{1});
-#endif
-        }
+        while (!stop.stop_requested()) yieldTickLoop();
         return;
     }
 
@@ -996,11 +983,7 @@ void Pipeline::run_loop(std::stop_token stop)
 
         if (stop.stop_requested()) break;
 
-#if __has_include(<freertos/FreeRTOS.h>)
-        vTaskDelay(1);
-#else
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-#endif
+        yieldTickLoop();
     }
 }
 
@@ -1053,41 +1036,22 @@ void Pipeline::run_until(IExecutor& executor, std::stop_token stop,
 
 void Pipeline::arm(IExecutor& executor, IObserver* observer) noexcept
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    impl_->armedExecutor_ = &executor;
-    impl_->armedObserver_ = observer;
+    auto& impl = Impl::ensure(impl_);
+    impl.armedExecutor_ = &executor;
+    impl.armedObserver_ = observer;
 }
 
 Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> fn)
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
-    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
-    impl_->nodes_.emplace_back();
-    auto& nd       = impl_->nodes_.back();
-    nd.fn_     = [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
-               { return f(); };
-    nd.nameStr_ = "on_demand_" + std::to_string(idx);
-    nd.flags_  |= Pipeline::Node::kFlagOnDemand;
-    // Invalidate root cache -- the new on-demand node would otherwise be
-    // picked up as a root on the next run() (it has no predecessors).
-    impl_->rootsCached_ = false;
-    return Job{idx, this};
+    return Job{Impl::ensure(impl_).addNode(Impl::ignoringStop(std::move(fn)), "on_demand_",
+                                           Node::kFlagOnDemand), this};
 }
 
 Job Pipeline::add_on_demand(
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
-    if (!impl_) impl_ = std::make_unique<Impl>();
-    ensureNodeIndexFitsSuccessorStorage(impl_->nodes_.size());
-    const auto idx = static_cast<uint32_t>(impl_->nodes_.size());
-    impl_->nodes_.emplace_back();
-    auto& nd    = impl_->nodes_.back();
-    nd.fn_      = std::move(fn);
-    nd.nameStr_ = "on_demand_" + std::to_string(idx);
-    nd.flags_  |= Pipeline::Node::kFlagOnDemand | Pipeline::Node::kFlagCancellable;
-    impl_->rootsCached_ = false;
-    return Job{idx, this};
+    return Job{Impl::ensure(impl_).addNode(std::move(fn), "on_demand_",
+                                           Node::kFlagOnDemand | Node::kFlagCancellable), this};
 }
 
 auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
@@ -1115,8 +1079,6 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
 
     IExecutor*  exec = impl_->armedExecutor_;
     IObserver*  obs  = impl_->armedObserver_;
-
-    nd.jobStatus_.store(JobStatus::kReady, std::memory_order_release);
 
     // Capture by index, not by nd reference: nodes_ may reallocate if another
     // add_on_demand() is called before the dispatch lambda executes.

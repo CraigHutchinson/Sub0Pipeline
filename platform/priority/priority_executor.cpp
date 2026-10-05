@@ -8,27 +8,34 @@
 // priority 10) from "prefetch" hints (background, priority 5). The pool runs
 // both but always starts the blocking fetch first.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include <sub0pipeline/executor.hpp>
+#include <sub0pipeline/executor_factory.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <queue>
+#include <stop_token>
+#include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace sub0pipeline {
 
 class PriorityExecutor final : public IExecutor
 {
-    struct Job
+    struct QueuedJob
     {
         std::function<void()> fn;
         std::function<void()> onComplete;
         uint8_t               priority{5};
 
-        bool operator<(const Job& o) const noexcept { return priority < o.priority; }
+        bool operator<(const QueuedJob& o) const noexcept { return priority < o.priority; }
     };
 
 public:
@@ -39,12 +46,12 @@ public:
             workers_.emplace_back([this, onThreadStart](std::stop_token st) {
                 if (onThreadStart) onThreadStart();
                 while (!st.stop_requested()) {
-                    Job job;
+                    QueuedJob job;
                     {
                         std::unique_lock lk{mtx_};
                         cv_.wait(lk, st, [this]{ return !queue_.empty(); });
                         if (queue_.empty()) break; // stop requested
-                        job = std::move(const_cast<Job&>(queue_.top()));
+                        job = std::move(const_cast<QueuedJob&>(queue_.top()));
                         queue_.pop();
                     }
                     job.fn();
@@ -76,7 +83,7 @@ public:
         inFlight_.fetch_add(1U, std::memory_order_relaxed);
         {
             std::lock_guard lk{mtx_};
-            queue_.push(Job{std::move(fn), std::move(onComplete), priority});
+            queue_.push(QueuedJob{std::move(fn), std::move(onComplete), priority});
         }
         cv_.notify_one();
     }
@@ -93,7 +100,7 @@ public:
     }
 
 private:
-    std::priority_queue<Job>        queue_;
+    std::priority_queue<QueuedJob>  queue_;
     std::mutex                      mtx_;
     std::condition_variable_any     cv_;
     std::vector<std::jthread>       workers_;
