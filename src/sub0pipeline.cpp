@@ -284,6 +284,9 @@ struct Pipeline::Impl
     mutable std::mutex       validationMtx_;
     mutable std::vector<uint32_t> validationDegrees_, validationReady_;
     std::vector<uint32_t>     skipped_;
+    // Ready jobs in the order they became ready, for executors that run
+    // inline. Graph-sized scratch, retained across runs like skipped_.
+    std::vector<uint32_t>     inlineReady_;
     std::vector<uint16_t>     succPool_;    ///< Flat arena for overflow successor indices (see PoolSuccessors).
     std::atomic_flag          running_ = ATOMIC_FLAG_INIT;
     std::mutex                stopMtx_;
@@ -793,6 +796,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         std::atomic<bool>&  hasFatalFailure;
         PipelineError&      fatalError;
         std::mutex&         fatalMtx;
+        std::vector<uint32_t>* inlineReady; ///< Set when the run calls jobs itself; else nullptr.
 
         std::mutex skipMutex;
         std::size_t skipRead = 0;
@@ -891,6 +895,10 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                     auto pending = JobStatus::kPending;
                     if (!succ.jobStatus_.compare_exchange_strong(pending, JobStatus::kReady,
                                                                 std::memory_order_acq_rel)) continue;
+                    if (inlineReady) {
+                        inlineReady->push_back(succIdx);
+                        continue;
+                    }
                     executor.dispatch(
                         succ.nameStr_,
                         [this, si = succIdx]{ dispatchJob(si); },
@@ -904,7 +912,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     const RunId runId = observer ? observer->onRunStart() : 0U;
     DispatchContext ctx{*impl_, *this, executor, observer, runId,
                         static_cast<uint32_t>(total),
-                        hasFatalFailure, fatalError, fatalMtx};
+                        hasFatalFailure, fatalError, fatalMtx,
+                        executor.runs_inline() ? &impl_->inlineReady_ : nullptr};
 
     // Forward an external stop with one registration for the whole run, not
     // one per job. It reaches every node: jobs not yet started are refused at
@@ -921,13 +930,25 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     std::optional<std::stop_callback<ForwardStop>> forwardStop;
     if (external.stop_possible()) forwardStop.emplace(external, ForwardStop{*impl_});
 
-    for (auto idx : impl_->roots_) {
-        auto& nd = impl_->nodes_[idx];
-        executor.dispatch(
-            nd.nameStr_,
-            [&ctx, i = idx]{ ctx.dispatchJob(i); },
-            [] {},
-            nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+    if (ctx.inlineReady) {
+        // The executor would only call each job on this thread, so call them
+        // here from a worklist. A completing job appends its ready successors
+        // instead of running them, which keeps stack depth independent of
+        // chain length. Each job is appended once, so the reserve is exact.
+        auto& ready = *ctx.inlineReady;
+        ready.reserve(total);
+        ready.assign(impl_->roots_.begin(), impl_->roots_.end());
+        for (std::size_t next = 0; next < ready.size(); ++next)
+            ctx.dispatchJob(ready[next]);
+    } else {
+        for (auto idx : impl_->roots_) {
+            auto& nd = impl_->nodes_[idx];
+            executor.dispatch(
+                nd.nameStr_,
+                [&ctx, i = idx]{ ctx.dispatchJob(i); },
+                [] {},
+                nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+        }
     }
 
     executor.wait_all();
@@ -1051,6 +1072,7 @@ struct InlineExecutor final : IExecutor
     { fn(); if (oc) oc(); }
     void wait_all() override {}
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
+    [[nodiscard]] bool runs_inline() const noexcept override { return true; }
 };
 } // namespace
 

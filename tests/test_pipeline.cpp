@@ -898,3 +898,77 @@ TEST_CASE("Tick loop: external stop waits for the active callback to finish")
 
     CHECK(tickCount == 1);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Library inline executors: run_inline() and makeSequentialExecutor()
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// These used to call each job from inside its predecessor's completion, so
+// stack depth grew with the chain: 2,000 links overflowed a 1 MB stack.
+
+TEST_CASE("Inline executors: a 20000-job chain runs without recursing per link")
+{
+    constexpr int cJobs = 20000;
+    Pipeline pipeline;
+    pipeline.reserve(cJobs);
+    int ran = 0;
+    Job previous;
+    for (int i = 0; i < cJobs; ++i) {
+        auto job = pipeline.emplace([&] { ++ran; });
+        if (previous.valid()) job.succeed(previous);
+        previous = job;
+    }
+
+    CHECK(pipeline.run_inline().has_value());
+    CHECK(ran == cJobs);
+
+    auto sequential = makeSequentialExecutor();
+    CHECK(pipeline.run(*sequential).has_value());
+    CHECK(ran == 2 * cJobs);
+}
+
+TEST_CASE("Inline executors: jobs run in the order they become ready")
+{
+    //   a -> b -> e
+    //   a -> c
+    //   b, c -> d
+    // b's successor e becomes ready before c has run, but c was dispatched first.
+    Pipeline pipeline;
+    std::vector<char> order;
+    auto a = pipeline.emplace([&] { order.push_back('a'); });
+    auto b = pipeline.emplace([&] { order.push_back('b'); });
+    auto c = pipeline.emplace([&] { order.push_back('c'); });
+    auto d = pipeline.emplace([&] { order.push_back('d'); });
+    auto e = pipeline.emplace([&] { order.push_back('e'); });
+    a.precede(b, c);
+    d.succeed(b, c);
+    e.succeed(b);
+
+    const std::vector<char> expected{'a', 'b', 'c', 'e', 'd'};
+    CHECK(pipeline.run_inline().has_value());
+    CHECK(order == expected);
+
+    order.clear();
+    auto sequential = makeSequentialExecutor();
+    CHECK(pipeline.run(*sequential).has_value());
+    CHECK(order == expected);
+}
+
+TEST_CASE("Inline executors: a job can run a nested pipeline on the same executor")
+{
+    auto sequential = makeSequentialExecutor();
+    Pipeline outer;
+    std::vector<int> order;
+    auto first = outer.emplace([&]() -> std::expected<void, PipelineError> {
+        Pipeline inner;
+        auto one = inner.emplace([&] { order.push_back(1); });
+        inner.emplace([&] { order.push_back(2); }).succeed(one);
+        auto result = inner.run(*sequential);   // must finish before this job returns
+        order.push_back(3);
+        return result;
+    });
+    outer.emplace([&] { order.push_back(4); }).succeed(first);
+
+    CHECK(outer.run(*sequential).has_value());
+    CHECK(order == std::vector<int>{1, 2, 3, 4});
+}
