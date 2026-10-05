@@ -162,7 +162,7 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 
 | Path or feature | Selection | Cost / limit |
 |---|---|---|
-| Core DAG execution | Always | Job state, dependency counters, cancellation checks, run guard and fresh stop states; dynamic allocations remain |
+| Core DAG execution | Always | Job state, dependency counters, cancellation checks and run guard. Each run renews the stop state of every job that takes a `std::stop_token` (one allocation each); plain jobs keep theirs until a stop is requested |
 | Validation | Automatic on topology change; explicit `validate()` available | Retains reusable graph-sized scratch; validation queries serialize; automatic validation is cached for unchanged repeated runs |
 | Failure propagation | Required failure/cancellation | Lazily reserves a graph-sized worklist, reuses it across runs, and drains callbacks before completion |
 | External cancellation forwarding | Supply a stoppable token | Stop callback registration per executing job; skipped for the no-token path |
@@ -183,8 +183,10 @@ stop states, scratch or executor queues.
 
 The [allocation audit](docs/allocation-audit.md) separates graph construction,
 first execution, warmed execution, cancellation, diagnostics and helper costs.
-On the recorded GCC/libstdc++ host, a warmed ten-job chain still makes ten C++
-allocation calls per run; graph reservation alone cannot make execution heap-free.
+A warmed run of plain jobs makes no C++ allocation calls on the audited MSVC
+host; each job that takes a `std::stop_token` still costs one per run. That is a
+measurement, not a heap-free guarantee: failure paths, timeouts and executors
+allocate, and graph reservation alone cannot make execution heap-free.
 
 See [reusable traversal storage](docs/traversal-storage.md) for the next reduction
 in validation/failure allocations and its retained-memory tradeoff.

@@ -11,7 +11,9 @@ scheduler cannot make external side effects idempotent.
   Queued jobs check the live request before body entry, including plain functions.
   A request racing with entry may be observed cooperatively by the body instead.
 - Validation and roots are cached until a topology edit; per-run cancellation
-  state is always refreshed. External forwarding and timeout helpers are opt-in.
+  state is always fresh. A job that takes a `std::stop_token` gets new stop
+  state each run, so a token it kept cannot observe a later run; a plain job
+  never receives a token and keeps its state until a stop is requested on it. External forwarding and timeout helpers are opt-in.
 - Per-job cancellation during a run survives until the job is reached. Pre-run
   requests reset before dispatch. Cancellation is fatal even for optional jobs;
   ordinary optional failures retain their existing behavior.

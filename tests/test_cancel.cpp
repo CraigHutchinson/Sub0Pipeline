@@ -119,6 +119,76 @@ TEST_CASE("Cancel: stop_source is fresh on each run -- no cross-epoch bleed")
     CHECK(runCount == 2);
 }
 
+// Plain jobs keep their stop state between clean runs, so a stop requested in
+// one run must still be gone from the next.
+
+TEST_CASE("Cancel: a plain job cancelled during one run runs normally in the next")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    bool cancelSecond = true;
+    int secondRan = 0;
+    Job second;
+    auto first = pipe.emplace([&] { if (cancelSecond) second.cancel(); });
+    second = pipe.emplace([&] { ++secondRan; });
+    second.succeed(first);
+
+    auto cancelled = pipe.run(exec);
+    REQUIRE_FALSE(cancelled.has_value());
+    CHECK(cancelled.error() == PipelineError::kCancelled);
+    CHECK(secondRan == 0);
+
+    cancelSecond = false;
+    for (int run = 1; run <= 3; ++run) {
+        CHECK(pipe.run(exec).has_value());
+        CHECK(secondRan == run);
+    }
+}
+
+TEST_CASE("Cancel: an external stop on plain jobs does not carry into the next run")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    int ran = 0;
+    auto first = pipe.emplace([&] { ++ran; });
+    pipe.emplace([&] { ++ran; }).succeed(first);
+
+    std::stop_source stopped;
+    stopped.request_stop();
+    auto cancelled = pipe.run(exec, stopped.get_token());
+    REQUIRE_FALSE(cancelled.has_value());
+    CHECK(cancelled.error() == PipelineError::kCancelled);
+    CHECK(ran == 0);
+
+    CHECK(pipe.run(exec).has_value());
+    CHECK(ran == 2);
+}
+
+TEST_CASE("Cancel: a token kept from one run does not observe the next run's cancellation")
+{
+    RecordingExecutor exec;
+    Pipeline pipe;
+
+    bool cancelSecond = false;
+    std::vector<std::stop_token> kept;
+    Job second;
+    auto first = pipe.emplace([&] { if (cancelSecond) second.cancel(); });
+    second = pipe.emplace([&](std::stop_token token) -> std::expected<void, PipelineError> {
+        kept.push_back(std::move(token));
+        return {};
+    });
+    second.succeed(first);
+
+    REQUIRE(pipe.run(exec).has_value());
+    REQUIRE(kept.size() == 1U);
+
+    cancelSecond = true;
+    CHECK_FALSE(pipe.run(exec).has_value());
+    CHECK_FALSE(kept.front().stop_requested());
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Timeout
 // ═══════════════════════════════════════════════════════════════════════════════
