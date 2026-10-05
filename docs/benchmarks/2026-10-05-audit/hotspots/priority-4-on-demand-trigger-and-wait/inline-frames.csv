@@ -1,0 +1,19 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Module,Function (Full),Source File,Start Address
+std::condition_variable::wait,5.384841,5.384841,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable::wait,mutex,0x140021dc9
+std::condition_variable_any::wait,3.642060,3.642060,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable_any::wait,condition_variable,0x1400212ea
+std::condition_variable_any::notify_one,0.235172,0.235172,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable_any::notify_one,condition_variable,0x140021bf2
+malloc_base,0.078961,0.078961,0.0,0.0,ucrtbase.dll,malloc_base,[Unknown],0x1800050a0
+std::condition_variable::notify_all,0.037716,0.037716,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable::notify_all,mutex,0x14002166f
+std::chrono::steady_clock::now,0.024633,0.024633,0.0,0.0,Sub0Pipeline_Bench.exe,std::chrono::steady_clock::now,__msvc_chrono.hpp,0x14000734a
+Mtx_unlock,0.022106,0.022106,0.0,0.0,MSVCP140.dll,Mtx_unlock,[Unknown],0x180017df0
+std::stop_source::operator=,0.017531,0.017531,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_source::operator=(class std::stop_source &&),stop_token,0x140018be0
+std::lock_guard<std::mutex>::{ctor},0.017360,0.017360,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x1400219e8
+`anonymous-namespace'::Runner::loop,0.008509,0.008509,0.0,0.0,Sub0Pipeline_Bench.exe,`anonymous-namespace'::Runner::loop,bench_pipeline.cpp,0x14000728f
+sub0pipeline::PriorityExecutor::wait_all,0.008304,0.008304,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::PriorityExecutor::wait_all(void),priority_executor.cpp,0x140021da0
+std::unique_lock<std::mutex>::{ctor},0.002241,0.002241,0.0,0.0,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{ctor},mutex,0x14002129f
+"std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",0.002148,0.002148,0.0,0.0,Sub0Pipeline_Bench.exe,"std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",queue,0x140021417
+std::stop_source::get_token,0.002032,0.002032,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_source::get_token,stop_token,0x14001b7dd
+std::function<void __cdecl(void)>::operator=,0.001921,0.001921,0.0,0.0,Sub0Pipeline_Bench.exe,std::function<void __cdecl(void)>::operator=,functional,0x140021454
+[Import thunk Mtx_unlock],0.001889,0.001889,0.0,0.0,Sub0Pipeline_Bench.exe,[Import thunk Mtx_unlock],[Unknown],0x1400228b3
+std::lock_guard<std::mutex>::{dtor},0.001825,0.001825,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021674
+"std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",0.000012,0.000012,0.0,0.0,Sub0Pipeline_Bench.exe,"std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",xstring,0x14001a7b9

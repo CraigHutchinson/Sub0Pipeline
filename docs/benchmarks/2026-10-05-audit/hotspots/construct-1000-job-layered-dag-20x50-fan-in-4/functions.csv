@@ -1,0 +1,22 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Module,Function (Full),Source File,Start Address
+malloc_base,3.282675,3.267341,0.015334,0.0,ucrtbase.dll,malloc_base,[Unknown],0x1800050a0
+"std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",2.068654,2.037720,0.030934,0.0,Sub0Pipeline_Bench.exe,"std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >(void)",vector,0x140018710
+sub0pipeline::Pipeline::emplace_void,0.966291,0.966291,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::Pipeline::emplace_void(class std::function<void (void)>),sub0pipeline.cpp,0x14001b2c0
+sub0pipeline::Pipeline::Impl::addNode,0.671311,0.671311,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::Pipeline::Impl::addNode(class std::function<class std::expected<void,enum sub0pipeline::PipelineError> (class std::stop_token)>,class std::basic_string_view<char,struct std::char_traits<char> >,unsigned char)",sub0pipeline.cpp,0x14001a5c0
+sub0pipeline::Pipeline::Node::{ctor},0.615380,0.615380,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::Pipeline::Node::{ctor},sub0pipeline.cpp,0x140016c90
+"std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",0.438968,0.438968,0.0,0.0,Sub0Pipeline_Bench.exe,"std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",vector,0x14001a630
+"std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=",0.385371,0.385371,0.0,0.0,Sub0Pipeline_Bench.exe,"std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > &&)",xstring,0x14000a520
+std::to_string,0.340236,0.340236,0.0,0.0,Sub0Pipeline_Bench.exe,std::to_string,string,0x14001a690
+sub0pipeline::PoolSuccessors::push_back,0.293474,0.293474,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::PoolSuccessors::push_back(unsigned short,class std::vector<unsigned short,class std::allocator<unsigned short> > &)",sub0pipeline.cpp,0x14001d910
+sub0pipeline::Job::succeed,0.246356,0.246356,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::Job::succeed(class sub0pipeline::Job),sub0pipeline.cpp,0x14001ea80
+std::function<void (void)>::function<void (void)>,0.123406,0.123406,0.0,0.0,Sub0Pipeline_Bench.exe,std::function<void (void)>::function<void (void)>(class std::function<void (void)> &&),functional,0x1400082a0
+"std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",0.107240,0.107240,0.0,0.0,Sub0Pipeline_Bench.exe,"std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",xstring,0x140016d17
+`anonymous namespace'::buildLayered,0.076188,0.076188,0.0,0.0,Sub0Pipeline_Bench.exe,"`anonymous namespace'::buildLayered(class sub0pipeline::Pipeline & const, int, int, int)",bench_pipeline.cpp,0x14000cd90
+operator new,0.074708,0.074708,0.0,0.0,Sub0Pipeline_Bench.exe,operator new(unsigned __int64),new_scalar.cpp,0x140022a40
+_security_check_cookie,0.031892,0.031892,0.0,0.0,Sub0Pipeline_Bench.exe,_security_check_cookie,amdsecgs.asm,0x1400230a0
+operator delete,0.030268,0.030268,0.0,0.0,Sub0Pipeline_Bench.exe,"operator delete(void *,unsigned __int64)",delete_scalar_size.cpp,0x140022a90
+aligned_malloc,0.015852,0.015852,0.0,0.0,ucrtbase.dll,aligned_malloc,[Unknown],0x18006a830
+`anonymous namespace'::Runner::run<`main'::`2'::<lambda_14> >,0.015586,0.015586,0.0,0.0,Sub0Pipeline_Bench.exe,"`anonymous namespace'::Runner::run<`main'::`2'::<lambda_14> >(const char *, class main::__l2::<lambda_14> *)",bench_pipeline.cpp,0x140006af0
+std::stop_source::{ctor},0.015495,0.015495,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_source::{ctor},stop_token,0x140016e1e
+"std::vector<sub0pipeline::Job,std::allocator<sub0pipeline::Job> >::push_back",0.015477,0.015477,0.0,0.0,Sub0Pipeline_Bench.exe,"std::vector<sub0pipeline::Job,std::allocator<sub0pipeline::Job> >::push_back",vector,0x14000ce71
+[Import thunk memcpy],0.014998,0.014998,0.0,0.0,Sub0Pipeline_Bench.exe,[Import thunk memcpy],[Unknown],0x140023bca

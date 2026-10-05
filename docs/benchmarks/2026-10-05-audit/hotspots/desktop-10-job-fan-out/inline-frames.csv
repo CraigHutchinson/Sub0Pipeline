@@ -1,0 +1,4 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Module,Function (Full),Source File,Start Address
+NtWaitForSingleObject,0.003455,0.0,0.003455,0.0,ntdll.dll,NtWaitForSingleObject,[Unknown],0x1801617d0
+OpenThread,0.000032,0.000032,0.0,0.0,KERNELBASE.dll,OpenThread,[Unknown],0x1800dde10
+[Outside any known module],0.000017,0.000017,0.0,0.0,[Unknown],[Outside any known module],[Unknown],0x0

@@ -1,0 +1,4413 @@
+{
+  "captured_utc": "2026-10-05T20:36:10.284678+00:00",
+  "platform": "Windows-11-10.0.26220-SP0",
+  "vtune": "Intel(R) VTune(TM) Profiler 2026.4.0 (build 632893) Command Line Tool",
+  "analysis": "hotspots",
+  "bench": "Sub0Pipeline_Bench.exe",
+  "ref": "7a373d2+harness",
+  "seconds": 10.0,
+  "cases": [
+    {
+      "case": "construct 10-job linear chain",
+      "metric": "CPU Time",
+      "total_seconds": 9.835,
+      "iterations": 4990976,
+      "ns_per_op_under_profiler": 2003.7,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 5.862,
+          "percent": 59.6
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 3.973,
+          "percent": 40.4
+        }
+      ],
+      "functions": [
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 3.82,
+          "percent": 38.84
+        },
+        {
+          "function": "std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 2.075,
+          "percent": 21.1
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.944,
+          "percent": 9.6
+        },
+        {
+          "function": "`anonymous namespace'::buildChain",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.708,
+          "percent": 7.2
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::addNode",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.578,
+          "percent": 5.87
+        },
+        {
+          "function": "std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.315,
+          "percent": 3.2
+        },
+        {
+          "function": "sub0pipeline::Pipeline::emplace_void",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.303,
+          "percent": 3.08
+        },
+        {
+          "function": "std::function<void (void)>::function<void (void)>",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.247,
+          "percent": 2.51
+        },
+        {
+          "function": "aligned_malloc",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.153,
+          "percent": 1.55
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.123,
+          "percent": 1.25
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "std::make_unique<struct sub0pipeline::Pipeline::Impl,0>",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "memory",
+          "seconds": 0.047,
+          "percent": 0.48
+        },
+        {
+          "function": "sub0pipeline::Job::name",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.047,
+          "percent": 0.48
+        },
+        {
+          "function": "[Import thunk memcpy]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "std::default_delete<struct sub0pipeline::Pipeline::Impl>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "memory",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "[Import thunk memset]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "std::to_string",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "string",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "`anonymous namespace'::Runner::run<`main'::`2'::<lambda_1> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Job::succeed",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size_align.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::joinOrphans",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::to_string",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "string",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 3.82,
+          "percent": 38.84
+        },
+        {
+          "function": "std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 2.075,
+          "percent": 21.1
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 1.019,
+          "percent": 10.36
+        },
+        {
+          "function": "std::operator+",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.585,
+          "percent": 5.95
+        },
+        {
+          "function": "std::operator+",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.322,
+          "percent": 3.28
+        },
+        {
+          "function": "std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.315,
+          "percent": 3.2
+        },
+        {
+          "function": "std::function<void (void)>::function<void (void)>",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.247,
+          "percent": 2.51
+        },
+        {
+          "function": "aligned_malloc",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.153,
+          "percent": 1.55
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.138,
+          "percent": 1.4
+        },
+        {
+          "function": "std::function<std::expected<void,enum sub0pipeline::PipelineError> __cdecl(std::stop_token)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.132,
+          "percent": 1.34
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::addNode",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.077,
+          "percent": 0.78
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::operator class std::basic_string_view<char,struct std::char_traits<char> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "sub0pipeline::PoolSuccessors::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "std::to_string",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "string",
+          "seconds": 0.059,
+          "percent": 0.6
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.047,
+          "percent": 0.48
+        },
+        {
+          "function": "std::make_unique<struct sub0pipeline::Pipeline::Impl,0>",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "memory",
+          "seconds": 0.047,
+          "percent": 0.48
+        },
+        {
+          "function": "[Import thunk memcpy]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "std::default_delete<struct sub0pipeline::Pipeline::Impl>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "memory",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "`anonymous namespace'::buildChain",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "sub0pipeline::Pipeline::emplace_void",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.033,
+          "percent": 0.33
+        },
+        {
+          "function": "[Import thunk memset]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::atomic<unsigned int>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "std::function<std::expected<void,enum sub0pipeline::PipelineError> __cdecl(std::stop_token)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.029,
+          "percent": 0.3
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Job::name",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "`anonymous-namespace'::Runner::loop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::chrono::duration<__int64,std::ratio<1,1000> >::max",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "__msvc_chrono.hpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::atomic<enum sub0pipeline::JobStatus>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "sub0pipeline::Job::succeed",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size_align.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::joinOrphans",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::to_string",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "string",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ]
+    },
+    {
+      "case": "10-job linear chain",
+      "metric": "CPU Time",
+      "total_seconds": 9.83,
+      "iterations": 14369792,
+      "ns_per_op_under_profiler": 695.9,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 8.197,
+          "percent": 83.39
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 1.633,
+          "percent": 16.61
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 2.774,
+          "percent": 28.22
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 2.362,
+          "percent": 24.02
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.633,
+          "percent": 16.61
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.844,
+          "percent": 8.58
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.796,
+          "percent": 8.1
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.714,
+          "percent": 7.26
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.386,
+          "percent": 3.92
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.14,
+          "percent": 1.42
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.06,
+          "percent": 0.61
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::joinOrphans",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::run",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "`anonymous namespace'::Runner::run<`main'::`35'::<lambda_12> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 2.591,
+          "percent": 26.36
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.633,
+          "percent": 16.61
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 1.209,
+          "percent": 12.3
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 1.074,
+          "percent": 10.93
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.676,
+          "percent": 6.87
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.551,
+          "percent": 5.61
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.43,
+          "percent": 4.37
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.166,
+          "percent": 1.68
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.14,
+          "percent": 1.42
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.12,
+          "percent": 1.22
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.109,
+          "percent": 1.11
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.107,
+          "percent": 1.09
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.092,
+          "percent": 0.94
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.091,
+          "percent": 0.93
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.091,
+          "percent": 0.92
+        },
+        {
+          "function": "std::stop_token::stop_requested",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.077,
+          "percent": 0.79
+        },
+        {
+          "function": "std::atomic_flag::test_and_set",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.077,
+          "percent": 0.78
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.06,
+          "percent": 0.61
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.047,
+          "percent": 0.47
+        },
+        {
+          "function": "std::expected<void,enum sub0pipeline::PipelineError>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "expected",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl::__l2::DispatchContext::dispatchJob::__l30::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.044,
+          "percent": 0.45
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.032,
+          "percent": 0.33
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl::__l24::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.03,
+          "percent": 0.3
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::joinOrphans",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::run",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::mutex::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "main::__l35::<lambda_12>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ]
+    },
+    {
+      "case": "10-job fan-out (1 root + 9 leaves)",
+      "metric": "CPU Time",
+      "total_seconds": 9.811,
+      "iterations": 14540288,
+      "ns_per_op_under_profiler": 687.7,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 8.334,
+          "percent": 84.95
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 1.477,
+          "percent": 15.05
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 3.16,
+          "percent": 32.21
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 2.316,
+          "percent": 23.61
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.477,
+          "percent": 15.05
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 1.069,
+          "percent": 10.9
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.901,
+          "percent": 9.18
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.472,
+          "percent": 4.82
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.154,
+          "percent": 1.57
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.092,
+          "percent": 0.94
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.063,
+          "percent": 0.64
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::run",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 2.434,
+          "percent": 24.81
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.477,
+          "percent": 15.05
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 1.393,
+          "percent": 14.2
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 1.028,
+          "percent": 10.48
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.838,
+          "percent": 8.54
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.749,
+          "percent": 7.64
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.523,
+          "percent": 5.33
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.167,
+          "percent": 1.7
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.14,
+          "percent": 1.42
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.123,
+          "percent": 1.25
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.108,
+          "percent": 1.1
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.092,
+          "percent": 0.94
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.078,
+          "percent": 0.79
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.063,
+          "percent": 0.64
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.047,
+          "percent": 0.48
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.045,
+          "percent": 0.46
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "std::expected<void,enum sub0pipeline::PipelineError>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "expected",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "std::atomic_flag::test_and_set",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl::__l2::DispatchContext::dispatchJob::__l30::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::stop_token::stop_requested",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::run",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ]
+    },
+    {
+      "case": "construct 1000-job layered DAG (20x50, fan-in 4)",
+      "metric": "CPU Time",
+      "total_seconds": 9.83,
+      "iterations": 73476,
+      "ns_per_op_under_profiler": 136099.6,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 6.531,
+          "percent": 66.44
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 3.299,
+          "percent": 33.56
+        }
+      ],
+      "functions": [
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 3.283,
+          "percent": 33.4
+        },
+        {
+          "function": "std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 2.069,
+          "percent": 21.04
+        },
+        {
+          "function": "sub0pipeline::Pipeline::emplace_void",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.966,
+          "percent": 9.83
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::addNode",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.671,
+          "percent": 6.83
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.615,
+          "percent": 6.26
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.439,
+          "percent": 4.47
+        },
+        {
+          "function": "std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.385,
+          "percent": 3.92
+        },
+        {
+          "function": "std::to_string",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "string",
+          "seconds": 0.34,
+          "percent": 3.46
+        },
+        {
+          "function": "sub0pipeline::PoolSuccessors::push_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.293,
+          "percent": 2.99
+        },
+        {
+          "function": "sub0pipeline::Job::succeed",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.246,
+          "percent": 2.51
+        },
+        {
+          "function": "std::function<void (void)>::function<void (void)>",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.123,
+          "percent": 1.26
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.107,
+          "percent": 1.09
+        },
+        {
+          "function": "`anonymous namespace'::buildLayered",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.076,
+          "percent": 0.78
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.075,
+          "percent": 0.76
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.032,
+          "percent": 0.32
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "aligned_malloc",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "`anonymous namespace'::Runner::run<`main'::`2'::<lambda_14> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::vector<sub0pipeline::Job,std::allocator<sub0pipeline::Job> >::push_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "[Import thunk memcpy]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 3.283,
+          "percent": 33.4
+        },
+        {
+          "function": "std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 2.069,
+          "percent": 21.04
+        },
+        {
+          "function": "sub0pipeline::PoolSuccessors::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.489,
+          "percent": 4.97
+        },
+        {
+          "function": "std::atomic<enum sub0pipeline::JobStatus>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.476,
+          "percent": 4.84
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.47,
+          "percent": 4.78
+        },
+        {
+          "function": "std::operator+",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.397,
+          "percent": 4.04
+        },
+        {
+          "function": "std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.385,
+          "percent": 3.92
+        },
+        {
+          "function": "std::to_string",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "string",
+          "seconds": 0.371,
+          "percent": 3.78
+        },
+        {
+          "function": "sub0pipeline::PoolSuccessors::push_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.278,
+          "percent": 2.83
+        },
+        {
+          "function": "std::function<std::expected<void,enum sub0pipeline::PipelineError> __cdecl(std::stop_token)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.201,
+          "percent": 2.05
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.184,
+          "percent": 1.87
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.183,
+          "percent": 1.86
+        },
+        {
+          "function": "sub0pipeline::Job::succeed",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.17,
+          "percent": 1.73
+        },
+        {
+          "function": "std::function<void (void)>::function<void (void)>",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.123,
+          "percent": 1.26
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::addNode",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.108,
+          "percent": 1.1
+        },
+        {
+          "function": "sub0pipeline::Pipeline::emplace_void",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.081,
+          "percent": 0.82
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.077,
+          "percent": 0.78
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.075,
+          "percent": 0.76
+        },
+        {
+          "function": "std::function<std::expected<void,enum sub0pipeline::PipelineError> __cdecl(std::stop_token)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.059,
+          "percent": 0.6
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.046,
+          "percent": 0.46
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.045,
+          "percent": 0.46
+        },
+        {
+          "function": "std::vector<sub0pipeline::Job,std::allocator<sub0pipeline::Job> >::push_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.045,
+          "percent": 0.46
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.032,
+          "percent": 0.32
+        },
+        {
+          "function": "`anonymous namespace'::buildLayered",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "aligned_malloc",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::chrono::steady_clock::now",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "__msvc_chrono.hpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::PoolSuccessors::isPool",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::vector<sub0pipeline::Job,std::allocator<sub0pipeline::Job> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "sub0pipeline::Pipeline::emplace_void::__l2::<lambda_1>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "[Import thunk memcpy]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ]
+    },
+    {
+      "case": "200-job linear chain",
+      "metric": "CPU Time",
+      "total_seconds": 9.798,
+      "iterations": 684819,
+      "ns_per_op_under_profiler": 14602.4,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 7.761,
+          "percent": 79.21
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 2.037,
+          "percent": 20.79
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 2.758,
+          "percent": 28.15
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 2.037,
+          "percent": 20.79
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 1.713,
+          "percent": 17.48
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 1.073,
+          "percent": 10.95
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.952,
+          "percent": 9.71
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.52,
+          "percent": 5.31
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.498,
+          "percent": 5.08
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.108,
+          "percent": 1.1
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "`anonymous namespace'::Runner::run<`main'::`35'::<lambda_12> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 2.122,
+          "percent": 21.65
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 2.037,
+          "percent": 20.79
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 1.186,
+          "percent": 12.1
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.841,
+          "percent": 8.58
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.814,
+          "percent": 8.31
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.692,
+          "percent": 7.06
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.456,
+          "percent": 4.65
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.229,
+          "percent": 2.34
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.166,
+          "percent": 1.7
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.109,
+          "percent": 1.11
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.108,
+          "percent": 1.1
+        },
+        {
+          "function": "std::expected<void,enum sub0pipeline::PipelineError>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "expected",
+          "seconds": 0.108,
+          "percent": 1.1
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.107,
+          "percent": 1.1
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.107,
+          "percent": 1.1
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.092,
+          "percent": 0.93
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.091,
+          "percent": 0.93
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.076,
+          "percent": 0.78
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.06,
+          "percent": 0.62
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "std::stop_token::stop_requested",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.03,
+          "percent": 0.31
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl::__l2::DispatchContext::dispatchJob::__l30::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.03,
+          "percent": 0.3
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.029,
+          "percent": 0.3
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::chrono::steady_clock::now",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "__msvc_chrono.hpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    },
+    {
+      "case": "300-job fan-out (1 root + 299 leaves)",
+      "metric": "CPU Time",
+      "total_seconds": 9.84,
+      "iterations": 487636,
+      "ns_per_op_under_profiler": 20507.1,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 8.027,
+          "percent": 81.58
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 1.812,
+          "percent": 18.42
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 3.149,
+          "percent": 32.0
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 2.07,
+          "percent": 21.03
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.797,
+          "percent": 18.26
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.903,
+          "percent": 9.18
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.8,
+          "percent": 8.13
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.66,
+          "percent": 6.71
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.218,
+          "percent": 2.22
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.091,
+          "percent": 0.93
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "malloc",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::joinOrphans",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::`scalar deleting destructor'",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.013,
+          "percent": 0.13
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 2.652,
+          "percent": 26.95
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.797,
+          "percent": 18.26
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 1.469,
+          "percent": 14.93
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 1.032,
+          "percent": 10.49
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.796,
+          "percent": 8.08
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.633,
+          "percent": 6.44
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.508,
+          "percent": 5.16
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.093,
+          "percent": 0.95
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.091,
+          "percent": 0.93
+        },
+        {
+          "function": "std::stop_token::stop_requested",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.076,
+          "percent": 0.77
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.075,
+          "percent": 0.77
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.064,
+          "percent": 0.65
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "std::expected<void,enum sub0pipeline::PipelineError>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "expected",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.045,
+          "percent": 0.46
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.031,
+          "percent": 0.32
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl::__l2::DispatchContext::dispatchJob::__l30::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "malloc",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::atomic_flag::test_and_set",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::joinOrphans",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::vector<std::jthread,std::allocator<std::jthread> >::clear",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.013,
+          "percent": 0.13
+        }
+      ]
+    },
+    {
+      "case": "1000-job layered DAG (20x50, fan-in 4)",
+      "metric": "CPU Time",
+      "total_seconds": 9.867,
+      "iterations": 126273,
+      "ns_per_op_under_profiler": 79193.8,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 8.468,
+          "percent": 85.83
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 1.398,
+          "percent": 14.17
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 4.184,
+          "percent": 42.41
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 1.439,
+          "percent": 14.59
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.398,
+          "percent": 14.17
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.974,
+          "percent": 9.87
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.814,
+          "percent": 8.25
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.522,
+          "percent": 5.3
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.291,
+          "percent": 2.95
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.107,
+          "percent": 1.08
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.042,
+          "percent": 0.43
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.032,
+          "percent": 0.32
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 2.754,
+          "percent": 27.91
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 1.915,
+          "percent": 19.41
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 1.398,
+          "percent": 14.17
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.738,
+          "percent": 7.48
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.737,
+          "percent": 7.47
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.68,
+          "percent": 6.89
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.543,
+          "percent": 5.5
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.154,
+          "percent": 1.56
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl::__l2::DispatchContext::dispatchJob::__l30::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.093,
+          "percent": 0.94
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::execute",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.092,
+          "percent": 0.93
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.078,
+          "percent": 0.79
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.077,
+          "percent": 0.78
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "std::expected<void,enum sub0pipeline::PipelineError>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "expected",
+          "seconds": 0.062,
+          "percent": 0.63
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.061,
+          "percent": 0.62
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.046,
+          "percent": 0.47
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.045,
+          "percent": 0.45
+        },
+        {
+          "function": "operator new",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "new_scalar.cpp",
+          "seconds": 0.042,
+          "percent": 0.43
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.032,
+          "percent": 0.32
+        },
+        {
+          "function": "std::stop_source::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "std::_Atomic_integral<unsigned int,4>::fetch_add",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.031,
+          "percent": 0.31
+        },
+        {
+          "function": "`anonymous namespace'::InlineExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.03,
+          "percent": 0.3
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.03,
+          "percent": 0.3
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.016,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::stop_token::stop_requested",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::stop_token::stop_possible",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.015,
+          "percent": 0.16
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::operator class std::basic_string_view<char,struct std::char_traits<char> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::stop_token::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.015,
+          "percent": 0.15
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.015,
+          "percent": 0.15
+        }
+      ]
+    },
+    {
+      "case": "desktop: 10-job fan-out",
+      "metric": "CPU Time",
+      "total_seconds": 0.004,
+      "iterations": 759,
+      "ns_per_op_under_profiler": 13178679.2,
+      "modules": [
+        {
+          "module": "ntdll.dll",
+          "seconds": 0.003,
+          "percent": 98.6
+        },
+        {
+          "module": "KERNELBASE.dll",
+          "seconds": 0.0,
+          "percent": 0.91
+        },
+        {
+          "module": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.49
+        }
+      ],
+      "functions": [
+        {
+          "function": "NtWaitForSingleObject",
+          "module": "ntdll.dll",
+          "source": "[Unknown]",
+          "seconds": 0.003,
+          "percent": 98.6
+        },
+        {
+          "function": "OpenThread",
+          "module": "KERNELBASE.dll",
+          "source": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.91
+        },
+        {
+          "function": "[Outside any known module]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.49
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "NtWaitForSingleObject",
+          "module": "ntdll.dll",
+          "source": "[Unknown]",
+          "seconds": 0.003,
+          "percent": 98.6
+        },
+        {
+          "function": "OpenThread",
+          "module": "KERNELBASE.dll",
+          "source": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.91
+        },
+        {
+          "function": "[Outside any known module]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.49
+        }
+      ]
+    },
+    {
+      "case": "priority(4): 10-job linear chain",
+      "metric": "CPU Time",
+      "total_seconds": 18.181,
+      "iterations": 590707,
+      "ns_per_op_under_profiler": 16928.9,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 18.129,
+          "percent": 99.72
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 0.052,
+          "percent": 0.28
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 12.133,
+          "percent": 66.74
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 2.716,
+          "percent": 14.94
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 1.594,
+          "percent": 8.77
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.696,
+          "percent": 3.83
+        },
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.555,
+          "percent": 3.05
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.118,
+          "percent": 0.65
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.073,
+          "percent": 0.4
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.055,
+          "percent": 0.3
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.052,
+          "percent": 0.28
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.052,
+          "percent": 0.28
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.044,
+          "percent": 0.24
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.03,
+          "percent": 0.16
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.018,
+          "percent": 0.1
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "main",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.005,
+          "percent": 0.03
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.005,
+          "percent": 0.03
+        },
+        {
+          "function": "[Import thunk Mtx_unlock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.005,
+          "percent": 0.03
+        },
+        {
+          "function": "std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 13.337,
+          "percent": 73.36
+        },
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 3.265,
+          "percent": 17.96
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.743,
+          "percent": 4.08
+        },
+        {
+          "function": "std::condition_variable::notify_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.263,
+          "percent": 1.45
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.103,
+          "percent": 0.56
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.075,
+          "percent": 0.41
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.052,
+          "percent": 0.28
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.048,
+          "percent": 0.27
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.039,
+          "percent": 0.21
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.03,
+          "percent": 0.17
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.03,
+          "percent": 0.16
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.029,
+          "percent": 0.16
+        },
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.019,
+          "percent": 0.1
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.018,
+          "percent": 0.1
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.017,
+          "percent": 0.09
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.013,
+          "percent": 0.07
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.012,
+          "percent": 0.07
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.012,
+          "percent": 0.06
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.007,
+          "percent": 0.04
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::{ctor}::__l4::<lambda_1>::()::__l7::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::_Atomic_integral<unsigned int,4>::fetch_add",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::chrono::steady_clock::now",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "__msvc_chrono.hpp",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "_security_check_cookie",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "amdsecgs.asm",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.006,
+          "percent": 0.03
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.005,
+          "percent": 0.03
+        },
+        {
+          "function": "[Import thunk Mtx_unlock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.005,
+          "percent": 0.03
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.005,
+          "percent": 0.03
+        },
+        {
+          "function": "std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    },
+    {
+      "case": "priority(4): 300-job fan-out",
+      "metric": "CPU Time",
+      "total_seconds": 34.316,
+      "iterations": 59784,
+      "ns_per_op_under_profiler": 167270.6,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 34.296,
+          "percent": 99.94
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 0.02,
+          "percent": 0.06
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 15.464,
+          "percent": 45.06
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 7.052,
+          "percent": 20.55
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 4.315,
+          "percent": 12.57
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 2.046,
+          "percent": 5.96
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 1.14,
+          "percent": 3.32
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 1.038,
+          "percent": 3.02
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.582,
+          "percent": 1.7
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::pop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.56,
+          "percent": 1.63
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.47,
+          "percent": 1.37
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.413,
+          "percent": 1.2
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.283,
+          "percent": 0.82
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.207,
+          "percent": 0.6
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.158,
+          "percent": 0.46
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.143,
+          "percent": 0.42
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.116,
+          "percent": 0.34
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.077,
+          "percent": 0.23
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::QueuedJob::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.077,
+          "percent": 0.23
+        },
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.043,
+          "percent": 0.13
+        },
+        {
+          "function": "[Import thunk Mtx_lock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.039,
+          "percent": 0.11
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::push",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.027,
+          "percent": 0.08
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.026,
+          "percent": 0.08
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.02,
+          "percent": 0.06
+        },
+        {
+          "function": "[Import thunk Cnd_wait]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "`anonymous namespace'::Runner::run<`main'::`41'::<lambda_24> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 17.975,
+          "percent": 52.38
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 7.51,
+          "percent": 21.88
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 2.176,
+          "percent": 6.34
+        },
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 1.183,
+          "percent": 3.45
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.844,
+          "percent": 2.46
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.715,
+          "percent": 2.08
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::pop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.714,
+          "percent": 2.08
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.688,
+          "percent": 2.0
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.339,
+          "percent": 0.99
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.27,
+          "percent": 0.79
+        },
+        {
+          "function": "std::condition_variable::notify_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.208,
+          "percent": 0.61
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.204,
+          "percent": 0.6
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.193,
+          "percent": 0.56
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::{ctor}::__l4::<lambda_1>::()::__l7::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.128,
+          "percent": 0.37
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.118,
+          "percent": 0.34
+        },
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.116,
+          "percent": 0.34
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.104,
+          "percent": 0.3
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.103,
+          "percent": 0.3
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.091,
+          "percent": 0.26
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.079,
+          "percent": 0.23
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::push",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.067,
+          "percent": 0.2
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.065,
+          "percent": 0.19
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.052,
+          "percent": 0.15
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.052,
+          "percent": 0.15
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.052,
+          "percent": 0.15
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.052,
+          "percent": 0.15
+        },
+        {
+          "function": "[Import thunk Mtx_lock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.039,
+          "percent": 0.11
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.025,
+          "percent": 0.07
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.02,
+          "percent": 0.06
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::stop_token::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "[Import thunk Cnd_wait]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::QueuedJob::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::_Func_class<void>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.012,
+          "percent": 0.04
+        },
+        {
+          "function": "main::__l41::<lambda_24>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "[Import thunk malloc]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    },
+    {
+      "case": "priority(4): 1000-job layered DAG (20x50, fan-in 4)",
+      "metric": "CPU Time",
+      "total_seconds": 35.045,
+      "iterations": 20391,
+      "ns_per_op_under_profiler": 490427.7,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 34.968,
+          "percent": 99.78
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 0.077,
+          "percent": 0.22
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 12.906,
+          "percent": 36.83
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 7.382,
+          "percent": 21.07
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 6.24,
+          "percent": 17.81
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 1.801,
+          "percent": 5.14
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 1.448,
+          "percent": 4.13
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 1.359,
+          "percent": 3.88
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 1.024,
+          "percent": 2.92
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.593,
+          "percent": 1.69
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.355,
+          "percent": 1.01
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.353,
+          "percent": 1.01
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.32,
+          "percent": 0.91
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::pop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.288,
+          "percent": 0.82
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.248,
+          "percent": 0.71
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.184,
+          "percent": 0.52
+        },
+        {
+          "function": "std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.131,
+          "percent": 0.37
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.082,
+          "percent": 0.23
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::push",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.082,
+          "percent": 0.23
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::QueuedJob::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.08,
+          "percent": 0.23
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.077,
+          "percent": 0.22
+        },
+        {
+          "function": "[Import thunk Mtx_unlock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.026,
+          "percent": 0.07
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "[Import thunk Mtx_lock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.01,
+          "percent": 0.03
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.004,
+          "percent": 0.01
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Node::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 12.463,
+          "percent": 35.56
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 7.774,
+          "percent": 22.18
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 6.649,
+          "percent": 18.97
+        },
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 1.814,
+          "percent": 5.18
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.742,
+          "percent": 2.12
+        },
+        {
+          "function": "`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.733,
+          "percent": 2.09
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.705,
+          "percent": 2.01
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.566,
+          "percent": 1.62
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::pop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.525,
+          "percent": 1.5
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.47,
+          "percent": 1.34
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.428,
+          "percent": 1.22
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.379,
+          "percent": 1.08
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.293,
+          "percent": 0.84
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::push",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.2,
+          "percent": 0.57
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.185,
+          "percent": 0.53
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.168,
+          "percent": 0.48
+        },
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.153,
+          "percent": 0.44
+        },
+        {
+          "function": "std::stop_token::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.104,
+          "percent": 0.3
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.092,
+          "percent": 0.26
+        },
+        {
+          "function": "std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "atomic",
+          "seconds": 0.079,
+          "percent": 0.23
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.077,
+          "percent": 0.22
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.054,
+          "percent": 0.15
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.053,
+          "percent": 0.15
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.051,
+          "percent": 0.15
+        },
+        {
+          "function": "std::condition_variable::notify_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.039,
+          "percent": 0.11
+        },
+        {
+          "function": "[Import thunk Mtx_unlock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.026,
+          "percent": 0.07
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.026,
+          "percent": 0.07
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.026,
+          "percent": 0.07
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.026,
+          "percent": 0.07
+        },
+        {
+          "function": "sub0pipeline::Pipeline::runImpl::__l2::DispatchContext::dispatchJob::__l30::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.02,
+          "percent": 0.06
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.014,
+          "percent": 0.04
+        },
+        {
+          "function": "std::expected<void,enum sub0pipeline::PipelineError>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "expected",
+          "seconds": 0.014,
+          "percent": 0.04
+        },
+        {
+          "function": "std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "[Import thunk Mtx_lock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::operator class std::basic_string_view<char,struct std::char_traits<char> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::stop_token::stop_requested",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::stop_token::stop_requested",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "std::_Func_class<void>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.013,
+          "percent": 0.04
+        },
+        {
+          "function": "operator delete",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "delete_scalar_size.cpp",
+          "seconds": 0.004,
+          "percent": 0.01
+        },
+        {
+          "function": "std::function<std::expected<void,enum sub0pipeline::PipelineError> __cdecl(std::stop_token)>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    },
+    {
+      "case": "priority(4): on-demand trigger and wait",
+      "metric": "CPU Time",
+      "total_seconds": 9.489,
+      "iterations": 1210393,
+      "ns_per_op_under_profiler": 8261.8,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 9.388,
+          "percent": 98.93
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 0.079,
+          "percent": 0.83
+        },
+        {
+          "module": "MSVCP140.dll",
+          "seconds": 0.022,
+          "percent": 0.23
+        }
+      ],
+      "functions": [
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 4.846,
+          "percent": 51.06
+        },
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 3.59,
+          "percent": 37.83
+        },
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.547,
+          "percent": 5.77
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.217,
+          "percent": 2.29
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.096,
+          "percent": 1.01
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.079,
+          "percent": 0.83
+        },
+        {
+          "function": "`anonymous namespace'::Runner::run<`main'::`41'::<lambda_27> >",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.033,
+          "percent": 0.35
+        },
+        {
+          "function": "Mtx_unlock",
+          "module": "MSVCP140.dll",
+          "source": "[Unknown]",
+          "seconds": 0.022,
+          "percent": 0.23
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.018,
+          "percent": 0.19
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.018,
+          "percent": 0.18
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.017,
+          "percent": 0.18
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::invoke",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "[Import thunk Mtx_unlock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "sub0pipeline::Pipeline::Impl::addNode",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "sub0pipeline.cpp",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::condition_variable::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 5.385,
+          "percent": 56.75
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 3.642,
+          "percent": 38.38
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.235,
+          "percent": 2.48
+        },
+        {
+          "function": "malloc_base",
+          "module": "ucrtbase.dll",
+          "source": "[Unknown]",
+          "seconds": 0.079,
+          "percent": 0.83
+        },
+        {
+          "function": "std::condition_variable::notify_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.038,
+          "percent": 0.4
+        },
+        {
+          "function": "std::chrono::steady_clock::now",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "__msvc_chrono.hpp",
+          "seconds": 0.025,
+          "percent": 0.26
+        },
+        {
+          "function": "Mtx_unlock",
+          "module": "MSVCP140.dll",
+          "source": "[Unknown]",
+          "seconds": 0.022,
+          "percent": 0.23
+        },
+        {
+          "function": "std::stop_source::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.018,
+          "percent": 0.18
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.017,
+          "percent": 0.18
+        },
+        {
+          "function": "`anonymous-namespace'::Runner::loop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "bench_pipeline.cpp",
+          "seconds": 0.009,
+          "percent": 0.09
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.008,
+          "percent": 0.09
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "queue",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "std::stop_source::get_token",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "stop_token",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "std::function<void __cdecl(void)>::operator=",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "functional",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "[Import thunk Mtx_unlock]",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.002,
+          "percent": 0.02
+        },
+        {
+          "function": "std::basic_string<char,std::char_traits<char>,std::allocator<char> >::{dtor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "xstring",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    }
+  ]
+}

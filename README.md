@@ -53,6 +53,12 @@ fixed-capacity execution remain separate work. See
 
 ## Remaining work
 
+- One job can have at most about 360 successors; a wider fan-out throws (or
+  terminates without exceptions) while the graph is being built. See finding 1
+  of the [performance audit](docs/performance-audit.md).
+- Inline executors (`run_inline()`, `SequentialExecutor`) recurse once per
+  dependency link, at roughly 0.5 KB of stack each on the audited host. Size
+  the stack for the longest chain, or use a threaded executor.
 - [Issue #4](https://github.com/CraigHutchinson/Sub0Pipeline/issues/4) tracks
   measured, explicit bounded-allocation profiles. The current implementation
   retains some reusable scratch but still uses dynamic allocation; it does not
@@ -325,15 +331,18 @@ compiler, source revisions, five alternating process samples, observed ranges
 and the costs of optional features. Figures describe no-op host workloads, not
 application throughput, worst-case latency or target-device guarantees.
 
+The [performance audit](docs/performance-audit.md) attributes that time with a
+profiler and ranks what to optimize next.
+
 ```sh
-cmake -S . -B build-perf -DCMAKE_BUILD_TYPE=Release \
-  -DSUB0PIPELINE_BUILD_BENCHMARKS=ON -DSUB0PIPELINE_BUILD_EXAMPLES=OFF
-cmake --build build-perf --target Sub0Pipeline_Bench
+cmake --preset perf-unix          # perf-msvc on Windows
+cmake --build --preset perf-unix --target Sub0Pipeline_Bench
 ./build-perf/tests/Sub0Pipeline_Bench --json results.json --features
 ```
 
 The benchmark build reuses the vendored nanobench dependency. The capture script
-and manually triggered CI workflow retain machine-readable evidence. Follow
+and manually triggered CI workflow retain machine-readable evidence, and
+`scripts/profile_vtune.py` profiles one case at a time under Intel VTune. Follow
 [CONTRIBUTING.md](CONTRIBUTING.md) for comparisons and regression review.
 
 ## Examples, tests and contribution

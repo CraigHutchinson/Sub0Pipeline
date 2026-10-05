@@ -1,0 +1,16 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Module,Function (Full),Source File,Start Address
+sub0pipeline::PriorityExecutor::wait_all,4.845680,4.845680,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::PriorityExecutor::wait_all(void),priority_executor.cpp,0x140021da0
+"`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",3.589880,3.589880,0.0,0.0,Sub0Pipeline_Bench.exe,"`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()(class std::stop_token)",priority_executor.cpp,0x140021220
+std::condition_variable::wait,0.547465,0.547465,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable::wait,mutex,0x140021dc9
+std::condition_variable_any::notify_one,0.217156,0.217156,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable_any::notify_one,condition_variable,0x140021bf2
+std::condition_variable_any::wait,0.096206,0.096206,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable_any::wait,condition_variable,0x1400212ea
+malloc_base,0.078961,0.078961,0.0,0.0,ucrtbase.dll,malloc_base,[Unknown],0x1800050a0
+`anonymous namespace'::Runner::run<`main'::`41'::<lambda_27> >,0.033142,0.033142,0.0,0.0,Sub0Pipeline_Bench.exe,"`anonymous namespace'::Runner::run<`main'::`41'::<lambda_27> >(const char *, class main::__l41::<lambda_27> *)",bench_pipeline.cpp,0x140007230
+Mtx_unlock,0.022106,0.022106,0.0,0.0,MSVCP140.dll,Mtx_unlock,[Unknown],0x180017df0
+sub0pipeline::PriorityExecutor::dispatch,0.018016,0.018016,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::PriorityExecutor::dispatch(class std::basic_string_view<char,struct std::char_traits<char> >,class std::function<void (void)>,class std::function<void (void)>,int,unsigned char,unsigned int)",priority_executor.cpp,0x1400219a0
+std::stop_source::operator=,0.017531,0.017531,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_source::operator=(class std::stop_source &&),stop_token,0x140018be0
+std::lock_guard<std::mutex>::{ctor},0.017360,0.017360,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x1400219e8
+sub0pipeline::Pipeline::Impl::invoke,0.002032,0.002032,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::Pipeline::Impl::invoke(struct sub0pipeline::Pipeline::Node &),sub0pipeline.cpp,0x14001b7d0
+[Import thunk Mtx_unlock],0.001889,0.001889,0.0,0.0,Sub0Pipeline_Bench.exe,[Import thunk Mtx_unlock],[Unknown],0x1400228b3
+std::lock_guard<std::mutex>::{dtor},0.001825,0.001825,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021674
+sub0pipeline::Pipeline::Impl::addNode,0.000012,0.000012,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::Pipeline::Impl::addNode(class std::function<class std::expected<void,enum sub0pipeline::PipelineError> (class std::stop_token)>,class std::basic_string_view<char,struct std::char_traits<char> >,unsigned char)",sub0pipeline.cpp,0x14001a5c0

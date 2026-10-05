@@ -1,0 +1,35 @@
+Elapsed Time: 10.045s
+    CPU Time: 9.835s
+        Effective Time: 9.835s
+        Spin Time: 0s
+        Overhead Time: 0s
+    Total Thread Count: 5
+    Paused Time: 0s
+
+Top Hotspots
+Function                                                                                                                                                                                                              Module                  CPU Time  % of CPU Time(%)
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------------  --------  ----------------
+malloc_base                                                                                                                                                                                                           ucrtbase.dll              3.820s             38.8%
+std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >  Sub0Pipeline_Bench.exe    2.075s             21.1%
+std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::emplace_back                                                                                                                 Sub0Pipeline_Bench.exe    1.019s             10.4%
+std::operator+                                                                                                                                                                                                        Sub0Pipeline_Bench.exe    0.585s              5.9%
+std::operator+                                                                                                                                                                                                        Sub0Pipeline_Bench.exe    0.322s              3.3%
+[Others]                                                                                                                                                                                                              N/A                       2.013s             20.5%
+Collection and Platform Info
+    Operating System: Microsoft Windows 11
+    Result Size: 4.1 MB 
+    Collection start time: 20:37:13 05/10/2026 UTC
+    Collection stop time: 20:37:23 05/10/2026 UTC
+    Collector Type: User-mode sampling and tracing
+    CPU
+        Name: Intel(R) microarchitecture code named Arrowlake-S
+        Frequency: 3.072 GHz
+        Logical CPU Count: 24
+        Cache Allocation Technology
+            Level 2 capability: not detected
+            Level 3 capability: not detected
+
+If you want to skip descriptions of detected performance issues in the report,
+enter: vtune -report summary -report-knob show-issues=false -r <my_result_dir>.
+Alternatively, you may view the report in the csv format: vtune -report
+<report_name> -format=csv.

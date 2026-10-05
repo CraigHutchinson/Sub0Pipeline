@@ -1,0 +1,21 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Wait Time,Wait Time:Idle,Wait Time:Poor,Wait Time:Ok,Wait Time:Ideal,Wait Time:Over,Wait Count,Module,Function (Full),Source File,Start Address
+"`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",18.992098,18.982173,0.009925,0.0,4.912462,0.020621,4.891841,0.0,0.0,0.0,927849,Sub0Pipeline_Bench.exe,"`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()(class std::stop_token)",priority_executor.cpp,0x140021220
+sub0pipeline::PriorityExecutor::wait_all,1.348058,1.348058,0.0,0.0,0.000059,0.0,0.000059,0.0,0.0,0.0,42,Sub0Pipeline_Bench.exe,sub0pipeline::PriorityExecutor::wait_all(void),priority_executor.cpp,0x140021da0
+std::condition_variable_any::wait,0.567196,0.342798,0.224398,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::condition_variable_any::wait,condition_variable,0x1400212ea
+std::lock_guard<std::mutex>::{ctor},0.283295,0.240339,0.042956,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x1400219e8
+std::condition_variable_any::notify_one,0.199249,0.150175,0.049074,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::condition_variable_any::notify_one,condition_variable,0x140021bf2
+std::unique_lock<std::mutex>::{ctor},0.198366,0.190033,0.008333,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{ctor},mutex,0x14002129f
+std::condition_variable::wait,0.125628,0.061712,0.063916,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::condition_variable::wait,mutex,0x140021dc9
+std::unique_lock<std::mutex>::{dtor},0.044130,0.007552,0.036578,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{dtor},mutex,0x1400215f5
+[Unknown stack frame(s)],0.035296,0.035296,0.0,0.0,,,,,,,,[Unknown],[Unknown stack frame(s)],[Unknown],0x0
+std::lock_guard<std::mutex>::{ctor},0.023927,0.015329,0.008597,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x14002162c
+std::lock_guard<std::mutex>::{dtor},0.019459,0.002833,0.016627,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021be8
+std::lock_guard<std::mutex>::{dtor},0.018834,0.006678,0.012155,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x14001e22e
+std::lock_guard<std::mutex>::{dtor},0.014761,0.0,0.014761,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021674
+Mtx_unlock,0.009140,0.0,0.009140,0.0,,,,,,,,MSVCP140.dll,Mtx_unlock,[Unknown],0x180017df0
+"std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",0.006767,0.006767,0.0,0.0,,,,,,,,Sub0Pipeline_Bench.exe,"std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()(class std::stop_token)",functional,0x140019130
+std::lock_guard<std::mutex>::{ctor},0.002218,0.0,0.002218,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x14001e15a
+sub0pipeline::Pipeline::emplace_void,0.000008,0.000008,0.0,0.0,,,,,,,,Sub0Pipeline_Bench.exe,sub0pipeline::Pipeline::emplace_void(class std::function<void (void)>),sub0pipeline.cpp,0x14001b2c0
+[Unknown],,,,,0.007994,0.007994,0.0,0.0,0.0,0.0,4,[Unknown],[Unknown],[Unknown],[Unknown]
+sub0pipeline::PriorityExecutor::`scalar deleting destructor',,,,,0.000159,0.000159,0.0,0.0,0.0,0.0,3,Sub0Pipeline_Bench.exe,sub0pipeline::PriorityExecutor::`scalar deleting destructor'(unsigned int),[Unknown],0x140021810
+sub0pipeline::PriorityExecutor::dispatch,,,,,2.181284,0.016296,2.164988,0.0,0.0,0.0,367477,Sub0Pipeline_Bench.exe,"sub0pipeline::PriorityExecutor::dispatch(class std::basic_string_view<char,struct std::char_traits<char> >,class std::function<void (void)>,class std::function<void (void)>,int,unsigned char,unsigned int)",priority_executor.cpp,0x1400219a0

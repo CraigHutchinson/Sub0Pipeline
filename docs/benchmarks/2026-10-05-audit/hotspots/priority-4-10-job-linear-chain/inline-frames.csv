@@ -1,0 +1,33 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Module,Function (Full),Source File,Start Address
+std::condition_variable_any::wait,13.337148,13.337148,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable_any::wait,condition_variable,0x1400212ea
+std::condition_variable::wait,3.264846,3.264846,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable::wait,mutex,0x140021dc9
+std::condition_variable_any::notify_one,0.742511,0.742511,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable_any::notify_one,condition_variable,0x140021bf2
+std::condition_variable::notify_all,0.263299,0.263299,0.0,0.0,Sub0Pipeline_Bench.exe,std::condition_variable::notify_all,mutex,0x14002166f
+std::unique_lock<std::mutex>::{ctor},0.102563,0.102563,0.0,0.0,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{ctor},mutex,0x14002129f
+std::lock_guard<std::mutex>::{ctor},0.075267,0.075267,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x1400219e8
+malloc_base,0.051630,0.051630,0.0,0.0,ucrtbase.dll,malloc_base,[Unknown],0x1800050a0
+std::lock_guard<std::mutex>::{dtor},0.048471,0.048471,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021674
+std::stop_source::operator=,0.038782,0.038782,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_source::operator=,stop_token,0x14001e1c9
+`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob,0.030107,0.030107,0.0,0.0,Sub0Pipeline_Bench.exe,`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob(unsigned int),sub0pipeline.cpp,0x14001ac90
+std::stop_source::get_token,0.029787,0.029787,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_source::get_token,stop_token,0x14001b7dd
+sub0pipeline::PriorityExecutor::dispatch,0.029217,0.029217,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::PriorityExecutor::dispatch(class std::basic_string_view<char,struct std::char_traits<char> >,class std::function<void (void)>,class std::function<void (void)>,int,unsigned char,unsigned int)",priority_executor.cpp,0x1400219a0
+"`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",0.018703,0.018703,0.0,0.0,Sub0Pipeline_Bench.exe,"`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()(class std::stop_token)",priority_executor.cpp,0x140021220
+std::lock_guard<std::mutex>::{dtor},0.018090,0.018090,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021be8
+"std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",0.016842,0.016842,0.0,0.0,Sub0Pipeline_Bench.exe,"std::priority_queue<sub0pipeline::PriorityExecutor::QueuedJob,std::vector<sub0pipeline::PriorityExecutor::QueuedJob,std::allocator<sub0pipeline::PriorityExecutor::QueuedJob> >,std::less<sub0pipeline::PriorityExecutor::QueuedJob> >::empty",queue,0x140021417
+std::lock_guard<std::mutex>::{ctor},0.012924,0.012924,0.0,0.0,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x14002162c
+std::function<void __cdecl(void)>::operator=,0.011953,0.011953,0.0,0.0,Sub0Pipeline_Bench.exe,std::function<void __cdecl(void)>::operator=,functional,0x140021454
+std::stop_token::{dtor},0.011759,0.011759,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_token::{dtor},stop_token,0x140019df5
+"std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",0.006730,0.006730,0.0,0.0,Sub0Pipeline_Bench.exe,"std::vector<sub0pipeline::Pipeline::Node,std::allocator<sub0pipeline::Pipeline::Node> >::operator[]",vector,0x14001acc0
+sub0pipeline::PriorityExecutor::{ctor}::__l4::<lambda_1>::()::__l7::<lambda_1>::operator(),0.006275,0.006275,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::PriorityExecutor::{ctor}::__l4::<lambda_1>::()::__l7::<lambda_1>::operator(),priority_executor.cpp,0x140021304
+"std::_Atomic_integral<unsigned int,4>::fetch_add",0.006193,0.006193,0.0,0.0,Sub0Pipeline_Bench.exe,"std::_Atomic_integral<unsigned int,4>::fetch_add",atomic,0x14001ade7
+std::function<void __cdecl(void)>::{ctor},0.006191,0.006191,0.0,0.0,Sub0Pipeline_Bench.exe,std::function<void __cdecl(void)>::{ctor},functional,0x140021a0a
+"std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",0.006099,0.006099,0.0,0.0,Sub0Pipeline_Bench.exe,"std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",atomic,0x14001acef
+std::chrono::steady_clock::now,0.005992,0.005992,0.0,0.0,Sub0Pipeline_Bench.exe,std::chrono::steady_clock::now,__msvc_chrono.hpp,0x140014ee2
+_security_check_cookie,0.005856,0.005856,0.0,0.0,Sub0Pipeline_Bench.exe,_security_check_cookie,amdsecgs.asm,0x1400230a0
+std::function<void __cdecl(void)>::operator=,0.005784,0.005784,0.0,0.0,Sub0Pipeline_Bench.exe,std::function<void __cdecl(void)>::operator=,functional,0x14002148e
+"std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",0.005777,0.005777,0.0,0.0,Sub0Pipeline_Bench.exe,"std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",atomic,0x14001b08c
+std::function<void __cdecl(void)>::{ctor},0.005743,0.005743,0.0,0.0,Sub0Pipeline_Bench.exe,std::function<void __cdecl(void)>::{ctor},functional,0x140021a49
+sub0pipeline::Pipeline::runImpl,0.005466,0.005466,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::Pipeline::runImpl(class sub0pipeline::IExecutor &,class std::stop_token,class sub0pipeline::IObserver *)",sub0pipeline.cpp,0x14001dff0
+[Import thunk Mtx_unlock],0.005428,0.005428,0.0,0.0,Sub0Pipeline_Bench.exe,[Import thunk Mtx_unlock],[Unknown],0x1400228b3
+std::unique_lock<std::mutex>::{ctor},0.005412,0.005412,0.0,0.0,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{ctor},mutex,0x140021dad
+"std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >",0.000005,0.000005,0.0,0.0,Sub0Pipeline_Bench.exe,"std::vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >::~vector<struct sub0pipeline::Pipeline::Node,class std::allocator<struct sub0pipeline::Pipeline::Node> >(void)",vector,0x140018710

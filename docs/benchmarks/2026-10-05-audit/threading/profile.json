@@ -1,0 +1,477 @@
+{
+  "captured_utc": "2026-10-05T20:53:16.117092+00:00",
+  "platform": "Windows-11-10.0.26220-SP0",
+  "vtune": "Intel(R) VTune(TM) Profiler 2026.4.0 (build 632893) Command Line Tool",
+  "analysis": "threading",
+  "bench": "Sub0Pipeline_Bench.exe",
+  "ref": "7a373d2+harness",
+  "seconds": 10.0,
+  "cases": [
+    {
+      "case": "desktop: 10-job fan-out",
+      "metric": "Wait Time",
+      "total_seconds": 9.852,
+      "iterations": 672,
+      "ns_per_op_under_profiler": 14898087.9,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 9.852,
+          "percent": 100.0
+        },
+        {
+          "module": "ntdll.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "module": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "module": "KERNELBASE.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "module": "KERNEL32.DLL",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "module": "pincrt.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "module": "advapi32.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "functions": [
+        {
+          "function": "sub0pipeline::DesktopExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "desktop_executor.cpp",
+          "seconds": 9.847,
+          "percent": 99.95
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::`scalar deleting destructor'",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.005,
+          "percent": 0.05
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::thread::join",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "thread",
+          "seconds": 9.847,
+          "percent": 99.94
+        },
+        {
+          "function": "std::vector<std::jthread,std::allocator<std::jthread> >::clear",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.005,
+          "percent": 0.05
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.001,
+          "percent": 0.01
+        }
+      ]
+    },
+    {
+      "case": "priority(4): 10-job linear chain",
+      "metric": "Wait Time",
+      "total_seconds": 7.102,
+      "iterations": 127897,
+      "ns_per_op_under_profiler": 78188.1,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 7.094,
+          "percent": 99.89
+        },
+        {
+          "module": "[Unknown]",
+          "seconds": 0.008,
+          "percent": 0.11
+        },
+        {
+          "module": "MSVCP140.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 4.912,
+          "percent": 69.17
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 2.181,
+          "percent": 30.71
+        },
+        {
+          "function": "[Unknown]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.008,
+          "percent": 0.11
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::`scalar deleting destructor'",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 2.435,
+          "percent": 34.29
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 2.3,
+          "percent": 32.38
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 1.801,
+          "percent": 25.36
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.38,
+          "percent": 5.35
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.178,
+          "percent": 2.5
+        },
+        {
+          "function": "[Unknown]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.008,
+          "percent": 0.11
+        },
+        {
+          "function": "std::vector<std::jthread,std::allocator<std::jthread> >::clear",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "function": "std::jthread::request_stop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "thread",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    },
+    {
+      "case": "priority(4): 300-job fan-out",
+      "metric": "Wait Time",
+      "total_seconds": 12.304,
+      "iterations": 5233,
+      "ns_per_op_under_profiler": 1911025.9,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 12.296,
+          "percent": 99.94
+        },
+        {
+          "module": "[Unknown]",
+          "seconds": 0.008,
+          "percent": 0.06
+        },
+        {
+          "module": "pincrt.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "functions": [
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 8.299,
+          "percent": 67.45
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 3.997,
+          "percent": 32.49
+        },
+        {
+          "function": "[Unknown]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.008,
+          "percent": 0.06
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::`scalar deleting destructor'",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 5.815,
+          "percent": 47.26
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 3.711,
+          "percent": 30.16
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 2.429,
+          "percent": 19.74
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.286,
+          "percent": 2.33
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.056,
+          "percent": 0.45
+        },
+        {
+          "function": "[Unknown]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.008,
+          "percent": 0.06
+        },
+        {
+          "function": "std::vector<std::jthread,std::allocator<std::jthread> >::clear",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "function": "std::jthread::request_stop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "thread",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    },
+    {
+      "case": "priority(4): 1000-job layered DAG (20x50, fan-in 4)",
+      "metric": "Wait Time",
+      "total_seconds": 21.625,
+      "iterations": 1887,
+      "ns_per_op_under_profiler": 5301006.9,
+      "modules": [
+        {
+          "module": "Sub0Pipeline_Bench.exe",
+          "seconds": 21.618,
+          "percent": 99.97
+        },
+        {
+          "module": "[Unknown]",
+          "seconds": 0.007,
+          "percent": 0.03
+        },
+        {
+          "module": "pincrt.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "module": "ucrtbase.dll",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "functions": [
+        {
+          "function": "sub0pipeline::PriorityExecutor::dispatch",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 11.413,
+          "percent": 52.78
+        },
+        {
+          "function": "`sub0pipeline::PriorityExecutor::PriorityExecutor(unsigned int,class std::function<void (void)>)'::`4'::<lambda_1>::operator()",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 10.202,
+          "percent": 47.18
+        },
+        {
+          "function": "[Unknown]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.007,
+          "percent": 0.03
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::`scalar deleting destructor'",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "[Unknown]",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "sub0pipeline::PriorityExecutor::wait_all",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "priority_executor.cpp",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ],
+      "inline_frames": [
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 11.122,
+          "percent": 51.43
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 9.84,
+          "percent": 45.5
+        },
+        {
+          "function": "std::condition_variable_any::notify_one",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.291,
+          "percent": 1.35
+        },
+        {
+          "function": "std::lock_guard<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.222,
+          "percent": 1.03
+        },
+        {
+          "function": "std::condition_variable_any::wait",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "condition_variable",
+          "seconds": 0.14,
+          "percent": 0.65
+        },
+        {
+          "function": "[Unknown]",
+          "module": "[Unknown]",
+          "source": "[Unknown]",
+          "seconds": 0.007,
+          "percent": 0.03
+        },
+        {
+          "function": "std::vector<std::jthread,std::allocator<std::jthread> >::clear",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "vector",
+          "seconds": 0.002,
+          "percent": 0.01
+        },
+        {
+          "function": "std::unique_lock<std::mutex>::{ctor}",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "mutex",
+          "seconds": 0.0,
+          "percent": 0.0
+        },
+        {
+          "function": "std::jthread::request_stop",
+          "module": "Sub0Pipeline_Bench.exe",
+          "source": "thread",
+          "seconds": 0.0,
+          "percent": 0.0
+        }
+      ]
+    }
+  ]
+}

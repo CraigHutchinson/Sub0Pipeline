@@ -1,0 +1,53 @@
+== System Info ==
+OS: Windows
+Compiler: MSVC 1951
+CPU: Intel(R) Core(TM) Ultra 9 275HX
+Threads: 24
+Build: Release
+==
+
+
+|               ns/op |                op/s |    err% |     total | DAG construction
+|--------------------:|--------------------:|--------:|----------:|:-----------------
+|            2,094.54 |          477,432.45 |    1.4% |      2.54 | `construct 10-job linear chain`
+|            2,383.88 |          419,483.77 |    1.1% |      2.87 | `construct 10-job fan-out (1 root + 9 leaves)`
+
+|               ns/op |                op/s |    err% |     total | Sequential execution (InlineExecutor)
+|--------------------:|--------------------:|--------:|----------:|:--------------------------------------
+|              678.12 |        1,474,658.21 |    0.4% |      0.82 | `10-job linear chain`
+|              691.11 |        1,446,945.12 |    1.1% |      0.84 | `10-job fan-out (1 root + 9 leaves)`
+|              642.71 |        1,555,911.94 |    0.3% |      0.79 | `10-job fan-in (9 roots + 1 sink)`
+|              279.04 |        3,583,733.53 |    0.2% |      0.34 | `4-job diamond`
+
+|               ns/op |                op/s |    err% |     total | Validation
+|--------------------:|--------------------:|--------:|----------:|:-----------
+|               91.89 |       10,883,066.38 |    0.8% |      0.10 | `validate 20-job chain`
+
+|               ns/op |                op/s |    err% |     total | Scale (InlineExecutor)
+|--------------------:|--------------------:|--------:|----------:|:-----------------------
+|          148,164.72 |            6,749.25 |    1.7% |      1.91 | `construct 1000-job layered DAG (20x50, fan-in 4)`
+|           14,470.18 |           69,107.62 |    2.5% |      0.18 | `200-job linear chain`
+|           20,818.89 |           48,033.30 |    0.7% |      0.25 | `300-job fan-out (1 root + 299 leaves)`
+|           78,610.13 |           12,721.01 |    0.4% |      0.95 | `1000-job layered DAG (20x50, fan-in 4)`
+|            5,557.86 |          179,925.35 |    1.9% |      0.07 | `validate 1000-job layered DAG`
+|            5,235.36 |          191,008.81 |    5.1% |      0.06 | :wavy_dash: `snapshot 1000-job layered DAG` (Unstable with ~1,100.3 iters. Increase `minEpochIterations` to e.g. 11003)
+
+|               ns/op |                op/s |    err% |     total | Threaded executors (no-op jobs)
+|--------------------:|--------------------:|--------:|----------:|:--------------------------------
+|          300,218.18 |            3,330.91 |    3.8% |      0.04 | `desktop: 10-job fan-out`
+|           16,553.33 |           60,410.79 |    2.2% |      0.01 | `priority(4): 10-job fan-out`
+|           16,060.56 |           62,264.32 |    0.9% |      0.01 | `priority(4): 10-job linear chain`
+|           18,421.43 |           54,284.61 |    0.9% |      0.01 | `scoped over priority(4): 10-job linear chain`
+|          240,580.00 |            4,156.62 |    7.4% |      0.03 | :wavy_dash: `priority(4): 300-job fan-out` (Unstable with ~11.1 iters. Increase `minEpochIterations` to e.g. 111)
+|          556,958.33 |            1,795.47 |    2.3% |      0.07 | `priority(4): 1000-job layered DAG (20x50, fan-in 4)`
+|            8,544.63 |          117,032.60 |    2.9% |      0.01 | `priority(4): on-demand trigger and wait`
+
+|               ns/op |                op/s |    err% |     total | Opt-in features (10-job chain)
+|--------------------:|--------------------:|--------:|----------:|:-------------------------------
+|            1,048.94 |          953,344.37 |    0.9% |      1.27 | `external stoppable token, no request`
+|              760.53 |        1,314,878.89 |    0.7% |      0.92 | `observer callbacks, no external token`
+
+|               ns/op |                op/s |    err% |     total | Opt-in timeout helpers (one immediate job)
+|--------------------:|--------------------:|--------:|----------:|:-------------------------------------------
+|           38,124.00 |           26,230.20 |    6.8% |      0.01 | :wavy_dash: `cooperative timeout configured` (Unstable with ~19.4 iters. Increase `minEpochIterations` to e.g. 194)
+|           70,600.00 |           14,164.31 |    9.9% |      0.01 | :wavy_dash: `plain timeout configured plus join` (Unstable with ~14.9 iters. Increase `minEpochIterations` to e.g. 149)

@@ -45,8 +45,16 @@ def main():
     for name, rows in samples.items():
         if not rows or any(len(values) != args.repeats for values in rows.values()):
             raise ValueError(f'inconsistent benchmark cases across {name} samples')
-    if args.baseline and samples['current'].keys() != samples['baseline'].keys():
-        raise ValueError('baseline and current benchmark cases differ')
+    # A baseline built from an older harness may lack newer cases. Compare the
+    # shared ones and name the rest, so a missing case is never read as a result.
+    unmatched = {}
+    if args.baseline:
+        shared = samples['current'].keys() & samples['baseline'].keys()
+        if not shared:
+            raise ValueError('baseline and current share no benchmark cases')
+        for name, rows in samples.items():
+            unmatched[name] = sorted(rows.keys() - shared)
+            samples[name] = {case: values for case, values in rows.items() if case in shared}
     summary = {
         'captured_utc': datetime.now(timezone.utc).isoformat(),
         'platform': platform.platform(),
@@ -54,6 +62,7 @@ def main():
         'features': args.features,
         'refs': {name: ref for name, (_, ref) in versions.items()},
         'units': 'ns per complete operation; median of per-process medians',
+        'cases_without_counterpart': unmatched,
         'results': {},
     }
     for name, rows in samples.items():

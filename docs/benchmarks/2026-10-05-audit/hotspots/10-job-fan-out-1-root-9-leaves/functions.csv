@@ -1,0 +1,14 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Module,Function (Full),Source File,Start Address
+`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob,3.159966,3.159966,0.0,0.0,Sub0Pipeline_Bench.exe,`sub0pipeline::Pipeline::runImpl'::`2'::DispatchContext::dispatchJob(unsigned int),sub0pipeline.cpp,0x14001ac90
+sub0pipeline::Pipeline::runImpl,2.316358,2.316358,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::Pipeline::runImpl(class sub0pipeline::IExecutor &,class std::stop_token,class sub0pipeline::IObserver *)",sub0pipeline.cpp,0x14001dff0
+malloc_base,1.476847,1.476847,0.0,0.0,ucrtbase.dll,malloc_base,[Unknown],0x1800050a0
+"std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()",1.069086,1.069086,0.0,0.0,Sub0Pipeline_Bench.exe,"std::_Func_class<class std::expected<void,enum sub0pipeline::PipelineError>,class std::stop_token>::operator()(class std::stop_token)",functional,0x140019130
+sub0pipeline::Pipeline::Impl::invoke,0.900792,0.900792,0.0,0.0,Sub0Pipeline_Bench.exe,sub0pipeline::Pipeline::Impl::invoke(struct sub0pipeline::Pipeline::Node &),sub0pipeline.cpp,0x14001b7d0
+std::stop_source::operator=,0.472474,0.472474,0.0,0.0,Sub0Pipeline_Bench.exe,std::stop_source::operator=,stop_token,0x14001e1c9
+`anonymous namespace'::InlineExecutor::dispatch,0.153843,0.153843,0.0,0.0,Sub0Pipeline_Bench.exe,"`anonymous namespace'::InlineExecutor::dispatch(class std::basic_string_view<char,std::char_traits<char> >, class std::function<void __cdecl(void)>, class std::function<void __cdecl(void)>, int, unsigned char, unsigned int)",bench_pipeline.cpp,0x14000d540
+sub0pipeline::Pipeline::Impl::execute,0.092048,0.092048,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::Pipeline::Impl::execute(struct sub0pipeline::Pipeline::Node &,class std::stop_token)",sub0pipeline.cpp,0x14001b480
+operator new,0.062727,0.062727,0.0,0.0,Sub0Pipeline_Bench.exe,operator new(unsigned __int64),new_scalar.cpp,0x140022a40
+_security_check_cookie,0.061045,0.061045,0.0,0.0,Sub0Pipeline_Bench.exe,_security_check_cookie,amdsecgs.asm,0x1400230a0
+operator delete,0.015441,0.015441,0.0,0.0,Sub0Pipeline_Bench.exe,"operator delete(void *,unsigned __int64)",delete_scalar_size.cpp,0x140022a90
+[Import thunk malloc],0.015298,0.015298,0.0,0.0,Sub0Pipeline_Bench.exe,[Import thunk malloc],[Unknown],0x140023c0c
+sub0pipeline::Pipeline::run,0.014975,0.014975,0.0,0.0,Sub0Pipeline_Bench.exe,"sub0pipeline::Pipeline::run(class sub0pipeline::IExecutor &,class sub0pipeline::IObserver *)",sub0pipeline.cpp,0x14001df50

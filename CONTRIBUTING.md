@@ -51,17 +51,23 @@ explicit validation, external cancellation, observer and timeout/executor costs.
 Do not run benchmark processes concurrently or under unrelated build load.
 
 ```sh
-cmake -S . -B build-perf -DCMAKE_BUILD_TYPE=Release \
-  -DSUB0PIPELINE_BUILD_BENCHMARKS=ON -DSUB0PIPELINE_BUILD_EXAMPLES=OFF
-cmake --build build-perf --target Sub0Pipeline_Bench
+cmake --preset perf-unix          # perf-msvc on Windows
+cmake --build --preset perf-unix --target Sub0Pipeline_Bench
 python3 scripts/capture_benchmarks.py \
   --current build-perf/tests/Sub0Pipeline_Bench --current-ref CURRENT_SHA \
   --baseline /path/to/baseline/Sub0Pipeline_Bench --baseline-ref BASELINE_SHA \
   --features --repeats 5 --output benchmark-results
 ```
 
+The `perf-*` presets are Release code generation plus debug symbols, so the
+same binary serves timing and profiling. `Sub0Pipeline_Bench --list` names the
+cases; `--case SUBSTR` runs a subset while iterating.
+
 Use two worktrees and copy the current benchmark source into the baseline
 worktree when comparing an older implementation; note this harness substitution.
+A baseline older than the harness may also need `Sub0Pipeline::Priority` linked
+into its benchmark target. Cases one side lacks are listed under
+`cases_without_counterpart` and left out of the comparison.
 The baseline must support the APIs being measured. The script alternates order,
 keeps raw JSON/logs and reports median/min/max of per-process medians. Review
 nanobench's within-process errors too. Record CPU, OS, compiler, flags and source
@@ -71,6 +77,37 @@ The manual **Performance capture** workflow produces these artifacts. Shared
 runner measurements are advisory; do not enforce a universal nanosecond limit.
 Investigate substantial regressions or variance. Explain an intentional cost
 with the guarantee it buys. Keep required lifetime safety enabled by default.
+
+### Profile before changing code
+
+A timing says that a case is slow, not why. Before optimizing, attribute the
+time with a profiler and state the hypothesis the change tests:
+
+```sh
+python3 scripts/profile_vtune.py --bench build-perf/tests/Sub0Pipeline_Bench \
+  --ref CURRENT_SHA --case "10-job linear chain" --output profile-results
+python3 scripts/profile_vtune.py --bench build-perf/tests/Sub0Pipeline_Bench \
+  --ref CURRENT_SHA --analysis threading \
+  --case "priority(4): 300-job fan-out" --output threading-results
+```
+
+`hotspots` ranks functions by CPU time and `threading` by time spent waiting on
+locks and condition variables; neither needs elevation. Each case runs alone
+in its own process for a fixed wall time. `profile.md` lists functions twice:
+with inlined callees folded in (what to change) and by inlined frame (which
+operation costs the time). Pass `--keep-results` to open a result in the VTune
+GUI. Profiled runs carry instrumentation overhead: use them for attribution
+only and take every timing from `capture_benchmarks.py`. Intel VTune is the
+supported profiler; on other hosts use an equivalent sampling profiler against
+`Sub0Pipeline_Bench --exact --case NAME --profile-seconds N` and record the
+tool and version.
+
+The loop for each optimization is: capture a baseline, profile the case, change
+one thing, re-capture against that baseline, re-profile to confirm the hot spot
+moved, and re-run the allocation audit. Keep a change only when the timing
+moves outside the baseline's observed range or the allocation counts drop; a
+profile alone is not evidence of a speedup. See
+[the performance audit](docs/performance-audit.md) for a worked example.
 
 For allocation-sensitive work, also run `Sub0Pipeline_AllocationAudit` from the
 benchmark build in three independent processes. Retain CSV, compiler/library and
