@@ -100,6 +100,44 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
             }
+        },
+        {
+            "name": "perf-msvc",
+            "displayName": "Performance - MSVC Release with symbols",
+            "description": "Release code generation plus PDBs, so profilers can name functions.",
+            "binaryDir": "${sourceDir}/build-perf",
+            "cacheVariables": {
+                "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG /Zi",
+                "CMAKE_EXE_LINKER_FLAGS_RELEASE": "/DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO",
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "OFF",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "ON",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "perf-unix",
+            "displayName": "Performance - GCC/Clang Release with symbols",
+            "description": "Release code generation plus debug info and frame pointers for profilers.",
+            "binaryDir": "${sourceDir}/build-perf",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-omit-frame-pointer",
+                "SUB0PIPELINE_BUILD_TESTING": "ON",
+                "SUB0PIPELINE_BUILD_EXAMPLES": "OFF",
+                "SUB0PIPELINE_BUILD_BENCHMARKS": "ON",
+                "SUB0PIPELINE_PLATFORM_DESKTOP": "ON"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
         }
     ],
     "buildPresets": [
@@ -129,6 +167,15 @@
         {
             "name": "ci-tsan",
             "configurePreset": "ci-tsan"
+        },
+        {
+            "name": "perf-msvc",
+            "configurePreset": "perf-msvc",
+            "configuration": "Release"
+        },
+        {
+            "name": "perf-unix",
+            "configurePreset": "perf-unix"
         }
     ],
     "testPresets": [

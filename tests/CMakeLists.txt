@@ -81,6 +81,7 @@ if(SUB0PIPELINE_BUILD_BENCHMARKS)
             Sub0Pipeline::Sub0Pipeline
             Sub0Pipeline::Desktop
             Sub0Pipeline::Headless
+            Sub0Pipeline::Priority
     )
     target_include_directories(Sub0Pipeline_Bench
         PRIVATE "${VENDOR_DIR}"

@@ -1,0 +1,21 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Wait Time,Wait Time:Idle,Wait Time:Poor,Wait Time:Ok,Wait Time:Ideal,Wait Time:Over,Wait Count,Module,Function (Full),Source File,Start Address
+std::condition_variable_any::wait,21.123588,20.863267,0.260321,0.0,2.428663,0.010001,2.418662,0.0,0.0,0.0,308699,Sub0Pipeline_Bench.exe,std::condition_variable_any::wait,condition_variable,0x1400212ea
+std::unique_lock<std::mutex>::{ctor},1.302886,1.153295,0.149591,0.0,5.814628,0.034029,5.780599,0.0,0.0,0.0,660738,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{ctor},mutex,0x14002129f
+std::lock_guard<std::mutex>::{ctor},0.791794,0.691713,0.100081,0.0,3.711277,0.018010,3.693266,0.0,0.0,0.0,628354,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x1400219e8
+std::condition_variable_any::notify_one,0.200841,0.138547,0.062294,0.0,0.286208,0.000739,0.285470,0.0,0.0,0.0,70244,Sub0Pipeline_Bench.exe,std::condition_variable_any::notify_one,condition_variable,0x140021bf2
+std::condition_variable::wait,0.146898,0.146506,0.000393,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::condition_variable::wait,mutex,0x140021dc9
+std::unique_lock<std::mutex>::{dtor},0.139491,0.076108,0.063383,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{dtor},mutex,0x1400215f5
+[Unknown stack frame(s)],0.118027,0.118027,0.0,0.0,,,,,,,,[Unknown],[Unknown stack frame(s)],[Unknown],0x0
+std::lock_guard<std::mutex>::{ctor},0.067548,0.057856,0.009691,0.0,0.055604,0.000089,0.055515,0.0,0.0,0.0,13435,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{ctor},mutex,0x14002162c
+std::lock_guard<std::mutex>::{dtor},0.036127,0.009349,0.026778,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021be8
+std::condition_variable::notify_all,0.011089,0.0,0.011089,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::condition_variable::notify_all,mutex,0x14002166f
+[Outside any known module],0.009292,0.009292,0.0,0.0,,,,,,,,[Unknown],[Outside any known module],[Unknown],0x0
+[pincrt.dll],0.007954,0.007954,0.0,0.0,,,,,,,,pincrt.dll,[pincrt.dll],[Unknown],0x0
+"std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",0.007338,0.007338,0.0,0.0,,,,,,,,Sub0Pipeline_Bench.exe,"std::_Atomic_storage<enum sub0pipeline::JobStatus,1>::compare_exchange_strong",atomic,0x14001acef
+std::lock_guard<std::mutex>::{dtor},0.005834,0.0,0.005834,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::lock_guard<std::mutex>::{dtor},mutex,0x140021674
+std::stop_source::operator=,0.000676,0.000676,0.0,0.0,,,,,,,,Sub0Pipeline_Bench.exe,std::stop_source::operator=,stop_token,0x14001e1c9
+"std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=",0.000008,0.000008,0.0,0.0,,,,,,,,Sub0Pipeline_Bench.exe,"std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >::operator=(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > &&)",xstring,0x14000a520
+[Unknown],,,,,0.007558,0.007558,0.0,0.0,0.0,0.0,4,[Unknown],[Unknown],[Unknown],[Unknown]
+std::jthread::request_stop,,,,,0.000001,0.000001,0.0,0.0,0.0,0.0,1,Sub0Pipeline_Bench.exe,std::jthread::request_stop,thread,0x1400218a0
+std::unique_lock<std::mutex>::{ctor},,,,,0.000001,0.0,0.000001,0.0,0.0,0.0,1,Sub0Pipeline_Bench.exe,std::unique_lock<std::mutex>::{ctor},mutex,0x140021dad
+"std::vector<std::jthread,std::allocator<std::jthread> >::clear",,,,,0.000113,0.000113,0.0,0.0,0.0,0.0,1,Sub0Pipeline_Bench.exe,"std::vector<std::jthread,std::allocator<std::jthread> >::clear",vector,0x1400218b2

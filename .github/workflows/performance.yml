@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       baseline_ref:
-        description: Baseline commit with compatible benchmark APIs
+        description: Baseline revision that supports every benchmark case (older ones can hang)
         required: true
-        default: d1f5ba0ce08c8e44c05928b18f1968562a9dcd49
+        default: origin/main
 
 permissions:
   contents: read
@@ -26,6 +26,8 @@ jobs:
           baseline_sha=$(git rev-parse --verify --end-of-options "${BASELINE_REF}^{commit}")
           git worktree add --detach /tmp/sub0-benchmark-baseline "$baseline_sha"
           cp tests/bench_pipeline.cpp /tmp/sub0-benchmark-baseline/tests/bench_pipeline.cpp
+          # The harness uses the priority executor; older baselines did not link it.
+          sed -i '/add_executable(Sub0Pipeline_Bench /a target_link_libraries(Sub0Pipeline_Bench PRIVATE Sub0Pipeline::Priority)' /tmp/sub0-benchmark-baseline/tests/CMakeLists.txt
           cmake -S . -B build-perf -DCMAKE_BUILD_TYPE=Release -DSUB0PIPELINE_BUILD_BENCHMARKS=ON -DSUB0PIPELINE_BUILD_EXAMPLES=OFF
           cmake --build build-perf --target Sub0Pipeline_Bench --parallel 2
           cmake -S /tmp/sub0-benchmark-baseline -B /tmp/sub0-benchmark-baseline/build-perf -DCMAKE_BUILD_TYPE=Release -DSUB0PIPELINE_BUILD_BENCHMARKS=ON -DSUB0PIPELINE_BUILD_EXAMPLES=OFF

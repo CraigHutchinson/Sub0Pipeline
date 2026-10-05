@@ -1,0 +1,35 @@
+Elapsed Time: 10.014s
+    CPU Time: 34.316s
+        Effective Time: 34.316s
+        Spin Time: 0s
+        Overhead Time: 0s
+    Total Thread Count: 5
+    Paused Time: 0s
+
+Top Hotspots
+Function                              Module                  CPU Time  % of CPU Time(%)
+------------------------------------  ----------------------  --------  ----------------
+std::condition_variable_any::wait     Sub0Pipeline_Bench.exe   17.975s             52.4%
+std::unique_lock<std::mutex>::{ctor}  Sub0Pipeline_Bench.exe    7.510s             21.9%
+std::lock_guard<std::mutex>::{ctor}   Sub0Pipeline_Bench.exe    2.176s              6.3%
+std::condition_variable::wait         Sub0Pipeline_Bench.exe    1.183s              3.4%
+std::unique_lock<std::mutex>::{dtor}  Sub0Pipeline_Bench.exe    0.844s              2.5%
+[Others]                              N/A                       4.629s             13.5%
+Collection and Platform Info
+    Operating System: Microsoft Windows 11
+    Result Size: 4.6 MB 
+    Collection start time: 20:50:07 05/10/2026 UTC
+    Collection stop time: 20:50:18 05/10/2026 UTC
+    Collector Type: User-mode sampling and tracing
+    CPU
+        Name: Intel(R) microarchitecture code named Arrowlake-S
+        Frequency: 3.072 GHz
+        Logical CPU Count: 24
+        Cache Allocation Technology
+            Level 2 capability: not detected
+            Level 3 capability: not detected
+
+If you want to skip descriptions of detected performance issues in the report,
+enter: vtune -report summary -report-knob show-issues=false -r <my_result_dir>.
+Alternatively, you may view the report in the csv format: vtune -report
+<report_name> -format=csv.

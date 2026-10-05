@@ -2,11 +2,21 @@
 #include "nanobench.h"
 #include <sub0pipeline/sub0pipeline.hpp>
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <expected>
 #include <fstream>
-#include <string_view>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -102,108 +112,216 @@ public:
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 };
 
+// ── Graph shapes ─────────────────────────────────────────────────────────────
+
+using sub0pipeline::Job;
+using sub0pipeline::Pipeline;
+
+void buildChain(Pipeline& pipeline, int jobs)
+{
+    Job previous;
+    for (int i = 0; i < jobs; ++i) {
+        auto job = pipeline.emplace([] {}).name("j" + std::to_string(i));
+        if (previous.valid()) job.succeed(previous);
+        previous = job;
+    }
+}
+
+void buildFanOut(Pipeline& pipeline, int leaves)
+{
+    auto root = pipeline.emplace([] {}).name("root");
+    for (int i = 0; i < leaves; ++i)
+        pipeline.emplace([] {}).name("leaf_" + std::to_string(i)).succeed(root);
+}
+
+// `layers` rows of `width` jobs; each job depends on `fanIn` jobs of the row above.
+void buildLayered(Pipeline& pipeline, int layers, int width, int fanIn)
+{
+    std::vector<Job> above, row;
+    for (int layer = 0; layer < layers; ++layer) {
+        row.clear();
+        for (int i = 0; i < width; ++i) {
+            auto job = pipeline.emplace([] {});
+            for (int k = 0; k < fanIn && !above.empty(); ++k)
+                job.succeed(above[static_cast<std::size_t>((i + k) % width)]);
+            row.push_back(job);
+        }
+        above = row;
+    }
+}
+
+// ── Case runner ──────────────────────────────────────────────────────────────
+
+/// How long one operation takes, which sets how it is sampled.
+enum class Cost {
+    kCheap,     ///< Sub-microsecond: 1,000 warmup, >= 100,000 iterations per epoch.
+    kMedium,    ///< Tens of microseconds: 10 warmup, >= 1,000 iterations per epoch.
+    kThreaded,  ///< Creates or wakes native threads: 2 warmup, >= 10 iterations per epoch.
+};
+
+/// Runs each selected case under nanobench, or, for profilers, in a plain loop
+/// for a fixed wall time so that every sample lands in one workload.
+class Runner
+{
+public:
+    enum class Mode { kBench, kList, kProfile };
+
+    Mode mode{Mode::kBench};
+    std::string filter;         ///< Empty selects every case; else a name substring.
+    bool exact{false};          ///< Match `filter` against the whole name instead.
+    double profileSeconds{0.0}; ///< Loop time per case in kProfile mode.
+    std::vector<ankerl::nanobench::Result> results;
+
+    void group(const char* title, Cost cost)
+    {
+        collect();
+        cost_ = cost;
+        bench_.title(title);
+        switch (cost) {
+            case Cost::kCheap:    bench_.warmup(1'000).minEpochIterations(100'000); break;
+            case Cost::kMedium:   bench_.warmup(10).minEpochIterations(1'000); break;
+            case Cost::kThreaded: bench_.warmup(2).minEpochIterations(10); break;
+        }
+    }
+
+    [[nodiscard]] bool selected(std::string_view name) const
+    {
+        if (filter.empty()) return true;
+        return exact ? name == filter : name.find(filter) != std::string_view::npos;
+    }
+
+    template<typename Body>
+    void run(const char* name, Body&& body)
+    {
+        if (!selected(name)) return;
+        switch (mode) {
+            case Mode::kList:    std::printf("%s\n", name); break;
+            case Mode::kBench:   bench_.run(name, body); break;
+            case Mode::kProfile: loop(name, body); break;
+        }
+    }
+
+    void collect()
+    {
+        const auto& section = bench_.results();
+        results.insert(results.end(), section.begin(), section.end());
+    }
+
+private:
+    template<typename Body>
+    void loop(const char* name, Body& body)
+    {
+        using Clock = std::chrono::steady_clock;
+        const int batch = cost_ == Cost::kCheap ? 256 : 1;
+        const auto start = Clock::now();
+        const auto deadline = start + std::chrono::duration<double>{profileSeconds};
+        std::uint64_t iterations = 0;
+        do {
+            for (int i = 0; i < batch; ++i) body();
+            iterations += static_cast<std::uint64_t>(batch);
+        } while (Clock::now() < deadline);
+        const std::chrono::duration<double> elapsed = Clock::now() - start;
+        std::printf("profile,\"%s\",%llu,%.3f,%.1f\n", name,
+                    static_cast<unsigned long long>(iterations), elapsed.count(),
+                    elapsed.count() * 1e9 / static_cast<double>(iterations));
+    }
+
+    ankerl::nanobench::Bench bench_;
+    Cost cost_{Cost::kCheap};
+};
+
+int usage(const char* program)
+{
+    std::fprintf(stderr,
+        "Usage: %s [--json PATH] [--features] [--case SUBSTR] [--exact] [--list]\n"
+        "          [--profile-seconds N]\n"
+        "  --case SUBSTR         run only cases whose name contains SUBSTR\n"
+        "  --exact               require --case to equal the whole case name\n"
+        "  --list                print the selected case names and exit\n"
+        "  --profile-seconds N   loop each selected case for N seconds without\n"
+        "                        nanobench, for use under a sampling profiler\n",
+        program);
+    return 2;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
 {
+    using namespace sub0pipeline;
+
+    Runner runner;
     std::string output;
     bool features = false;
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument{argv[i]};
         if (argument == "--features") features = true;
+        else if (argument == "--list") runner.mode = Runner::Mode::kList;
+        else if (argument == "--exact") runner.exact = true;
         else if (argument == "--json" && i + 1 < argc) output = argv[++i];
-        else {
-            std::fprintf(stderr, "Usage: %s [--json PATH] [--features]\n", argv[0]);
-            return 2;
+        else if (argument == "--case" && i + 1 < argc) runner.filter = argv[++i];
+        else if (argument == "--profile-seconds" && i + 1 < argc) {
+            runner.mode = Runner::Mode::kProfile;
+            runner.profileSeconds = std::atof(argv[++i]);
+            if (runner.profileSeconds <= 0.0) return usage(argv[0]);
         }
+        else return usage(argv[0]);
     }
-    printSystemInfo();
-
-    ankerl::nanobench::Bench bench;
-    bench.warmup(1'000).minEpochIterations(100'000);
-    std::vector<ankerl::nanobench::Result> results;
-    const auto capture = [&] {
-        const auto& section = bench.results();
-        results.insert(results.end(), section.begin(), section.end());
-    };
+    // Unbuffered: if a case hangs, the capture script can show the last one that finished.
+    std::cout.setf(std::ios::unitbuf);
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    if (runner.mode == Runner::Mode::kBench) printSystemInfo();
 
     InlineExecutor exec;
 
     // ── DAG construction ──────────────────────────────────────────────────────
 
-    bench.title("DAG construction");
+    runner.group("DAG construction", Cost::kCheap);
 
-    bench.run("construct 10-job linear chain", []
+    runner.run("construct 10-job linear chain", []
     {
-        sub0pipeline::Pipeline pipeline;
-        sub0pipeline::Job      prev;
-        for (int i = 0; i < 10; ++i) {
-            auto j = pipeline.emplace([] {}).name("j" + std::to_string(i));
-            if (prev.valid()) j.succeed(prev);
-            prev = j;
-        }
+        Pipeline pipeline;
+        buildChain(pipeline, 10);
         ankerl::nanobench::doNotOptimizeAway(&pipeline);
     });
 
-    bench.run("construct 10-job fan-out (1 root + 9 leaves)", []
+    runner.run("construct 10-job fan-out (1 root + 9 leaves)", []
     {
-        sub0pipeline::Pipeline pipeline;
-        auto root = pipeline.emplace([] {}).name("root");
-        for (int i = 0; i < 9; ++i) {
-            pipeline.emplace([] {}).name("leaf_" + std::to_string(i)).succeed(root);
-        }
+        Pipeline pipeline;
+        buildFanOut(pipeline, 9);
         ankerl::nanobench::doNotOptimizeAway(&pipeline);
     });
 
     // ── Sequential execution ──────────────────────────────────────────────────
+    // Each case re-runs one built pipeline; run() resets its state internally.
 
-    capture();
-    bench.title("Sequential execution (InlineExecutor)");
+    runner.group("Sequential execution (InlineExecutor)", Cost::kCheap);
 
     {
-        sub0pipeline::Pipeline pipeline;
-        sub0pipeline::Job      prev;
-        for (int i = 0; i < 10; ++i) {
-            auto j = pipeline.emplace([] {}).name("j" + std::to_string(i));
-            if (prev.valid()) j.succeed(prev);
-            prev = j;
-        }
-        bench.run("10-job linear chain", [&]
-        {
-            // Re-run the same pipeline each iteration (resets state internally).
-            (void)pipeline.run(exec);
-        });
+        Pipeline pipeline;
+        buildChain(pipeline, 10);
+        runner.run("10-job linear chain", [&] { (void)pipeline.run(exec); });
     }
 
     {
-        sub0pipeline::Pipeline pipeline;
-        auto root = pipeline.emplace([] {}).name("root");
-        for (int i = 0; i < 9; ++i) {
-            pipeline.emplace([] {}).name("leaf_" + std::to_string(i)).succeed(root);
-        }
-        bench.run("10-job fan-out (1 root + 9 leaves)", [&]
-        {
-            (void)pipeline.run(exec);
-        });
+        Pipeline pipeline;
+        buildFanOut(pipeline, 9);
+        runner.run("10-job fan-out (1 root + 9 leaves)", [&] { (void)pipeline.run(exec); });
     }
 
     {
-        sub0pipeline::Pipeline pipeline;
-        std::vector<sub0pipeline::Job> leaves;
-        for (int i = 0; i < 9; ++i) {
+        Pipeline pipeline;
+        std::vector<Job> leaves;
+        for (int i = 0; i < 9; ++i)
             leaves.push_back(pipeline.emplace([] {}).name("leaf_" + std::to_string(i)));
-        }
         auto sink = pipeline.emplace([] {}).name("sink");
         for (auto& leaf : leaves) sink.succeed(leaf);
 
-        bench.run("10-job fan-in (9 roots + 1 sink)", [&]
-        {
-            (void)pipeline.run(exec);
-        });
+        runner.run("10-job fan-in (9 roots + 1 sink)", [&] { (void)pipeline.run(exec); });
     }
 
     {
-        sub0pipeline::Pipeline pipeline;
+        Pipeline pipeline;
         auto a = pipeline.emplace([] {}).name("A");
         auto b = pipeline.emplace([] {}).name("B");
         auto c = pipeline.emplace([] {}).name("C");
@@ -211,35 +329,113 @@ int main(int argc, char** argv)
         a.precede(b, c);
         d.succeed(b, c);
 
-        bench.run("4-job diamond", [&]
-        {
-            (void)pipeline.run(exec);
-        });
+        runner.run("4-job diamond", [&] { (void)pipeline.run(exec); });
     }
 
     // ── Validation ────────────────────────────────────────────────────────────
 
-    capture();
-    bench.title("Validation");
+    runner.group("Validation", Cost::kCheap);
 
     {
-        sub0pipeline::Pipeline pipeline;
-        sub0pipeline::Job      prev;
-        for (int i = 0; i < 20; ++i) {
-            auto j = pipeline.emplace([] {}).name("j" + std::to_string(i));
-            if (prev.valid()) j.succeed(prev);
-            prev = j;
-        }
-        bench.run("validate 20-job chain", [&]
+        Pipeline pipeline;
+        buildChain(pipeline, 20);
+        runner.run("validate 20-job chain", [&]
         {
             ankerl::nanobench::doNotOptimizeAway(pipeline.validate());
         });
     }
 
-    capture();
+    // ── Scale ─────────────────────────────────────────────────────────────────
+    // Larger graphs: per-job cost once the graph no longer fits in L1, and the
+    // successor pool once fan-out exceeds the four inline slots. The chain is
+    // kept to 200 jobs because an inline executor recurses once per link.
+
+    runner.group("Scale (InlineExecutor)", Cost::kMedium);
+
+    runner.run("construct 1000-job layered DAG (20x50, fan-in 4)", []
+    {
+        Pipeline pipeline;
+        buildLayered(pipeline, 20, 50, 4);
+        ankerl::nanobench::doNotOptimizeAway(&pipeline);
+    });
+
+    {
+        Pipeline pipeline;
+        buildChain(pipeline, 200);
+        runner.run("200-job linear chain", [&] { (void)pipeline.run(exec); });
+    }
+
+    {
+        Pipeline pipeline;
+        buildFanOut(pipeline, 299);
+        runner.run("300-job fan-out (1 root + 299 leaves)", [&] { (void)pipeline.run(exec); });
+    }
+
+    {
+        Pipeline pipeline;
+        buildLayered(pipeline, 20, 50, 4);
+        runner.run("1000-job layered DAG (20x50, fan-in 4)", [&] { (void)pipeline.run(exec); });
+        runner.run("validate 1000-job layered DAG", [&]
+        {
+            ankerl::nanobench::doNotOptimizeAway(pipeline.validate());
+        });
+        runner.run("snapshot 1000-job layered DAG", [&]
+        {
+            ankerl::nanobench::doNotOptimizeAway(pipeline.snapshot());
+        });
+    }
+
+    // ── Threaded executors ────────────────────────────────────────────────────
+    // No-op jobs, so these measure dispatch, wake-up and contention only. The
+    // pool is fixed at four workers to keep results comparable across hosts.
+
+    runner.group("Threaded executors (no-op jobs)", Cost::kThreaded);
+
+    {
+        auto desktop = makeDesktopExecutor();
+        Pipeline pipeline;
+        buildFanOut(pipeline, 9);
+        runner.run("desktop: 10-job fan-out", [&] { (void)pipeline.run(*desktop); });
+    }
+
+    {
+        auto pool = makePriorityExecutor(4);
+
+        Pipeline fanOut;
+        buildFanOut(fanOut, 9);
+        runner.run("priority(4): 10-job fan-out", [&] { (void)fanOut.run(*pool); });
+
+        Pipeline chain;
+        buildChain(chain, 10);
+        runner.run("priority(4): 10-job linear chain", [&] { (void)chain.run(*pool); });
+        runner.run("scoped over priority(4): 10-job linear chain", [&]
+        {
+            ScopedExecutor scoped{*pool};
+            (void)chain.run(scoped);
+        });
+
+        Pipeline wide;
+        buildFanOut(wide, 299);
+        runner.run("priority(4): 300-job fan-out", [&] { (void)wide.run(*pool); });
+
+        Pipeline layered;
+        buildLayered(layered, 20, 50, 4);
+        runner.run("priority(4): 1000-job layered DAG (20x50, fan-in 4)", [&]
+        {
+            (void)layered.run(*pool);
+        });
+
+        Pipeline onDemand;
+        auto job = onDemand.add_on_demand([]() -> std::expected<void, PipelineError> { return {}; });
+        onDemand.arm(*pool);
+        runner.run("priority(4): on-demand trigger and wait", [&]
+        {
+            (void)onDemand.trigger(job);
+            pool->wait_all();
+        });
+    }
 
     if (features) {
-        using namespace sub0pipeline;
         struct Observer final : IObserver {
             std::size_t calls = 0;
             void onJobStart(RunId, JobId, std::string_view) override { ++calls; }
@@ -253,39 +449,38 @@ int main(int argc, char** argv)
             previous = job;
         }
         std::stop_source stop;
-        bench.title("Opt-in features (10-job chain)");
-        bench.run("external stoppable token, no request", [&] {
+        runner.group("Opt-in features (10-job chain)", Cost::kCheap);
+        runner.run("external stoppable token, no request", [&] {
             (void)pipeline.run(exec, stop.get_token());
         });
-        bench.run("observer callbacks, no external token", [&] {
+        runner.run("observer callbacks, no external token", [&] {
             (void)pipeline.run(exec, &observer);
             ankerl::nanobench::doNotOptimizeAway(observer.calls);
         });
-        capture();
 
         // Helper-thread startup dominates these opt-in timeout measurements.
         // Keep sampling separate from the inexpensive DAG benchmarks.
-        bench.title("Opt-in timeout helpers (one immediate job)");
-        bench.warmup(2).minEpochIterations(10);
+        runner.group("Opt-in timeout helpers (one immediate job)", Cost::kThreaded);
         Pipeline cooperative;
         (void)cooperative.emplace([](std::stop_token) -> std::expected<void, PipelineError> {
             return {};
         }).timeout(std::chrono::milliseconds{10});
-        bench.run("cooperative timeout configured", [&] {
+        runner.run("cooperative timeout configured", [&] {
             (void)cooperative.run(exec);
         });
         Pipeline plain;
         (void)plain.emplace([] {}).timeout(std::chrono::milliseconds{10});
-        bench.run("plain timeout configured plus join", [&] {
+        runner.run("plain timeout configured plus join", [&] {
             (void)plain.run(exec);
             plain.join_orphans();
         });
-        capture();
     }
 
-    if (!output.empty()) {
+    runner.collect();
+
+    if (!output.empty() && runner.mode == Runner::Mode::kBench) {
         std::ofstream file{output};
-        ankerl::nanobench::render(ankerl::nanobench::templates::json(), results, file);
+        ankerl::nanobench::render(ankerl::nanobench::templates::json(), runner.results, file);
         if (!file) {
             std::fprintf(stderr, "Cannot write benchmark JSON: %s\n", output.c_str());
             return 1;

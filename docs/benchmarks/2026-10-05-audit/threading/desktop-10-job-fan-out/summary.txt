@@ -1,0 +1,55 @@
+Elapsed Time: 10.031s
+    Paused Time: 0s
+Effective CPU Utilization: 0.0% (0.000 out of 24 logical CPUs)
+ | The metric value is low, which may signal a poor logical CPU cores
+ | utilization caused by load imbalance, threading runtime overhead, contended
+ | synchronization, or thread/process underutilization. Explore sub-metrics to
+ | estimate the efficiency of MPI and OpenMP parallelism or run the Locks and
+ | Waits analysis to identify parallel bottlenecks for other parallel runtimes.
+ |
+    Total Thread Count: 6,725
+        Thread Oversubscription: 0s (0.0% of CPU Time)
+    Wait Time with poor CPU Utilization: 9.852s (100.0% of Wait Time)
+
+        Top Waiting Objects
+        Sync Object         Wait Time with poor CPU Utilization  (% from Object Wait Time)(%)  Wait Count
+        ------------------  -----------------------------------  ----------------------------  ----------
+        Thread 0x93e4204e                                7.229s                        100.0%         552
+        Unknown 0x6807e00f                               1.545s                        100.0%         145
+        Thread 0xbfa1dfee                                0.978s                        100.0%       1,009
+        Thread 0x79e73dba                                0.094s                        100.0%         166
+        Thread 0xb2b01e00                                0.005s                        100.0%           1
+        [Others]                                         0.001s                        100.0%           4
+    Spin and Overhead Time: 0.194s (98.9% of CPU Time)
+     | A significant portion of CPU time is spent waiting. Use this metric to
+     | discover which synchronizations are spinning. Consider adjusting spin
+     | wait parameters, changing the lock implementation (for example, by
+     | backing off then descheduling), or adjusting the synchronization
+     | granularity.
+     |
+
+        Top Functions with Spin or Overhead Time
+        Function                                                        Module                  Spin and Overhead Time  (% from CPU Time)(%)
+        --------------------------------------------------------------  ----------------------  ----------------------  --------------------
+        std::thread::join                                               Sub0Pipeline_Bench.exe                  0.187s                 19.6%
+        NtWaitForSingleObject                                           ntdll.dll                               0.006s                  3.0%
+        std::vector<std::jthread,std::allocator<std::jthread> >::clear  Sub0Pipeline_Bench.exe                  0.002s                  0.9%
+        SwitchToThread                                                  KERNELBASE.dll                          0.000s                  0.0%
+Collection and Platform Info
+    Operating System: Microsoft Windows 11
+    Result Size: 30.2 MB 
+    Collection start time: 20:54:19 05/10/2026 UTC
+    Collection stop time: 20:54:29 05/10/2026 UTC
+    Collector Type: User-mode sampling and tracing
+    CPU
+        Name: Intel(R) microarchitecture code named Arrowlake-S
+        Frequency: 3.072 GHz
+        Logical CPU Count: 24
+        Cache Allocation Technology
+            Level 2 capability: not detected
+            Level 3 capability: not detected
+
+If you want to skip descriptions of detected performance issues in the report,
+enter: vtune -report summary -report-knob show-issues=false -r <my_result_dir>.
+Alternatively, you may view the report in the csv format: vtune -report
+<report_name> -format=csv.

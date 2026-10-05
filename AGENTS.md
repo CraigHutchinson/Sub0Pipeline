@@ -54,6 +54,9 @@ Do not introduce consumer product names or consumer-specific dependencies.
   same-machine baseline and current Release build using the shared benchmark
   harness and `scripts/capture_benchmarks.py`. Keep at least five alternating
   process samples, raw JSON/logs, source refs, compiler/build and machine details.
+- Profile before optimizing: attribute the time with `scripts/profile_vtune.py`
+  (or an equivalent sampling profiler) and state the hypothesis under test.
+  Profiles are for attribution only; never quote a timing from a profiled run.
 - Report medians and observed ranges, feature settings and measurement limits.
   Investigate material regressions; explain intentional safety costs. Never use
   a faster result to justify weaker ownership or cancellation guarantees.

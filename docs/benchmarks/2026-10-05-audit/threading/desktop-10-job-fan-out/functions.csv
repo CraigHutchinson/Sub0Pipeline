@@ -1,0 +1,12 @@
+Function,CPU Time,CPU Time:Effective Time,CPU Time:Spin Time,CPU Time:Overhead Time,Wait Time,Wait Time:Idle,Wait Time:Poor,Wait Time:Ok,Wait Time:Ideal,Wait Time:Over,Wait Count,Module,Function (Full),Source File,Start Address
+sub0pipeline::DesktopExecutor::wait_all,0.186786,0.0,0.186786,0.0,9.847117,9.847084,0.000034,0.0,0.0,0.0,1876,Sub0Pipeline_Bench.exe,sub0pipeline::DesktopExecutor::wait_all(void),desktop_executor.cpp,0x14001fbb0
+NtWaitForSingleObject,0.005833,0.0,0.005833,0.0,,,,,,,,ntdll.dll,NtWaitForSingleObject,[Unknown],0x1801617d0
+[Unknown stack frame(s)],0.001779,0.001779,0.0,0.0,,,,,,,,[Unknown],[Unknown stack frame(s)],[Unknown],0x0
+sub0pipeline::PriorityExecutor::`scalar deleting destructor',0.001723,0.0,0.001723,0.0,0.005359,0.005359,0.0,0.0,0.0,0.0,1,Sub0Pipeline_Bench.exe,sub0pipeline::PriorityExecutor::`scalar deleting destructor'(unsigned int),[Unknown],0x140021810
+"std::vector<std::thread,std::allocator<std::thread> >::emplace_back",0.000177,0.000177,0.0,0.0,,,,,,,,Sub0Pipeline_Bench.exe,"std::vector<std::thread,std::allocator<std::thread> >::emplace_back",vector,0x14001f9f3
+[Outside any known module],0.000074,0.000074,0.0,0.0,,,,,,,,[Unknown],[Outside any known module],[Unknown],0x0
+SwitchToThread,0.000042,0.0,0.000042,0.0,,,,,,,,KERNELBASE.dll,SwitchToThread,[Unknown],0x1800b3c60
+func@0x18001b250,0.000019,0.000019,0.0,0.0,,,,,,,,ntdll.dll,func@0x18001b250,[Unknown],0x18001b250
+TlsGetValue,0.000010,0.000010,0.0,0.0,,,,,,,,KERNEL32.DLL,TlsGetValue,[Unknown],0x1800848b0
+[pincrt.dll],0.000009,0.000009,0.0,0.0,,,,,,,,pincrt.dll,[pincrt.dll],[Unknown],0x0
+func@0x180021190,0.000009,0.000009,0.0,0.0,,,,,,,,advapi32.dll,func@0x180021190,[Unknown],0x180021190

@@ -1,0 +1,54 @@
+Elapsed Time: 10.014s
+    Paused Time: 0s
+Effective CPU Utilization: 9.7% (2.325 out of 24 logical CPUs)
+ | The metric value is low, which may signal a poor logical CPU cores
+ | utilization caused by load imbalance, threading runtime overhead, contended
+ | synchronization, or thread/process underutilization. Explore sub-metrics to
+ | estimate the efficiency of MPI and OpenMP parallelism or run the Locks and
+ | Waits analysis to identify parallel bottlenecks for other parallel runtimes.
+ |
+    Total Thread Count: 5
+     | The number of threads in the application is significantly lower than the
+     | number of logical cores on the machine. Check if it is resulted by thread
+     | number hard coding that limits application scalability.
+     |
+        Thread Oversubscription: 0s (0.0% of CPU Time)
+    Wait Time with poor CPU Utilization: 12.304s (100.0% of Wait Time)
+
+        Top Waiting Objects
+        Sync Object                 Wait Time with poor CPU Utilization  (% from Object Wait Time)(%)  Wait Count
+        --------------------------  -----------------------------------  ----------------------------  ----------
+        Read/Write Lock 0x8e2603ac                              11.639s                        100.0%   1,565,367
+        Read/Write Lock 0x3a0df9bc                               0.602s                        100.0%     102,669
+        Read/Write Lock 0x13920598                               0.056s                        100.0%      13,436
+        Multiple Objects                                         0.008s                        100.0%           4
+        Thread 0xb2b01e00                                        0.000s                        100.0%           1
+    Spin and Overhead Time: 0.689s (2.9% of CPU Time)
+
+        Top Functions with Spin or Overhead Time
+        Function                                 Module                  Spin and Overhead Time  (% from CPU Time)(%)
+        ---------------------------------------  ----------------------  ----------------------  --------------------
+        std::condition_variable_any::wait        Sub0Pipeline_Bench.exe                  0.260s                  1.1%
+        std::unique_lock<std::mutex>::{ctor}     Sub0Pipeline_Bench.exe                  0.150s                  0.6%
+        std::lock_guard<std::mutex>::{ctor}      Sub0Pipeline_Bench.exe                  0.100s                  0.4%
+        std::unique_lock<std::mutex>::{dtor}     Sub0Pipeline_Bench.exe                  0.063s                  0.3%
+        std::condition_variable_any::notify_one  Sub0Pipeline_Bench.exe                  0.062s                  0.3%
+        [Others]                                 N/A                                     0.054s                  0.2%
+Collection and Platform Info
+    Operating System: Microsoft Windows 11
+    Result Size: 748.5 MB 
+    Collection start time: 20:58:22 05/10/2026 UTC
+    Collection stop time: 20:58:33 05/10/2026 UTC
+    Collector Type: User-mode sampling and tracing
+    CPU
+        Name: Intel(R) microarchitecture code named Arrowlake-S
+        Frequency: 3.072 GHz
+        Logical CPU Count: 24
+        Cache Allocation Technology
+            Level 2 capability: not detected
+            Level 3 capability: not detected
+
+If you want to skip descriptions of detected performance issues in the report,
+enter: vtune -report summary -report-knob show-issues=false -r <my_result_dir>.
+Alternatively, you may view the report in the csv format: vtune -report
+<report_name> -format=csv.
