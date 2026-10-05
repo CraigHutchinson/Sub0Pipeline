@@ -138,7 +138,7 @@ is unsupported. Stop callbacks run synchronously in the requesting thread; they
 must not block on the run they are cancelling. Avoid overlapping graph edits,
 `arm`, `trigger`, moves or destruction with an active run.
 
-For a device's validate â†’ durable commit â†’ ACK sequence, failed required commit
+For a device's validate → durable commit → ACK sequence, failed required commit
 suppresses ACK. Cancellation can suppress ACK after commit succeeds; the write
 is not rolled back. The consumer must supply durable deduplication/idempotent
 retry behavior. See the [complete contract](docs/structured-cancellation.md).
