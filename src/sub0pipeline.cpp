@@ -34,6 +34,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -740,7 +741,56 @@ auto Pipeline::run(IExecutor& executor, std::stop_token external, IObserver* obs
     return runImpl(executor, external, observer);
 }
 
+namespace {
+bool g_spikeTaskDispatch = false;
+
+// SPIKE: an inline executor whose type the scheduler knows, so dispatch is a
+// direct, inlinable call with no virtual dispatch and no std::function.
+struct SpikeStaticInline final
+{
+    template<typename F>
+    void dispatch(std::string_view, F&& fn, int, uint8_t, uint32_t) { fn(); }
+    void wait_all() noexcept {}
+    [[nodiscard]] constexpr bool runs_inline() const noexcept { return false; }
+};
+
+template<typename Exec, typename Context>
+void spikeDispatch(Exec& executor, Context* context, uint32_t index, std::string_view name,
+                   int core, uint8_t priority, uint32_t stack)
+{
+    if constexpr (std::is_same_v<Exec, SpikeStaticInline>) {
+        executor.dispatch(name, [context, index] { context->dispatchJob(index); },
+                          core, priority, stack);
+    } else {
+        if (g_spikeTaskDispatch) {
+            executor.dispatch_task(
+                ExecutorTask{[](void* c, uint32_t i) { static_cast<Context*>(c)->dispatchJob(i); },
+                             context, index},
+                name, core, priority, stack);
+        } else {
+            executor.dispatch(name, [context, index] { context->dispatchJob(index); },
+                              [] {}, core, priority, stack);
+        }
+    }
+}
+} // namespace
+
+void Pipeline::spike_task_dispatch(bool enabled) noexcept { g_spikeTaskDispatch = enabled; }
+
+auto Pipeline::run_spike_static() -> std::expected<void, PipelineError>
+{
+    SpikeStaticInline executor;
+    return runImplT(executor, {}, nullptr);
+}
+
 auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver* observer)
+    -> std::expected<void, PipelineError>
+{
+    return runImplT(executor, std::move(external), observer);
+}
+
+template<typename Exec>
+auto Pipeline::runImplT(Exec& executor, std::stop_token external, IObserver* observer)
     -> std::expected<void, PipelineError>
 {
     if (!impl_ || impl_->nodes_.empty()) return {};
@@ -789,7 +839,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     {
         Impl&               impl;
         Pipeline&           pipeline;
-        IExecutor&          executor;
+        Exec&               executor;
         IObserver*          observer;
         RunId               runId;
         uint32_t            total;
@@ -899,11 +949,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                         inlineReady->push_back(succIdx);
                         continue;
                     }
-                    executor.dispatch(
-                        succ.nameStr_,
-                        [this, si = succIdx]{ dispatchJob(si); },
-                        [] {},
-                        succ.coreAffinity_, succ.priority_, succ.stackBytes_);
+                    spikeDispatch(executor, this, succIdx, succ.nameStr_,
+                                  succ.coreAffinity_, succ.priority_, succ.stackBytes_);
                 }
             }
         }
@@ -943,11 +990,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     } else {
         for (auto idx : impl_->roots_) {
             auto& nd = impl_->nodes_[idx];
-            executor.dispatch(
-                nd.nameStr_,
-                [&ctx, i = idx]{ ctx.dispatchJob(i); },
-                [] {},
-                nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+            spikeDispatch(executor, &ctx, idx, nd.nameStr_,
+                          nd.coreAffinity_, nd.priority_, nd.stackBytes_);
         }
     }
 

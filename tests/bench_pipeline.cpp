@@ -430,6 +430,73 @@ int main(int argc, char** argv)
         });
     }
 
+    // ── SPIKE: executor interface concepts ───────────────────────────────────
+    // A = std::function dispatch through IExecutor (the cases above).
+    // B = function-pointer task through IExecutor (dispatch_task).
+    // C = statically typed executor inlined into the scheduler.
+    // W = scheduler-owned worklist (run_inline).
+
+    struct TaskInlineExecutor final : IExecutor {
+        void dispatch(std::string_view, std::function<void()> fn, std::function<void()> oc,
+                      int, uint8_t, uint32_t) override { fn(); if (oc) oc(); }
+        void dispatch_task(ExecutorTask task, std::string_view, int, uint8_t, uint32_t) override
+        { task(); }
+        void wait_all() override {}
+        [[nodiscard]] int concurrency() const noexcept override { return 1; }
+    } taskInline;
+
+    runner.group("SPIKE inline (10-job chain)", Cost::kCheap);
+    {
+        Pipeline pipeline;
+        buildChain(pipeline, 10);
+        runner.run("spike A std::function: 10-job chain", [&] { (void)pipeline.run(exec); });
+        runner.run("spike B task pointer: 10-job chain", [&]
+        {
+            Pipeline::spike_task_dispatch(true);
+            (void)pipeline.run(taskInline);
+            Pipeline::spike_task_dispatch(false);
+        });
+        runner.run("spike C static executor: 10-job chain", [&] { (void)pipeline.run_spike_static(); });
+        runner.run("spike W worklist: 10-job chain", [&] { (void)pipeline.run_inline(); });
+    }
+
+    runner.group("SPIKE inline (1000-job layered DAG)", Cost::kMedium);
+    {
+        Pipeline pipeline;
+        buildLayered(pipeline, 20, 50, 4);
+        runner.run("spike A std::function: 1000-job layered", [&] { (void)pipeline.run(exec); });
+        runner.run("spike B task pointer: 1000-job layered", [&]
+        {
+            Pipeline::spike_task_dispatch(true);
+            (void)pipeline.run(taskInline);
+            Pipeline::spike_task_dispatch(false);
+        });
+        runner.run("spike C static executor: 1000-job layered", [&] { (void)pipeline.run_spike_static(); });
+        runner.run("spike W worklist: 1000-job layered", [&] { (void)pipeline.run_inline(); });
+    }
+
+    runner.group("SPIKE priority(4)", Cost::kThreaded);
+    {
+        auto pool = makePriorityExecutor(4);
+        Pipeline chain;
+        buildChain(chain, 10);
+        Pipeline wide;
+        buildFanOut(wide, 299);
+        Pipeline layered;
+        buildLayered(layered, 20, 50, 4);
+        const auto withTasks = [&](Pipeline& pipeline) {
+            Pipeline::spike_task_dispatch(true);
+            (void)pipeline.run(*pool);
+            Pipeline::spike_task_dispatch(false);
+        };
+        runner.run("spike A std::function: pool 10-job chain", [&] { (void)chain.run(*pool); });
+        runner.run("spike B task pointer: pool 10-job chain", [&] { withTasks(chain); });
+        runner.run("spike A std::function: pool 300-job fan-out", [&] { (void)wide.run(*pool); });
+        runner.run("spike B task pointer: pool 300-job fan-out", [&] { withTasks(wide); });
+        runner.run("spike A std::function: pool 1000-job layered", [&] { (void)layered.run(*pool); });
+        runner.run("spike B task pointer: pool 1000-job layered", [&] { withTasks(layered); });
+    }
+
     // ── Threaded executors ────────────────────────────────────────────────────
     // No-op jobs, so these measure dispatch, wake-up and contention only. The
     // pool is fixed at four workers to keep results comparable across hosts.

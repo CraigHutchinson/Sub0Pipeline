@@ -456,6 +456,16 @@ private:
     [[nodiscard]] auto runImpl(IExecutor& executor, std::stop_token external,
                                IObserver* observer)
         -> std::expected<void, PipelineError>;
+
+    template<typename Exec>
+    [[nodiscard]] auto runImplT(Exec& executor, std::stop_token external, IObserver* observer)
+        -> std::expected<void, PipelineError>;
+
+public:
+    /// SPIKE: run on a statically-typed inline executor compiled into the scheduler.
+    [[nodiscard]] auto run_spike_static() -> std::expected<void, PipelineError>;
+    /// SPIKE: make run() use IExecutor::dispatch_task instead of std::function dispatch.
+    static void spike_task_dispatch(bool enabled) noexcept;
 };
 
 } // namespace sub0pipeline

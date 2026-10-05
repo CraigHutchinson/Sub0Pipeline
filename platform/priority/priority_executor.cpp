@@ -30,8 +30,7 @@ class PriorityExecutor final : public IExecutor
 {
     struct QueuedJob
     {
-        std::function<void()> fn;
-        std::function<void()> onComplete;
+        ExecutorTask          task;
         uint8_t               priority{5};
 
         bool operator<(const QueuedJob& o) const noexcept { return priority < o.priority; }
@@ -65,11 +64,24 @@ public:
         uint8_t                       priority,
         uint32_t                      /*stackBytes*/) override
     {
+        // SPIKE: legacy callers pay one allocation for the pair of callables.
+        struct Holder { std::function<void()> fn, onComplete; };
+        auto* holder = new Holder{std::move(fn), std::move(onComplete)};
+        dispatch_task(ExecutorTask{[](void* c, uint32_t) {
+                          std::unique_ptr<Holder> owned{static_cast<Holder*>(c)};
+                          owned->fn();
+                          if (owned->onComplete) owned->onComplete();
+                      }, holder, 0U},
+                      {}, 0, priority, 0U);
+    }
+
+    void dispatch_task(ExecutorTask task, std::string_view, int, uint8_t priority, uint32_t) override
+    {
         inFlight_.fetch_add(1U, std::memory_order_relaxed);
         bool wake;
         {
             std::lock_guard lk{mtx_};
-            queue_.push(QueuedJob{std::move(fn), std::move(onComplete), priority});
+            queue_.push(QueuedJob{task, priority});
             // A busy worker re-checks the queue before it sleeps, so a wake-up
             // is only needed when some worker is already asleep.
             wake = idle_ != 0U;
@@ -100,11 +112,10 @@ private:
                 wake_.wait(lk, [this]{ return stopping_ || !queue_.empty(); });
                 --idle_;
                 if (queue_.empty()) return; // stopping, and nothing left to drain
-                job = std::move(const_cast<QueuedJob&>(queue_.top()));
+                job = queue_.top();
                 queue_.pop();
             }
-            job.fn();
-            if (job.onComplete) job.onComplete();
+            job.task();
             // Only the completion that empties the executor has a waiter to
             // wake. Taking doneMtx_ there orders the notify after the waiter's
             // predicate check, so it cannot be missed.

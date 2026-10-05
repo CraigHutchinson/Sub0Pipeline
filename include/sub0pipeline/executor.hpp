@@ -22,10 +22,26 @@ namespace sub0pipeline {
  *   - dispatch() MUST eventually call onComplete() from the dispatched context.
  *   - wait_all() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
  */
+/// SPIKE: a job as a plain function pointer plus context, with no type erasure.
+struct ExecutorTask
+{
+    void (*run)(void* context, uint32_t index){nullptr};
+    void*    context{nullptr};
+    uint32_t index{0};
+    void operator()() const { run(context, index); }
+};
+
 class IExecutor
 {
 public:
     virtual ~IExecutor() = default;
+
+    /// SPIKE: lean dispatch. The default adapts to the std::function overload.
+    virtual void dispatch_task(ExecutorTask task, std::string_view name,
+                               int coreAffinity, uint8_t priority, uint32_t stackBytes)
+    {
+        dispatch(name, task, {}, coreAffinity, priority, stackBytes);
+    }
 
     /**
      * @brief Dispatch a job for asynchronous execution.
