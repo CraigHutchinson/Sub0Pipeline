@@ -93,6 +93,45 @@ The renderer consumes job IDs, names, start/finish timestamps, status values and
 dependency events. It runs offline after capture and has no scheduler/runtime
 dependency.
 
+### Example captures
+
+The executable accepts `diamond` (the default), `boot`, or `failure`. These are
+real scheduler executions with simulated 40 ms bodies, not device hardware
+validation. The GIF stretches each recorded timeline for readable playback;
+animation speed is not a throughput or latency measurement. The renderer is
+intended for small illustrative DAGs; dense graphs can overlap in its fixed layout.
+
+| Scenario | Experience shown | Expected scheduler result |
+|---|---|---|
+| `diamond` | Two independent branches overlap, then release a join | Success; four jobs finish |
+| `boot` | Storage releases network/display initialization; telemetry and controls gate readiness | Success; six jobs finish |
+| `failure` | A required commit fails, suppressing acknowledgement and publication | `kJobFailed`; two descendants are skipped |
+
+All three are checked by CTest when examples and testing are enabled. The
+`failure` executable exits successfully only when the expected scheduler error
+and complete bounded capture are observed. Edge events report outgoing topology,
+including skip propagation; they do not imply a successor body executed.
+
+#### Generic device boot
+
+![Animated boot graph: storage completes, network and display branches overlap, and both branches gate readiness.](media/sub0pipeline-boot.gif)
+
+#### Required-failure propagation
+
+![Animated failure graph: validation succeeds, required commit fails, then acknowledgement and publication are skipped.](media/sub0pipeline-failure.gif)
+
+Regenerate the additional diagrams using the same executable and renderer:
+
+```powershell
+build/examples/trace_capture/Release/Sub0Pipeline_TraceCapture.exe boot > build/boot-trace.json
+build/examples/trace_capture/Release/Sub0Pipeline_TraceCapture.exe failure > build/failure-trace.json
+python scripts/render_trace_gif.py build/boot-trace.json docs/media/sub0pipeline-boot.gif
+python scripts/render_trace_gif.py build/failure-trace.json docs/media/sub0pipeline-failure.gif
+```
+
+For single-config builds, omit `Release/` and the `.exe` suffix. The optional
+Pillow dependency is needed only for offline rendering.
+
 `Pipeline::dump_text(std::ostream&)` emits the static graph to a caller-chosen
 stream. Static topology and runtime timeline are deliberately separate: the
 former is available without running jobs, while the latter exists only when an

@@ -38,6 +38,10 @@ in parallel, fan-in, and the live job/edge state an observer can capture.
 
 ![Animated Sub0Pipeline DAG run: root dispatches two parallel branches, both complete, then release the join; an opt-in observer reports progress and resolved edges.](docs/media/sub0pipeline-overview.gif)
 
+See the [boot and required-failure captures](docs/observability.md#example-captures)
+for more example diagrams. These use real scheduler events from simulated job
+bodies; playback speed does not represent measured scheduler performance.
+
 **Not current guarantees:** allocation-free execution, custom graph allocators,
 ISR-safe scheduling, hard real-time deadlines, forced interruption of arbitrary
 I/O, work stealing, distributed jobs, or automatic idempotency of external writes.

@@ -171,26 +171,64 @@ auto work() -> std::expected<void, sub0pipeline::PipelineError>
 
 } // namespace
 
-int main()
+int main(int argc, char* argv[])
 {
     using namespace sub0pipeline;
 
+    const std::string_view scenario = argc == 2 ? argv[1] : "diamond";
+    if (argc > 2 || (scenario != "diamond" && scenario != "boot" && scenario != "failure")) {
+        std::cerr << "Usage: trace_capture [diamond|boot|failure]\n";
+        return 1;
+    }
+
     Pipeline pipeline;
-    auto root = pipeline.emplace(work).name("root");
-    auto left = pipeline.emplace(work).name("left");
-    auto right = pipeline.emplace(work).name("right");
-    auto join = pipeline.emplace(work).name("join");
-    left.succeed(root);
-    right.succeed(root);
-    join.succeed(left, right);
+    std::size_t expectedEvents{};
+    if (scenario == "diamond") {
+        auto root = pipeline.emplace(work).name("root");
+        auto left = pipeline.emplace(work).name("left");
+        auto right = pipeline.emplace(work).name("right");
+        auto join = pipeline.emplace(work).name("join");
+        left.succeed(root);
+        right.succeed(root);
+        join.succeed(left, right);
+        expectedEvents = 12U;
+    } else if (scenario == "boot") {
+        auto storage = pipeline.emplace(work).name("storage");
+        auto network = pipeline.emplace(work).name("network");
+        auto display = pipeline.emplace(work).name("display");
+        auto telemetry = pipeline.emplace(work).name("telemetry");
+        auto controls = pipeline.emplace(work).name("controls");
+        auto ready = pipeline.emplace(work).name("ready");
+        network.succeed(storage);
+        display.succeed(storage);
+        telemetry.succeed(network);
+        controls.succeed(display);
+        ready.succeed(telemetry, controls);
+        expectedEvents = 18U;
+    } else {
+        auto validate = pipeline.emplace(work).name("validate");
+        auto commit = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+            std::this_thread::sleep_for(std::chrono::milliseconds{40});
+            Pipeline::set_current_job_error("simulated required commit failure");
+            return std::unexpected(PipelineError::kJobFailed);
+        }).name("commit");
+        auto acknowledge = pipeline.emplace(work).name("acknowledge");
+        auto publish = pipeline.emplace(work).name("publish");
+        commit.succeed(validate);
+        acknowledge.succeed(commit);
+        publish.succeed(acknowledge);
+        expectedEvents = 9U;
+    }
 
     auto executor = makeDesktopExecutor();
     TraceRecorder recorder;
     std::atomic<bool> finished{false};
-    std::atomic<bool> runSucceeded{false};
+    std::atomic<bool> expectedOutcome{false};
     std::jthread runner([&] {
-        runSucceeded.store(pipeline.run(*executor, &recorder).has_value(),
-                           std::memory_order_relaxed);
+        const auto result = pipeline.run(*executor, &recorder);
+        expectedOutcome.store(scenario == "failure"
+            ? !result && result.error() == PipelineError::kJobFailed
+            : result.has_value(), std::memory_order_relaxed);
         finished.store(true, std::memory_order_release);
     });
 
@@ -203,7 +241,7 @@ int main()
     runner.join();
 
     recorder.writeChromeTrace(std::cout);
-    return runSucceeded.load(std::memory_order_relaxed) &&
-           recorder.size() == 12U && recorder.dropped() == 0U &&
+    return expectedOutcome.load(std::memory_order_relaxed) &&
+           recorder.size() == expectedEvents && recorder.dropped() == 0U &&
            std::cout.good() ? 0 : 1;
 }

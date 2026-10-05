@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -77,7 +78,10 @@ def _as_int(value: object, field: str) -> int:
 def _as_float(value: object, field: str) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError(f"trace field '{field}' must be numeric")
-    return float(value)
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"trace field '{field}' must be finite")
+    return result
 
 
 def _load_trace(path: Path, requested_run_id: int | None) -> tuple[
@@ -219,7 +223,9 @@ def _shorten(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont,
     return text + "..."
 
 
-def _caption(completed: int, active: int, job_count: int) -> str:
+def _caption(completed: int, active: int, job_count: int, skipped: int) -> str:
+    if skipped:
+        return "Failure propagation skips dependent jobs; terminal statuses stay visible."
     if completed == job_count:
         return "Every job reached a terminal state; statuses remain visible."
     if active > 1:
@@ -274,12 +280,14 @@ def _frame(
 
     active_count = 0
     completed_count = 0
+    skipped_count = 0
     for job_id, job in jobs.items():
         started = job.started_at is not None and now >= job.started_at
         finished = job.finished_at is not None and now >= job.finished_at
         if finished:
             state = job.final_status.lower()
             completed_count += 1
+            skipped_count += job.final_status == "SKIPPED"
         elif started:
             state = "running"
             active_count += 1
@@ -317,11 +325,11 @@ def _frame(
     draw.text((753, 315), str(active_count), font=_font(20, bold=True),
               fill=COLORS["ink"])
     resolved = sum(now >= timestamp for timestamp in edges.values())
-    draw.text((753, 356), "EDGES RESOLVED", font=small_font, fill=COLORS["muted"])
+    draw.text((753, 356), "EDGE EVENTS", font=small_font, fill=COLORS["muted"])
     draw.text((753, 377), f"{resolved} / {len(edges)}",
               font=_font(16, bold=True), fill=COLORS["ink"])
 
-    draw.text((48, 438), _caption(completed_count, active_count, len(jobs)),
+    draw.text((48, 438), _caption(completed_count, active_count, len(jobs), skipped_count),
               font=body_font, fill=COLORS["ink"])
     draw.rounded_rectangle((48, 475, 912, 485), radius=5, fill=COLORS["track"])
     span = last_timestamp - first_timestamp
@@ -364,7 +372,11 @@ def render(trace_path: Path, output_path: Path, run_id: int | None) -> int:
     ]
     frames = [frames[0]] * 5 + frames + [frames[-1]] * 8
 
-    palette = frames[len(frames) // 2].quantize(
+    # Include terminal-only colors so GIF quantization preserves failure states.
+    palette_source = Image.new("RGB", (WIDTH, HEIGHT * 3))
+    for index, frame in enumerate((frames[0], frames[len(frames) // 2], frames[-1])):
+        palette_source.paste(frame, (0, HEIGHT * index))
+    palette = palette_source.quantize(
         colors=256, method=Image.Quantize.MEDIANCUT
     )
     indexed_frames = [
