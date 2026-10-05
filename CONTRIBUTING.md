@@ -81,6 +81,14 @@ not replace, fixed-budget exhaustion and real-target tests.
 
 ## 5. Deliver
 
+Routine PR updates run the GCC build and tests. Before merging, request the full
+platform, sanitizer and adapter suite by adding the `ci:full` label, transitioning
+a draft to ready for review, or dispatching **CI** manually on the PR branch.
+The label is an event trigger: later commits run the quick check even if the
+label remains. Remove and re-add it to validate a newer head. Accept only a full
+suite that passed on the exact head being merged. Main/develop pushes and merge
+queue entries also run the full suite; superseded PR runs are cancelled.
+
 Update the root README's feature set, opt-in costs, API descriptions, real
 examples and limitations. Update benchmark figures only from retained evidence;
 remove stale or unsupported claims. Summarize tests, performance deltas and

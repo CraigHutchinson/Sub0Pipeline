@@ -16,3 +16,4 @@ build-qt/
 build-zephyr/
 
 build-traversal/
+__pycache__/

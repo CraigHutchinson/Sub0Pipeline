@@ -8,7 +8,10 @@
 #include "doctest.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <latch>
+#include <limits>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -251,14 +254,34 @@ TEST_CASE("Pipeline: wide fan-in N=50")
 // Diagnostics
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("Pipeline: dump_text does not crash")
+TEST_CASE("Pipeline: dump_text writes the graph to a caller-selected stream")
 {
     Pipeline pipeline;
-    auto a = pipeline.emplace([] {}).name("A");
-    auto b = pipeline.emplace([] {}).name("B");
-    b.succeed(a);
-    // Output goes to stdout -- just verify no crash.
-    pipeline.dump_text();
+    auto root = pipeline.emplace([] {}).name("root");
+    auto left = pipeline.emplace([] {}).name("left");
+    auto right = pipeline.emplace([] {}).name("right");
+    left.succeed(root);
+    right.succeed(root);
+
+    std::ostringstream output;
+    pipeline.dump_text(output);
+
+    CHECK(output.str() ==
+          "Pipeline DAG (3 jobs):\n"
+          "  [0] root (predecessors: 0) -> ( left right)\n"
+          "  [1] left (predecessors: 1) -> ()\n"
+          "  [2] right (predecessors: 1) -> ()\n");
+}
+
+TEST_CASE("Pipeline: rejects nodes outside the successor index range")
+{
+    Pipeline pipeline;
+    for (uint32_t i = 0; i <= std::numeric_limits<uint16_t>::max(); ++i)
+        (void)pipeline.emplace([] {});
+
+    CHECK(pipeline.size() == 65536U);
+    CHECK_THROWS((void)pipeline.emplace([] {}));
+    CHECK(pipeline.size() == 65536U);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -723,8 +746,8 @@ TEST_CASE("Pipeline: observer progress is monotonic and resets on re-run")
         std::vector<float> progressValues;
         float lastProgress = -1.0f;
         bool monotonic = true;
-        void onStart(std::string_view) override {}
-        void onFinish(std::string_view, JobStatus, float progress) override {
+        void onJobStart(RunId, JobId, std::string_view) override {}
+        void onJobFinish(RunId, JobId, std::string_view, JobStatus, float progress) override {
             progressValues.push_back(progress);
             if (progress < lastProgress) monotonic = false;
             lastProgress = progress;

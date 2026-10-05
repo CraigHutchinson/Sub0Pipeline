@@ -79,6 +79,37 @@ TEST_CASE("OnDemand: trigger() dispatches job via armed executor")
     CHECK(callCount == 1);
 }
 
+TEST_CASE("OnDemand: observer receives failure details for a failed trigger")
+{
+    struct FailureObserver final : IObserver {
+        RunId runId{};
+        JobId jobId{};
+        PipelineError error{PipelineError::kTimeout};
+
+        RunId onRunStart() override { return 17U; }
+        void onJobFailure(RunId observedRunId, JobId observedJobId,
+                          std::string_view, PipelineError observedError,
+                          std::string_view) noexcept override
+        {
+            runId = observedRunId;
+            jobId = observedJobId;
+            error = observedError;
+        }
+    } observer;
+
+    RecordingExecutor exec;
+    Pipeline pipe;
+    auto job = pipe.add_on_demand([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    });
+    pipe.arm(exec, &observer);
+
+    REQUIRE(pipe.trigger(job).has_value());
+    CHECK(observer.runId == 17U);
+    CHECK(observer.jobId == 0U);
+    CHECK(observer.error == PipelineError::kJobFailed);
+}
+
 TEST_CASE("OnDemand: trigger() can be called multiple times independently")
 {
     RecordingExecutor exec;

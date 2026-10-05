@@ -1,11 +1,11 @@
 // examples/validate_dag/main.cpp
 //
-// Demonstrates Pipeline::validate(), dump_text(), and cycle detection.
+// Demonstrates Pipeline::validate(), stream-based dump_text(), and cycle detection.
 // Uses makeSequentialExecutor() for deterministic output.
 //
 // Demo 1 — Valid DAG passes validation:
 //   root → (A, B) → sink  (diamond shape, 4 nodes)
-//   Explicit validate(), dump_text(), then run().
+//   Explicit validate(), dump_text(std::cout), then run().
 //
 // Demo 2 — Cycle is caught before execution:
 //   X → Y → Z → X   (3-node cycle)
@@ -21,6 +21,7 @@
 
 #include <sub0pipeline/sub0pipeline.hpp>
 #include <cstdio>
+#include <iostream>
 
 // Forward-declared in sequential_executor.cpp (Sub0Pipeline::Headless).
 namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
@@ -70,7 +71,7 @@ int main()
 
         // Print the DAG structure for inspection.
         std::printf("  DAG structure (dump_text):\n");
-        pipeline.dump_text();
+        pipeline.dump_text(std::cout);
 
         auto result = pipeline.run(*exec);
         std::printf("  pipeline.size():   %zu\n", pipeline.size());

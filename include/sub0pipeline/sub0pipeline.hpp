@@ -9,7 +9,7 @@
 // Design principles:
 //   - Graph-as-value: the DAG is a first-class inspectable object
 //   - Builder pattern: fluent .precede()/.name() chaining on Job handles
-//   - Observer hooks: pluggable onStart/onFinish for profiling and progress
+//   - Observer hooks: opt-in run/job/dependency events for profiling and progress
 //   - Platform-injectable executor: pluggable backends (threaded, sequential, RTOS)
 //   - Zero-overhead when jobs are constexpr-declared
 //
@@ -29,9 +29,12 @@
 #include <chrono>
 #include <concepts>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
+#include <iosfwd>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -222,6 +225,74 @@ enum class JobStatus : uint8_t
     kCancelled,  ///< Cancelled externally via Job::cancel() or a stop token.
 };
 
+/** Stable node index within one Pipeline. Graphs accept at most 65,536 jobs;
+ * append-only node indices remain valid until their owning Pipeline is destroyed.
+ */
+using JobId = uint32_t;
+/// An observer-defined identifier for one observed execution or trigger.
+using RunId = uint64_t;
+
+/** A non-owning range of successor identities. Iterators borrow the graph,
+ * independently of the range wrapper; graph edits or destruction invalidate them.
+ */
+class DependencyRange
+{
+public:
+    DependencyRange() noexcept = default;
+
+    /// One outgoing edge's destination and borrowed display name.
+    struct Target {
+        JobId id{};
+        std::string_view name{};
+    };
+
+    /// Input iterator borrowing the Pipeline and its successor storage.
+    class Iterator
+    {
+    public:
+        using value_type = Target;
+        using difference_type = std::ptrdiff_t;
+        using iterator_concept = std::input_iterator_tag;
+        using iterator_category = std::input_iterator_tag;
+
+        Iterator() noexcept = default;
+        [[nodiscard]] Target operator*() const noexcept;
+        Iterator& operator++() noexcept { ++index_; return *this; }
+        Iterator operator++(int) noexcept
+        {
+            auto previous = *this;
+            ++index_;
+            return previous;
+        }
+        [[nodiscard]] bool operator==(const Iterator&) const noexcept = default;
+
+    private:
+        friend class DependencyRange;
+        Iterator(const Pipeline* pipeline, const std::uint16_t* ids,
+                 std::size_t index) noexcept
+            : pipeline_{pipeline}, ids_{ids}, index_{index} {}
+
+        const Pipeline* pipeline_{}; // non-owning
+        const std::uint16_t* ids_{}; // non-owning
+        std::size_t index_{};
+    };
+
+    [[nodiscard]] Iterator begin() const noexcept { return Iterator{pipeline_, ids_, 0U}; }
+    [[nodiscard]] Iterator end() const noexcept { return Iterator{pipeline_, ids_, size_}; }
+    [[nodiscard]] std::size_t size() const noexcept { return size_; }
+    [[nodiscard]] bool empty() const noexcept { return size_ == 0U; }
+
+private:
+    friend class Pipeline;
+    DependencyRange(const Pipeline* pipeline, const std::uint16_t* ids,
+                    std::size_t size) noexcept
+        : pipeline_{pipeline}, ids_{ids}, size_{size} {}
+
+    const Pipeline* pipeline_{}; // non-owning
+    const std::uint16_t* ids_{}; // non-owning
+    std::size_t size_{};
+};
+
 // ── Executor interface ────────────────────────────────────────────────────────
 
 /**
@@ -344,47 +415,78 @@ private:
 // ── Observer interface ────────────────────────────────────────────────────────
 
 /**
- * @brief Pluggable observer for profiling and progress tracking.
+ * Pluggable observer for profiling and progress tracking.
  *
- * Attach via Pipeline::run() to receive callbacks as jobs start and finish.
+ * Attach via Pipeline::run() or Pipeline::arm() to receive identity-aware
+ * callbacks. Events are not recorded unless a caller supplies an observer.
+ * Callbacks are synchronous and may overlap on parallel executors. Implementations
+ * must be thread-safe, bounded and non-throwing; callback exceptions are not
+ * converted to PipelineError. Keep the observer alive until executor callbacks join.
+ * Names and failure messages are borrowed; copy them during the callback to retain
+ * them. Do not mutate, move or destroy the graph from a callback.
  */
 class IObserver
 {
 public:
     virtual ~IObserver() = default;
 
-    /** Called just before a job starts executing (hot path -- keep implementations fast). */
-    virtual void onStart(std::string_view jobName) = 0;
-
     /**
-     * @brief Called when a job completes (any terminal status).
-     * @param jobName   The job's name.
-     * @param status    Final status (kDone, kFailed, kSkipped, kTimedOut).
-     * @param progress  Fraction of total jobs completed (0.0–1.0).
+     * Start one observed run or on-demand trigger.
+     *
+     * Return an identifier that the following job and dependency callbacks
+     * can use to group events. The default 0 is suitable when the observer
+     * does not need run correlation.
+     * Called on the run() caller's thread, or an executor worker for trigger().
      */
-    virtual void onFinish(std::string_view jobName, JobStatus status, float progress) = 0;
+    virtual RunId onRunStart() { return 0; }
+
+    /** Called just before a job starts executing. Keep implementations fast. */
+    virtual void onJobStart(RunId, JobId, std::string_view) {}
 
     /**
-     * @brief Called when a non-optional job fails -- default no-op.
+     * Called when a job completes, including skipped jobs with no start event.
+     * @param runId    Observer-defined identifier for this run or trigger.
+     * @param jobId    Stable node index within the Pipeline.
+     * @param jobName  The job's name.
+     * @param status   Final status (kDone, kFailed, kSkipped, kTimedOut, kCancelled).
+     * @param progress Fraction of total jobs completed (0.0–1.0).
+     * Concurrent callbacks may deliver progress values out of order.
+     */
+    virtual void onJobFinish([[maybe_unused]] RunId runId,
+                             [[maybe_unused]] JobId jobId,
+                             [[maybe_unused]] std::string_view jobName,
+                             [[maybe_unused]] JobStatus status,
+                             [[maybe_unused]] float progress) {}
+
+    /**
+     * Called for non-optional failures and cancellation, even on optional jobs.
      *
-     * Separate from onFinish so callers only opt into failure detail when they
-     * need it.  Zero cost when the default no-op is not overridden; the
-     * observer vtable dispatch itself is already gated by `if (observer)`.
+     * Separate from onJobFinish so callers only opt into failure detail when they
+     * need it. The observer vtable dispatch is gated by `if (observer)`.
      *
+     * @param runId    Observer-defined identifier for this run or trigger.
+     * @param jobId    Stable node index within the Pipeline.
      * @param jobName  Name of the failed job.
      * @param error    The PipelineError code.
      * @param message  Diagnostic string set by the job via
      *                 Pipeline::set_current_job_error() -- empty if the job
-     *                 did not provide context.  Only allocated on the failure
-     *                 branch; the success hot-path never touches this string.
+     *                 did not provide context. The view is valid only during
+     *                 this callback; supplying diagnostic text may allocate.
      */
-    virtual void onFailure([[maybe_unused]] std::string_view jobName,
-                           [[maybe_unused]] PipelineError    error,
-                           [[maybe_unused]] std::string_view message) noexcept {}
+    virtual void onJobFailure([[maybe_unused]] RunId runId,
+                              [[maybe_unused]] JobId jobId,
+                              [[maybe_unused]] std::string_view jobName,
+                              [[maybe_unused]] PipelineError error,
+                              [[maybe_unused]] std::string_view message) noexcept {}
 
-    /** Called when a dependency edge is traversed (for Gantt chart arrows). */
-    virtual void onDependency([[maybe_unused]] std::string_view from,
-                              [[maybe_unused]] std::string_view to) {}
+    /**
+     * Called once per completed node that has successors, rather than once per
+     * edge. The range is non-owning and valid only during this callback.
+     */
+    virtual void onDependenciesResolved([[maybe_unused]] RunId runId,
+                                        [[maybe_unused]] JobId from,
+                                        [[maybe_unused]] std::string_view fromName,
+                                        [[maybe_unused]] DependencyRange successors) {}
 };
 
 // ── Tick job ──────────────────────────────────────────────────────────────────
@@ -568,6 +670,15 @@ public:
 
     /** @return Human-readable name of a job. */
     [[nodiscard]] auto name(Job j) const noexcept -> std::string_view;
+    /** Return a borrowed name for a stable node id, or an empty view if invalid.
+     * Concurrent reads require a stable graph with no renaming or mutation.
+     */
+    [[nodiscard]] auto name(JobId id) const noexcept -> std::string_view;
+    /** Return a non-owning view of a node's successors, empty for invalid ids.
+     * Concurrent reads require a stable graph; graph edits or destruction
+     * invalidate the view and its iterators.
+     */
+    [[nodiscard]] auto successors(JobId id) const noexcept -> DependencyRange;
 
     /**
      * @brief Name of the first non-optional job that failed in the most recent run().
@@ -585,9 +696,8 @@ public:
      * @brief Set a diagnostic message for the job currently executing on this thread.
      *
      * Call on the failure branch before returning `std::unexpected(...)`.  The
-     * message is consumed by `dispatchJob` and forwarded to `IObserver::onFailure`.
-     * Zero cost on the success path -- the thread-local string is never read when
-     * the job succeeds.
+     * message is consumed by `dispatchJob` and forwarded to `IObserver::onJobFailure`.
+     * Supplying diagnostic text may allocate; leave it unset on success.
      *
      * @code
      *   auto fn = [&]() -> std::expected<void, PipelineError> {
@@ -606,11 +716,12 @@ public:
      *
      * Each `JobSnapshot` is a {name, status} pair read via relaxed atomic load --
      * no locks, no synchronisation barrier.  Safe to call from any thread at any
-     * time; results are a consistent point-in-time view of the per-job atomics.
+     * time while the graph is stable; individual status reads may reflect
+     * different instants and do not form a coherent whole-graph snapshot.
      * Allocates one `std::vector` per call; poll at the display frame rate (not
      * tighter than 16 ms) to avoid unnecessary pressure.
      *
-     * For single-string "current job" display prefer `IObserver::onStart` feeding
+     * For single-string "current job" display prefer `IObserver::onJobStart` feeding
      * an atomic pointer -- zero allocation, zero polling.
      */
     struct JobSnapshot {
@@ -765,11 +876,8 @@ public:
 
     // ── Diagnostics ───────────────────────────────────────────────────────
 
-    /** Emit DAG structure as trace events (Perfetto Gantt chart). */
-    void dump_trace() const;
-
-    /** Print the DAG as a human-readable dependency list to stdout. */
-    void dump_text() const;
+    /** Write a human-readable dependency list to the caller-selected stream. */
+    void dump_text(std::ostream& output) const;
 
 private:
     struct Node;

@@ -14,6 +14,7 @@
 #include <sub0pipeline/sub0pipeline.hpp>
 #include <chrono>
 #include <map>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <cstdio>
@@ -24,37 +25,38 @@ using namespace sub0pipeline;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
-// ── BootObserver ──────────────────────────────────────────────────────────────
-
+/** Desktop terminal demonstration with synchronized timing records.
+ * Console I/O and allocation in callbacks are unsuitable for latency-sensitive use.
+ */
 class BootObserver : public IObserver
 {
 public:
-    void onStart(std::string_view jobName) override
+    void onJobStart(RunId, JobId jobId, std::string_view jobName) override
     {
-        startTime_[std::string(jobName)] = Clock::now();
+        const std::string key(jobName);
+        std::scoped_lock lock{mutex_};
+        startTime_[jobId] = Clock::now();
 
-        // Pad job name to a fixed width for alignment.
         char padded[20]{};
-        std::snprintf(padded, sizeof(padded), "%-14s", std::string(jobName).c_str());
+        std::snprintf(padded, sizeof(padded), "%-14s", key.c_str());
         std::printf("  [ ... ] %s\n", padded);
     }
 
-    void onFinish(std::string_view jobName,
-                  JobStatus        status,
-                  float            progress) override
+    void onJobFinish(RunId, JobId jobId, std::string_view jobName,
+                     JobStatus status, float progress) override
     {
         const std::string key(jobName);
+        std::scoped_lock lock{mutex_};
         long long elapsedMs = 0;
 
-        auto it = startTime_.find(key);
+        auto it = startTime_.find(jobId);
         if (it != startTime_.end()) {
             elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 Clock::now() - it->second).count();
         }
 
-        timings_[key] = { elapsedMs, status };
+        timings_[jobId] = { key, elapsedMs, status };
 
-        // Build a filled/empty progress bar (10 blocks wide).
         constexpr int kBarWidth = 10;
         const int filled = static_cast<int>(progress * kBarWidth + 0.5f);
         char bar[64]{};
@@ -87,22 +89,26 @@ public:
                     statusStr);
     }
 
-    void onDependency(std::string_view from, std::string_view to) override
+    void onDependenciesResolved(RunId, JobId, std::string_view from,
+                                DependencyRange successors) override
     {
-        std::printf("  edge: %.*s \xe2\x86\x92 %.*s\n",     // →
-                    static_cast<int>(from.size()), from.data(),
-                    static_cast<int>(to.size()),   to.data());
+        std::scoped_lock lock{mutex_};
+        for (const auto target : successors) {
+            std::printf("  edge: %.*s \xe2\x86\x92 %.*s\n",
+                        static_cast<int>(from.size()), from.data(),
+                        static_cast<int>(target.name.size()), target.name.data());
+        }
     }
 
     void printSummary() const
     {
-        std::printf("\n--- Gantt summary (by start order) ---\n");
+        std::scoped_lock lock{mutex_};
+        std::printf("\n--- Gantt summary (by job id) ---\n");
         std::printf("  %-14s  %8s  %s\n", "job", "ms", "status");
         std::printf("  %-14s  %8s  %s\n", "---", "--", "------");
 
-        // Print in insertion order (map is sorted alphabetically — good enough
-        // for a readable summary without dragging in std::vector<pair>).
-        for (const auto& [name, rec] : timings_) {
+        for (const auto& [jobId, rec] : timings_) {
+            (void)jobId;
             const char* statusStr =
                 (rec.status == JobStatus::kDone)    ? "kDone"
               : (rec.status == JobStatus::kFailed)   ? "kFailed"
@@ -110,18 +116,20 @@ public:
               : (rec.status == JobStatus::kTimedOut) ? "kTimedOut"
               :                                        "unknown";
             std::printf("  %-14s  %6lldms  %s\n",
-                        name.c_str(), rec.elapsedMs, statusStr);
+                        rec.name.c_str(), rec.elapsedMs, statusStr);
         }
     }
 
 private:
     struct TimingRecord {
+        std::string name;
         long long elapsedMs{};
         JobStatus status{JobStatus::kPending};
     };
 
-    std::map<std::string, Clock::time_point> startTime_;
-    std::map<std::string, TimingRecord>      timings_;
+    mutable std::mutex mutex_;
+    std::map<JobId, Clock::time_point> startTime_;
+    std::map<JobId, TimingRecord>      timings_;
 };
 
 // ── Subsystem initialisers ────────────────────────────────────────────────────

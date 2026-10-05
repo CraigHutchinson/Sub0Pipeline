@@ -242,8 +242,8 @@ int main(int argc, char** argv)
         using namespace sub0pipeline;
         struct Observer final : IObserver {
             std::size_t calls = 0;
-            void onStart(std::string_view) override { ++calls; }
-            void onFinish(std::string_view, JobStatus, float) override { ++calls; }
+            void onJobStart(RunId, JobId, std::string_view) override { ++calls; }
+            void onJobFinish(RunId, JobId, std::string_view, JobStatus, float) override { ++calls; }
         } observer;
         Pipeline pipeline;
         Job previous;
