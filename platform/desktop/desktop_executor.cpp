@@ -7,8 +7,6 @@
 #include <sub0pipeline/executor.hpp>
 #include <sub0pipeline/executor_factory.hpp>
 
-#include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -24,6 +22,9 @@ namespace sub0pipeline {
 class DesktopExecutor final : public IExecutor
 {
 public:
+    /// Joins every dispatched job; a std::thread must not die joinable.
+    ~DesktopExecutor() override { wait_all(); }
+
     void dispatch(
         std::string_view              /*name*/,
         std::function<void()>         fn,
@@ -32,41 +33,30 @@ public:
         uint8_t                       /*priority*/,
         uint32_t                      /*stackBytes*/) override
     {
-        inFlight_.fetch_add(1U, std::memory_order_relaxed);
         std::lock_guard lk{mtx_};
+        ++inFlight_;
         threads_.emplace_back([this, fn = std::move(fn), oc = std::move(onComplete)]
         {
             fn();
             if (oc) oc();
-            if (inFlight_.fetch_sub(1U, std::memory_order_release) == 1U) {
-                cv_.notify_all();
-            }
+            // Publish completion under the lock so a waiter cannot miss it.
+            std::lock_guard done{mtx_};
+            if (--inFlight_ == 0U) idle_.notify_all();
         });
     }
 
     void wait_all() override
     {
-        // Drain loop: successor jobs may be dispatched during execution, so we
-        // keep joining until no threads remain and in_flight_ reaches zero.
-        while (true) {
-            std::vector<std::thread> batch;
-            {
-                std::lock_guard lk{mtx_};
-                if (threads_.empty() && inFlight_.load(std::memory_order_acquire) == 0U) break;
-                batch = std::move(threads_);
-            }
-            for (auto& t : batch) {
-                if (t.joinable()) t.join();
-            }
-            // If no threads were moved but in_flight > 0, wait briefly for new dispatches.
-            if (batch.empty()) {
-                std::unique_lock lk{mtx_};
-                cv_.wait_for(lk, std::chrono::milliseconds{10}, [this]
-                {
-                    return !threads_.empty()
-                        || inFlight_.load(std::memory_order_acquire) == 0U;
-                });
-            }
+        std::unique_lock lk{mtx_};
+        // Jobs may dispatch successors, and joining releases the lock, so
+        // repeat until a pass finds nothing running and nothing left to join.
+        while (inFlight_ != 0U || !threads_.empty()) {
+            idle_.wait(lk, [this] { return inFlight_ == 0U; });
+            auto finished = std::move(threads_);
+            threads_.clear();
+            lk.unlock();
+            for (auto& thread : finished) thread.join();
+            lk.lock();
         }
     }
 
@@ -76,10 +66,10 @@ public:
     }
 
 private:
-    std::mutex                mtx_;
-    std::condition_variable   cv_;
-    std::vector<std::thread>  threads_;
-    std::atomic<uint32_t>     inFlight_{0U};
+    std::mutex                mtx_;      ///< Guards threads_ and inFlight_.
+    std::condition_variable   idle_;     ///< Signalled when inFlight_ reaches zero.
+    std::vector<std::thread>  threads_;  ///< Started since the last wait_all() join.
+    uint32_t                  inFlight_{0U};
 };
 
 /** @return A DesktopExecutor backed by std::thread (one thread per job). */

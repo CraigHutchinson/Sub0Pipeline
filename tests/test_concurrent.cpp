@@ -8,12 +8,11 @@
 
 #include <atomic>
 #include <functional>
+#include <latch>
 #include <mutex>
 #include <string_view>
 #include <thread>
 #include <vector>
-
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
 
 using namespace sub0pipeline;
 
@@ -127,11 +126,32 @@ TEST_CASE("Concurrent: DesktopExecutor smoke test — sequential pipeline succee
     CHECK(counter == 2);
 }
 
+TEST_CASE("Concurrent: DesktopExecutor wait_all waits for a job still blocked when it is called")
+{
+    auto exec = makeDesktopExecutor();
+    std::latch release{1};
+    std::atomic<bool> finished{false};
+
+    exec->dispatch("blocked", [&] { release.wait(); finished = true; }, nullptr, -1, 5);
+    std::jthread releaser{[&] { release.count_down(); }};
+    exec->wait_all();
+
+    CHECK(finished.load());
+}
+
+TEST_CASE("Concurrent: DesktopExecutor destruction joins work nobody waited for")
+{
+    std::atomic<bool> finished{false};
+    {
+        auto exec = makeDesktopExecutor();
+        exec->dispatch("unwaited", [&] { finished = true; }, nullptr, -1, 5);
+    }
+    CHECK(finished.load());
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Sub-DAG execution (ScopedExecutor)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
 
 TEST_CASE("SubDAG: sequential -- job creates and runs an inner pipeline inline")
 {

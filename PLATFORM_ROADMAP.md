@@ -12,6 +12,7 @@ consumers only link what they need.
 |---|---|---|---|
 | `SequentialExecutor` | `Sub0Pipeline::Headless` | Done | Inline, no threads. Deterministic. Ideal for unit tests and bare-metal. |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Done | One `std::thread` per dispatched job. `hardware_concurrency()` slots. |
+| `PriorityExecutor` | `Sub0Pipeline::Priority` | Done | Bounded worker pool; queued jobs start in priority order; no preemption. |
 | `FreeRtosExecutor` | ESP-IDF component | Done | `xTaskCreatePinnedToCore` per job. Dual-core ESP32-P4. Semaphore drain. |
 
 ---
@@ -29,12 +30,16 @@ consumers only link what they need.
 - **Backend:** Fixed-size worker thread pool with a lock-free job queue
 - **Use case:** High-throughput pipelines where task-creation overhead matters
 - **Notes:** Requires bounded queue; deadlock risk if pool size < DAG depth
+- **Status:** `PriorityExecutor` already provides a fixed-size pool with a mutex-guarded
+  priority queue. What remains here is the lock-free, bounded-queue variant.
 
 ### `ZephyrExecutor`
 - **Target:** `Sub0Pipeline::Zephyr`
 - **Backend:** `k_thread_create` / `k_sem` for completion tracking
 - **Use case:** Zephyr RTOS (nRF, STM32, i.MX RT)
 - **Notes:** Stack must be statically allocated; k_thread priority maps to priority field
+- **Status:** A bounded reference adapter lives in `examples/zephyr_bounded` (fixed slots,
+  one worker, validated on the native simulator). It is not yet a linkable target.
 
 ### `AzureRtosExecutor`
 - **Target:** `Sub0Pipeline::AzureRtos`
@@ -47,6 +52,8 @@ consumers only link what they need.
 - **Backend:** `QThreadPool::globalInstance()->start(QRunnable*)` or `QtConcurrent::run`
 - **Use case:** Qt-based desktop or embedded Linux applications
 - **Notes:** Bridges into Qt's event loop; on_complete must be thread-safe
+- **Status:** A bounded reference adapter lives in `examples/qt_bounded` (private
+  `QThreadPool`, caller-runs overflow). It is not yet a linkable target.
 
 ### `CoroutineExecutor`
 - **Target:** `Sub0Pipeline::Coroutine`
