@@ -278,7 +278,7 @@ job body ran. `trace_capture` demonstrates bounded event capture, Chrome Trace
 JSON export and display-rate snapshot polling without recording or rendering
 inside the scheduler. The no-observer path stores no trace state or events and
 does not read a clock. See the [observability contract](docs/observability.md)
-and [public header](include/sub0pipeline/sub0pipeline.hpp).
+and [observer header](include/sub0pipeline/observer.hpp).
 
 ## Injected deadlines and owned runs
 
