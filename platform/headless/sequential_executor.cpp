@@ -1,44 +1,11 @@
 // platform/headless/sequential_executor.cpp
 //
-// Inline (sequential) executor for Sub0Pipeline.
-// Runs each dispatched job synchronously on the calling thread with no
-// parallelism. Deterministic execution order makes this ideal for unit tests
-// and environments where std::thread is unavailable (bare-metal, CI).
+// Factory for SequentialExecutor, which is itself header-only.
 
 #include <sub0pipeline/executor/sequential_executor.hpp>
 
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <string_view>
-
 namespace sub0pipeline {
 
-class SequentialExecutor final : public IExecutor
-{
-public:
-    void dispatch(
-        std::string_view              /*name*/,
-        std::function<void()>         fn,
-        std::function<void()>         onComplete,
-        int                           /*coreAffinity*/,
-        uint8_t                       /*priority*/,
-        uint32_t                      /*stackBytes*/) override
-    {
-        fn();
-        if (onComplete) onComplete();
-    }
-
-    void wait_all() override
-    {
-        // Nothing to wait for — all jobs run inline in dispatch().
-    }
-
-    [[nodiscard]] int concurrency() const noexcept override { return 1; }
-    [[nodiscard]] bool runs_inline() const noexcept override { return true; }
-};
-
-/** @return A SequentialExecutor that runs all jobs inline (no threads). */
 std::unique_ptr<IExecutor> makeSequentialExecutor()
 {
     return std::make_unique<SequentialExecutor>();

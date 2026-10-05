@@ -94,9 +94,9 @@ auto result = pipe.run_inline();
 Choose an executor explicitly for parallel work:
 
 ```cpp
-auto executor = makePriorityExecutor(2); // two workers; queue is dynamically sized
+PriorityExecutor executor{{.threadCount = 2}}; // two workers; queue is dynamically sized
 // Keep the executor, pipeline and anything borrowed by jobs alive through joining.
-auto result = pipe.run(*executor);
+auto result = pipe.run(executor);
 pipe.join_orphans();
 ```
 
@@ -171,8 +171,8 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |
 | Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
-| Priority worker pool | Select `makePriorityExecutor(n)` | Fixed worker count, dynamic priority queue; no queue-capacity/backpressure guarantee |
-| Desktop execution | Select `makeDesktopExecutor()` | One native thread per dispatched job |
+| Priority worker pool | Construct `PriorityExecutor` with `Options::threadCount` | Fixed worker count, dynamic priority queue; no queue-capacity/backpressure guarantee |
+| Desktop execution | Construct `DesktopExecutor` | One native thread per dispatched job |
 | Snapshots / text diagnostics | Call the API | Snapshot allocation or formatting/I/O; not automatic |
 | DSL | Include `dsl.hpp` | Compile-time composition; ordinary graph-construction costs still apply |
 | Benchmarks | Build option + manual execution/CI | Not part of library execution; expensive timeout samples require `--features` |
@@ -194,9 +194,14 @@ in validation/failure allocations and its retained-memory tradeoff.
 
 ## Executors and use-case boundaries
 
+The bundled executors are ordinary classes: construct one as a local, a member
+or a static, configured through its constructor. Each `make...Executor()`
+factory returns the same type on the heap behind `IExecutor` for callers that
+choose an executor at run time.
+
 | Executor | Target / location | Behavior |
 |---|---|---|
-| `SequentialExecutor` | `Sub0Pipeline::Headless` | Runs jobs on the calling thread in the order they become ready; constant stack depth; deterministic untimed test scheduling |
+| `SequentialExecutor` | Header-only (`Sub0Pipeline::Headless` for its factory) | Runs jobs on the calling thread in the order they become ready; constant stack depth; deterministic untimed test scheduling |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Thread per job; joins dispatched work; ignores priority/affinity hints |
 | `PriorityExecutor` | `Sub0Pipeline::Priority` | Configurable worker count; higher priorities start first; already-running work is not preempted |
 | `ScopedExecutor` | Core header | Reuses a parent executor and waits only for locally dispatched jobs |

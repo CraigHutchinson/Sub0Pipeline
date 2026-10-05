@@ -6,75 +6,56 @@
 
 #include <sub0pipeline/executor/desktop_executor.hpp>
 
-#include <condition_variable>
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <string_view>
-#include <thread>
 #include <utility>
-#include <vector>
 
 namespace sub0pipeline {
 
-class DesktopExecutor final : public IExecutor
+// A std::thread must not die joinable.
+DesktopExecutor::~DesktopExecutor() { wait_all(); }
+
+void DesktopExecutor::dispatch(
+    std::string_view              /*name*/,
+    std::function<void()>         fn,
+    std::function<void()>         onComplete,
+    int                           /*coreAffinity*/,
+    uint8_t                       /*priority*/,
+    uint32_t                      /*stackBytes*/)
 {
-public:
-    /// Joins every dispatched job; a std::thread must not die joinable.
-    ~DesktopExecutor() override { wait_all(); }
-
-    void dispatch(
-        std::string_view              /*name*/,
-        std::function<void()>         fn,
-        std::function<void()>         onComplete,
-        int                           /*coreAffinity*/,
-        uint8_t                       /*priority*/,
-        uint32_t                      /*stackBytes*/) override
+    std::lock_guard lk{mtx_};
+    threads_.emplace_back([this, fn = std::move(fn), oc = std::move(onComplete)]
     {
-        std::lock_guard lk{mtx_};
-        threads_.emplace_back([this, fn = std::move(fn), oc = std::move(onComplete)]
-        {
-            fn();
-            if (oc) oc();
-            // Publish completion under the lock so a waiter cannot miss it.
-            std::lock_guard done{mtx_};
-            if (--inFlight_ == 0U) idle_.notify_all();
-        });
-        // Counted only once the thread exists: if starting it throws, nothing
-        // is left in flight. The new thread cannot decrement before this,
-        // because it needs mtx_ to do so.
-        ++inFlight_;
+        fn();
+        if (oc) oc();
+        // Publish completion under the lock so a waiter cannot miss it.
+        std::lock_guard done{mtx_};
+        if (--inFlight_ == 0U) idle_.notify_all();
+    });
+    // Counted only once the thread exists: if starting it throws, nothing
+    // is left in flight. The new thread cannot decrement before this,
+    // because it needs mtx_ to do so.
+    ++inFlight_;
+}
+
+void DesktopExecutor::wait_all()
+{
+    std::unique_lock lk{mtx_};
+    // Jobs may dispatch successors, and joining releases the lock, so
+    // repeat until a pass finds nothing running and nothing left to join.
+    while (inFlight_ != 0U || !threads_.empty()) {
+        idle_.wait(lk, [this] { return inFlight_ == 0U; });
+        auto finished = std::move(threads_);
+        threads_.clear();
+        lk.unlock();
+        for (auto& thread : finished) thread.join();
+        lk.lock();
     }
+}
 
-    void wait_all() override
-    {
-        std::unique_lock lk{mtx_};
-        // Jobs may dispatch successors, and joining releases the lock, so
-        // repeat until a pass finds nothing running and nothing left to join.
-        while (inFlight_ != 0U || !threads_.empty()) {
-            idle_.wait(lk, [this] { return inFlight_ == 0U; });
-            auto finished = std::move(threads_);
-            threads_.clear();
-            lk.unlock();
-            for (auto& thread : finished) thread.join();
-            lk.lock();
-        }
-    }
+int DesktopExecutor::concurrency() const noexcept
+{
+    return static_cast<int>(std::thread::hardware_concurrency());
+}
 
-    [[nodiscard]] int concurrency() const noexcept override
-    {
-        return static_cast<int>(std::thread::hardware_concurrency());
-    }
-
-private:
-    std::mutex                mtx_;      ///< Guards threads_ and inFlight_.
-    std::condition_variable   idle_;     ///< Signalled when inFlight_ reaches zero.
-    std::vector<std::thread>  threads_;  ///< Started since the last wait_all() join.
-    uint32_t                  inFlight_{0U};
-};
-
-/** @return A DesktopExecutor backed by std::thread (one thread per job). */
 std::unique_ptr<IExecutor> makeDesktopExecutor()
 {
     return std::make_unique<DesktopExecutor>();
