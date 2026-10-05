@@ -138,7 +138,7 @@ is unsupported. Stop callbacks run synchronously in the requesting thread; they
 must not block on the run they are cancelling. Avoid overlapping graph edits,
 `arm`, `trigger`, moves or destruction with an active run.
 
-For a device's validate → durable commit → ACK sequence, failed required commit
+For a device's validate â†’ durable commit â†’ ACK sequence, failed required commit
 suppresses ACK. Cancellation can suppress ACK after commit succeeds; the write
 is not rolled back. The consumer must supply durable deduplication/idempotent
 retry behavior. See the [complete contract](docs/structured-cancellation.md).
@@ -247,7 +247,7 @@ exhaustion recoverable.
 |---|---|
 | Construct / connect | `emplace`, `emplace_void`, `succeed`, `precede`, `parallel`, `size` |
 | Execute / cancel | `run`, `run_inline`, `run_until`, `Job::cancel` |
-| Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `snapshot` |
+| Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `successors`, `snapshot` |
 | Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text(std::ostream&)` |
 | Events / ticks | `add_on_demand`, `arm`, `trigger`, `add_tick`, `run_loop(stop_token)`; legacy non-returning `run_loop()` |
 | Job configuration | `name`, `status`, `timeout`, `optional`, `priority`, `core`, `stack` |

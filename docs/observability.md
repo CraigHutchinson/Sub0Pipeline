@@ -16,6 +16,9 @@ protect shared state; do not render a UI, perform blocking I/O, or send network
 traffic from worker callbacks. For embedded or latency-sensitive capture, use
 caller-owned bounded storage and define overflow behavior. The sample uses a
 fixed array and reports drops rather than growing or blocking.
+Observer callbacks must not throw or mutate/move the graph. Exceptions from
+callbacks are not translated into scheduler errors. Copy borrowed names and
+failure messages during the callback if they need to survive it.
 
 ## Event identity and meaning
 
@@ -32,7 +35,10 @@ status, including skipped jobs that never started. `onDependenciesResolved` is
 called once after a predecessor's terminal callback with a non-owning range of
 all outgoing edges, including edges through which a required failure skips a
 successor. `DependencyRange` can also be obtained through
-`Pipeline::successors(JobId)` for static topology inspection. The batch hook
+`Pipeline::successors(JobId)` for static topology inspection. Notifications
+report outgoing topology; an on-demand trigger does not dispatch successors.
+Iterators borrow graph storage directly and survive destruction of the range
+wrapper, but graph edits or destruction invalidate them. The batch hook
 requires one virtual dispatch per completed node with successors, regardless
 of its edge count. All callbacks can overlap across worker threads; there is no
 implied global event ordering beyond callback program order on one execution
@@ -51,6 +57,8 @@ The `trace_capture` example records job begin/end events and dependency
 resolutions, writes Chrome Trace JSON to stdout, and checks live state by polling
 `Pipeline::snapshot()` at display cadence. The latter allocates a vector per
 snapshot; it is a UI/control-thread facility, not a worker callback.
+Live status is written to stderr, leaving stdout as valid trace JSON. Polling
+may miss short-lived running states and does not determine execution success.
 
 `Pipeline::dump_text(std::ostream&)` emits the static graph to a caller-chosen
 stream. Static topology and runtime timeline are deliberately separate: the
