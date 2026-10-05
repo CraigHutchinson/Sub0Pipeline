@@ -18,6 +18,8 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--repeats', type=int, default=5)
     parser.add_argument('--features', action='store_true')
+    parser.add_argument('--process-timeout', type=float, default=300.0,
+                        help='seconds allowed per benchmark process before it counts as hung')
     args = parser.parse_args()
     if args.repeats < 3:
         parser.error('use at least three independent process samples')
@@ -38,7 +40,16 @@ def main():
             command = [str(executable.resolve()), '--json', str(raw)]
             if args.features:
                 command.append('--features')
-            result = subprocess.run(command, text=True, capture_output=True, check=True)
+            try:
+                result = subprocess.run(command, text=True, capture_output=True, check=True,
+                                        timeout=args.process_timeout)
+            except subprocess.TimeoutExpired as hung:
+                # Keep what it printed: the case after the last one listed is the one that hung.
+                partial = hung.stdout or ''
+                partial = partial if isinstance(partial, str) else partial.decode(errors='replace')
+                raw.with_suffix('.txt').write_text(partial)
+                raise SystemExit(f'{name} benchmark exceeded {args.process_timeout:.0f} s; '
+                                 f'last output:\n{partial[-600:]}')
             raw.with_suffix('.txt').write_text(result.stdout + result.stderr)
             for row in json.loads(raw.read_text())['results']:
                 samples[name].setdefault(row['name'], []).append(row['median(elapsed)'] * 1e9)

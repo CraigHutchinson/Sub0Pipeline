@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       baseline_ref:
-        description: Baseline commit with compatible benchmark APIs
+        description: Baseline revision that supports every benchmark case (older ones can hang)
         required: true
-        default: d1f5ba0ce08c8e44c05928b18f1968562a9dcd49
+        default: origin/main
 
 permissions:
   contents: read

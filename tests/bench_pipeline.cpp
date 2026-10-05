@@ -10,6 +10,7 @@
 #include <expected>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <stop_token>
 #include <string>
@@ -266,6 +267,9 @@ int main(int argc, char** argv)
         }
         else return usage(argv[0]);
     }
+    // Unbuffered: if a case hangs, the capture script can show the last one that finished.
+    std::cout.setf(std::ios::unitbuf);
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     if (runner.mode == Runner::Mode::kBench) printSystemInfo();
 
     InlineExecutor exec;
