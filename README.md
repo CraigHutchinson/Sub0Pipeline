@@ -264,6 +264,18 @@ exhaustion recoverable.
 | Events / ticks | `add_on_demand`, `arm`, `trigger`, `add_tick`, `run_loop(stop_token)`; legacy non-returning `run_loop()` |
 | Job configuration | `name`, `status`, `timeout`, `optional`, `priority`, `core`, `stack` |
 
+`<sub0pipeline/sub0pipeline.hpp>` includes the whole core API. Each part can
+also be included on its own:
+
+| Header | Provides |
+|---|---|
+| `pipeline.hpp` | `Pipeline` |
+| `job.hpp`, `job_group.hpp` | `Job`, `JobId`, `JobStatus`; `JobGroup`, `parallel` |
+| `executor.hpp`, `scoped_executor.hpp`, `executor_factory.hpp` | `IExecutor`; `ScopedExecutor`; the `make...Executor` factories |
+| `observer.hpp`, `dependency_range.hpp` | `IObserver`, `RunId`; `DependencyRange` |
+| `error.hpp`, `tick_job.hpp`, `config.hpp` | `PipelineError`; `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
+| `dsl.hpp`, `deadline.hpp`, `run_scope.hpp` | Opt-in layers, not part of the umbrella |
+
 Job statuses distinguish pending, ready, running, done, failed, skipped, timed
 out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
 `kCyclicDependency`, `kUnknownJob`, `kNotArmed`, `kNotOnDemand` and `kBusy`.

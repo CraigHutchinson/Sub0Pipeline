@@ -188,7 +188,7 @@ TEST_CASE("SubDAG: ScopedExecutor -- dynamic job count determined at runtime")
         ScopedExecutor scoped{*exec};
         Pipeline inner;
         for (int i = 0; i < dynamicCount; ++i)
-            inner.emplace([&]{ innerRuns.fetch_add(1, std::memory_order_relaxed); });
+            (void)inner.emplace([&]{ innerRuns.fetch_add(1, std::memory_order_relaxed); });
         return inner.run(scoped);
     }).name("dynamic_fan_out");
 

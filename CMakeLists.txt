@@ -41,7 +41,8 @@ target_compile_definitions(Sub0Pipeline PUBLIC
 )
 
 target_compile_options(Sub0Pipeline PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /Zc:preprocessor>
+    # C4324: Pipeline::Impl is padded on purpose (alignas(64) hot counter).
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /wd4324 /Zc:preprocessor>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
 )
 
