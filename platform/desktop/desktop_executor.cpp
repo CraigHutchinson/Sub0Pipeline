@@ -34,7 +34,6 @@ public:
         uint32_t                      /*stackBytes*/) override
     {
         std::lock_guard lk{mtx_};
-        ++inFlight_;
         threads_.emplace_back([this, fn = std::move(fn), oc = std::move(onComplete)]
         {
             fn();
@@ -43,6 +42,10 @@ public:
             std::lock_guard done{mtx_};
             if (--inFlight_ == 0U) idle_.notify_all();
         });
+        // Counted only once the thread exists: if starting it throws, nothing
+        // is left in flight. The new thread cannot decrement before this,
+        // because it needs mtx_ to do so.
+        ++inFlight_;
     }
 
     void wait_all() override
