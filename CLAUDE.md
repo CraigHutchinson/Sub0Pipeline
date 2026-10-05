@@ -17,8 +17,8 @@ Benchmarks are built with the `default` preset but not run by ctest:
 ## Commit Rules
 
 ### API Changes
-Any commit that changes the public API surface in `include/sub0pipeline/sub0pipeline.hpp`
-must document the change in the commit message. The public API includes:
+Any commit that changes the public API surface in `include/sub0pipeline/`
+(umbrella: `sub0pipeline.hpp`) must document the change in the commit message. The public API includes:
 - `sub0pipeline::Pipeline` — all public methods
 - `sub0pipeline::Job` — all builder methods
 - `sub0pipeline::IExecutor` / `sub0pipeline::IObserver` — virtual interfaces
