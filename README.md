@@ -27,7 +27,7 @@ through `std::expected`.
 | Job hints | Names, status text, timeout, priority, core affinity and stack size; platform hints depend on the executor |
 | Observation and diagnostics | Start/finish/failure hooks, status/name queries, snapshots, first failure name, error context and text DAG dump |
 | On-demand jobs | `add_on_demand`, `arm`, `trigger`; excluded from normal roots and invoked individually |
-| Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with `add_tick` / `run_loop` |
+| Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with `add_tick` / `run_loop(stop_token)` |
 | Build and validation | CMake targets/install support, optional executor builds, no-exception core configuration, examples, functional/sanitizer suites and opt-in benchmarks |
 
 **Not current guarantees:** allocation-free execution, custom graph allocators,
@@ -37,6 +37,20 @@ I/O, work stealing, distributed jobs, or automatic idempotency of external write
 Bounded Qt/Zephyr examples and injected deadline services are available; hardware
 validation and fixed-capacity execution remain separate work. See
 [embedded and cancellation design notes](docs/structured-cancellation.md).
+
+## Remaining work
+
+- [Issue #4](https://github.com/CraigHutchinson/Sub0Pipeline/issues/4) tracks
+  measured, explicit bounded-allocation profiles. The current implementation
+  retains some reusable scratch but still uses dynamic allocation; it does not
+  promise heap-free execution or a caller-selected total memory budget.
+- `run_loop(std::stop_token)` returns after the current tick pass; callbacks in
+  that pass are not interrupted, and the platform yield may delay return by one
+  interval. The legacy no-argument `run_loop()` stays non-returning for
+  compatibility ([issue #8](https://github.com/CraigHutchinson/Sub0Pipeline/issues/8)).
+- [Issue #9](https://github.com/CraigHutchinson/Sub0Pipeline/issues/9) tracks
+  the no-op `dump_trace()` API and the `IObserver::onDependency()` hook, which
+  is declared but not currently emitted.
 
 ## Quick start
 
@@ -181,8 +195,10 @@ wait for executor completion before retrying. Each accepted invocation receives
 a fresh cancellation state. Foreign handles are rejected.
 
 `run_until()` reruns a graph until stopped; the caller supplies pacing.
-`run_loop()` is a blocking tick loop with approximately millisecond polling and
-no stop-token overload. These are not hard real-time scheduling guarantees.
+`run_loop(stop_token)` returns after the current tick pass when stopped; the
+legacy no-argument `run_loop()` remains blocking and non-returning. Its
+approximately millisecond host polling (one RTOS tick on FreeRTOS) is not
+interruptible, and neither loop is a hard real-time scheduling guarantee.
 Scheduler APIs are **task-context only**. ISR integration should enqueue a bounded
 event for later task-context dispatch using platform-proven primitives.
 
@@ -229,7 +245,7 @@ exhaustion recoverable.
 | Execute / cancel | `run`, `run_inline`, `run_until`, `Job::cancel` |
 | Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `snapshot` |
 | Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text` |
-| Events / ticks | `add_on_demand`, `arm`, `trigger`, `add_tick`, `run_loop` |
+| Events / ticks | `add_on_demand`, `arm`, `trigger`, `add_tick`, `run_loop(stop_token)`; legacy non-returning `run_loop()` |
 | Job configuration | `name`, `status`, `timeout`, `optional`, `priority`, `core`, `stack` |
 
 Job statuses distinguish pending, ready, running, done, failed, skipped, timed
@@ -300,7 +316,7 @@ and manually triggered CI workflow retain machine-readable evidence. Follow
 | [validate_dag](examples/validate_dag/main.cpp) | `validate()`, cycle detection and `dump_text()` |
 | [observer_profiling](examples/observer_profiling/main.cpp) | Custom `IObserver` progress and per-job timing |
 | [job_options](examples/job_options/main.cpp) | Job builder methods, `precede()`/`succeed()` and optional chains |
-| [tick_loop](examples/tick_loop/main.cpp) | **Disabled — not built.** `add_tick()`/`run_loop()`; needs a `run_loop()` stop mechanism ([#8](https://github.com/CraigHutchinson/Sub0Pipeline/issues/8)) |
+| [tick_loop](examples/tick_loop/main.cpp) | Recurring ticks with joinable `std::jthread` shutdown |
 
 The suites include core and DSL regression tests plus optional Qt and Zephyr
 adapter executions. Coverage includes
@@ -309,7 +325,7 @@ cooperative work, owner teardown, scoped execution and worker completion. Releas
 ASan/UBSan and ThreadSanitizer are separate validation configurations; performance
 runs use unsanitized Release binaries.
 
-[AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the PR template codify
+[AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the PR template codify
 C++23/reuse, product-agnostic wording, ownership, embedded constraints, performance
-evidence and documentation gates. Remaining cancellation/adapter work is tracked
-in [issue #1](https://github.com/CraigHutchinson/Sub0Pipeline/issues/1).
+evidence and documentation gates. Remaining fixed-storage work is tracked in
+[issue #4](https://github.com/CraigHutchinson/Sub0Pipeline/issues/4).

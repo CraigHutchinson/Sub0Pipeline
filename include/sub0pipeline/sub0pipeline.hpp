@@ -646,6 +646,15 @@ public:
     [[noreturn]] void run_loop();
 
     /**
+     * @brief Run recurring tick jobs until stop is requested.
+     *
+     * Stop is observed between complete tick passes. A running tick callback
+     * is allowed to finish; the platform yield between passes is not
+     * interruptible and may delay return by one yield interval.
+     */
+    void run_loop(std::stop_token stop);
+
+    /**
      * @brief Re-run the pipeline repeatedly until the stop token is signalled.
      *
      * Each iteration calls run(executor) and discards the result. Useful for

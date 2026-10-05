@@ -121,6 +121,6 @@ prevention and shutdown draining. Use documented platform ISR primitives or
 prove target atomic properties. Lock-free atomics alone do not establish the
 whole protocol's interrupt safety.
 
-Current groundwork centralizes execution policy and documents this boundary.
-No interrupt API or allocation-free guarantee is added. Validate future adapters
-on target toolchains with bounded RAM/stack and no-exception configurations.
+The core and current adapters keep scheduling in task context; no interrupt API
+or allocation-free guarantee is added. Validate future adapters on target
+toolchains with bounded RAM/stack and no-exception configurations.
