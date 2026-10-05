@@ -212,6 +212,12 @@ audit. "Unchanged" means the ranges overlap. Summaries with every sample are in
 | 4 | One external-stop registration per run, which requests stop on every node, instead of one per job | External-token 10-job chain 650 ns [642–660] to 331 ns [326–334], now 49 ns above the plain chain (was 351 ns). Plain 10-job chain 299 ns to 282 ns; other cases unchanged |
 | 5 | `PriorityExecutor`: plain condition variable with a stop flag, completion lock taken only when the in-flight count reaches zero, and no wake-up when every worker is busy | 10-job chain 14.2 µs [13.2–14.7] to 12.5 µs [11.6–13.1]; 1000-job layered DAG 410 µs [395–452] to 337 µs [301–356]; 300-job fan-out 131 µs [115–161] to 77 µs [66–121], ranges overlapping. Inline and desktop cases unchanged |
 | 6 | Plain callables are stored directly instead of inside a second `std::function`; new `Pipeline::reserve(jobCount)` | Construct 10-job chain 1.99 µs [1.73–2.24] to 1.54 µs [1.23–1.60]; allocations per 10-job pipeline 28 to 18. With `reserve(1000)`, constructing the 1000-job layered DAG takes 82.3 µs [81.7–83.7] against 138.8 µs [129.4–144.0] without. Run cases unchanged |
+| 2 | New `IExecutor::runs_inline()`. When it returns true, `run()` calls ready jobs from its own worklist instead of through `dispatch()`; `run_inline()` and `SequentialExecutor` opt in | A 20,000-job chain runs on the default stack (2,000 overflowed). `run_inline` 10-job chain 283 ns [281–289] to 246 ns [242–252]; `run_inline` 1000-job layered DAG 39.0 µs [38.6–40.1] to 35.1 µs [34.1–36.7]. Jobs on these executors now run in the order they become ready rather than depth-first. Other cases unchanged |
+
+A first attempt at finding 2 queued jobs inside the executor and drained them
+in a loop. It fixed the recursion but made the same cases about 60% slower,
+because every job's two `std::function` objects were moved into and out of the
+queue. Letting the scheduler own the loop needs only a job index per entry.
 
 Finding 6's default-name cost was left alone: names are handed to observers as
 borrowed views, so they have to exist before a run, and short names do not

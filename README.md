@@ -53,9 +53,10 @@ fixed-capacity execution remain separate work. See
 
 ## Remaining work
 
-- Inline executors (`run_inline()`, `SequentialExecutor`) recurse once per
-  dependency link, at roughly 0.5 KB of stack each on the audited host. Size
-  the stack for the longest chain, or use a threaded executor.
+- A custom executor that runs each job from inside `dispatch()` nests one call
+  per dependency link, so stack use grows with the longest chain. Override
+  `IExecutor::runs_inline()` to return true, as `run_inline()` and
+  `SequentialExecutor` do, and the pipeline calls ready jobs from a loop instead.
 - [Issue #4](https://github.com/CraigHutchinson/Sub0Pipeline/issues/4) tracks
   measured, explicit bounded-allocation profiles. The current implementation
   retains some reusable scratch but still uses dynamic allocation; it does not
@@ -195,7 +196,7 @@ in validation/failure allocations and its retained-memory tradeoff.
 
 | Executor | Target / location | Behavior |
 |---|---|---|
-| `SequentialExecutor` | `Sub0Pipeline::Headless` | Executes inline; deterministic untimed test scheduling |
+| `SequentialExecutor` | `Sub0Pipeline::Headless` | Runs jobs on the calling thread in the order they become ready; constant stack depth; deterministic untimed test scheduling |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Thread per job; joins dispatched work; ignores priority/affinity hints |
 | `PriorityExecutor` | `Sub0Pipeline::Priority` | Configurable worker count; higher priorities start first; already-running work is not preempted |
 | `ScopedExecutor` | Core header | Reuses a parent executor and waits only for locally dispatched jobs |

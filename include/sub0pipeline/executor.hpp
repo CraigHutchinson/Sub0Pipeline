@@ -49,6 +49,19 @@ public:
 
     /** @return Number of parallel execution slots (cores / thread pool size). */
     [[nodiscard]] virtual int concurrency() const noexcept = 0;
+
+    /**
+     * @return true if dispatch() runs the job to completion on the calling
+     *         thread before it returns.
+     *
+     * Pipeline::run() then calls ready jobs itself, in the order they become
+     * ready, and does not use dispatch(). Stack depth stays constant however
+     * long a dependency chain is; an executor that ran each job from inside
+     * dispatch() would nest one call per link. Core affinity, priority and
+     * stack hints do not apply to such a run. Pipeline::trigger() still goes
+     * through dispatch().
+     */
+    [[nodiscard]] virtual bool runs_inline() const noexcept { return false; }
 };
 
 } // namespace sub0pipeline

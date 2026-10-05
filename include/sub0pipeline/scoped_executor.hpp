@@ -85,6 +85,11 @@ public:
         return parent_.concurrency();
     }
 
+    [[nodiscard]] bool runs_inline() const noexcept override
+    {
+        return parent_.runs_inline();
+    }
+
 private:
     IExecutor&                parent_;
     std::atomic<uint32_t>     localInFlight_{0U};

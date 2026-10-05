@@ -36,6 +36,7 @@ public:
     }
 
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
+    [[nodiscard]] bool runs_inline() const noexcept override { return true; }
 };
 
 /** @return A SequentialExecutor that runs all jobs inline (no threads). */

@@ -355,6 +355,23 @@ int main(int argc, char** argv)
         });
     }
 
+    // ── Library inline executors ─────────────────────────────────────────────
+    // The cases above use this file's own executor. These use the two the
+    // library ships, which is what run_inline() and bare-metal callers get.
+
+    runner.group("Library inline executors", Cost::kCheap);
+
+    {
+        auto sequential = makeSequentialExecutor();
+        Pipeline pipeline;
+        buildChain(pipeline, 10);
+        runner.run("run_inline: 10-job linear chain", [&] { (void)pipeline.run_inline(); });
+        runner.run("sequential executor: 10-job linear chain", [&]
+        {
+            (void)pipeline.run(*sequential);
+        });
+    }
+
     // ── Scale ─────────────────────────────────────────────────────────────────
     // Larger graphs: per-job cost once the graph no longer fits in L1, and the
     // successor pool once fan-out exceeds the four inline slots. The chain is
@@ -402,6 +419,7 @@ int main(int argc, char** argv)
         Pipeline pipeline;
         buildLayered(pipeline, 20, 50, 4);
         runner.run("1000-job layered DAG (20x50, fan-in 4)", [&] { (void)pipeline.run(exec); });
+        runner.run("run_inline: 1000-job layered DAG", [&] { (void)pipeline.run_inline(); });
         runner.run("validate 1000-job layered DAG", [&]
         {
             ankerl::nanobench::doNotOptimizeAway(pipeline.validate());
