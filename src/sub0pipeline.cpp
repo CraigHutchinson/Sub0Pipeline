@@ -634,6 +634,8 @@ JobGroup& JobGroup::precede(JobGroup const& other)
 
 Pipeline::Pipeline() : impl_{std::make_unique<Impl>()} {}
 Pipeline::~Pipeline() = default;
+Pipeline::Pipeline(Pipeline&&) noexcept = default;
+Pipeline& Pipeline::operator=(Pipeline&&) = default;
 
 // ── Internal node access ──────────────────────────────────────────────────────
 
@@ -651,7 +653,7 @@ const Pipeline::Node& Pipeline::node(uint32_t idx) const
 
 Job Pipeline::emplace(std::function<std::expected<void, PipelineError>()> fn)
 {
-    return Job{Impl::ensure(impl_).addNode(Impl::ignoringStop(std::move(fn)), "job_", 0U), this};
+    return emplacePlain(Impl::ignoringStop(std::move(fn)));
 }
 
 Job Pipeline::emplace(
@@ -662,10 +664,19 @@ Job Pipeline::emplace(
 
 Job Pipeline::emplace_void(std::function<void()> fn)
 {
-    return Job{Impl::ensure(impl_).addNode(
+    return emplacePlain(
         [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
-        { f(); return {}; },
-        "job_", 0U), this};
+        { f(); return {}; });
+}
+
+Job Pipeline::emplacePlain(std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
+{
+    return Job{Impl::ensure(impl_).addNode(std::move(fn), "job_", 0U), this};
+}
+
+void Pipeline::reserve(std::size_t jobCount)
+{
+    Impl::ensure(impl_).nodes_.reserve(jobCount);
 }
 
 std::size_t Pipeline::size() const noexcept

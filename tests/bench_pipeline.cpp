@@ -150,6 +150,16 @@ void buildLayered(Pipeline& pipeline, int layers, int width, int fanIn)
     }
 }
 
+// Older baselines built with this harness have no Pipeline::reserve.
+template<typename P>
+constexpr bool kHasReserve = requires(P& pipeline) { pipeline.reserve(std::size_t{1}); };
+
+template<typename P>
+void reserveIfSupported(P& pipeline, std::size_t jobs)
+{
+    if constexpr (kHasReserve<P>) pipeline.reserve(jobs);
+}
+
 // ── Case runner ──────────────────────────────────────────────────────────────
 
 /// How long one operation takes, which sets how it is sampled.
@@ -358,6 +368,16 @@ int main(int argc, char** argv)
         buildLayered(pipeline, 20, 50, 4);
         ankerl::nanobench::doNotOptimizeAway(&pipeline);
     });
+
+    if (kHasReserve<Pipeline>) {
+        runner.run("construct 1000-job layered DAG, reserved", []
+        {
+            Pipeline pipeline;
+            reserveIfSupported(pipeline, 1000);
+            buildLayered(pipeline, 20, 50, 4);
+            ankerl::nanobench::doNotOptimizeAway(&pipeline);
+        });
+    }
 
     runner.run("construct 300-job fan-out (1 root + 299 leaves)", []
     {

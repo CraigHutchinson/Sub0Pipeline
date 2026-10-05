@@ -211,6 +211,11 @@ audit. "Unchanged" means the ranges overlap. Summaries with every sample are in
 | 3 | Plain jobs keep their stop state until a stop is requested and are handed an empty token; jobs that take a `std::stop_token` still get new state every run | Run 10-job chain 672 ns [668–680] to 299 ns [296–301]; 1000-job layered DAG 78.0 µs to 39.9 µs; external-token chain 1,029 ns to 654 ns; observer chain 745 ns to 372 ns. Warm run allocations 10 to 0. Construction, validation and timeout cases unchanged |
 | 4 | One external-stop registration per run, which requests stop on every node, instead of one per job | External-token 10-job chain 650 ns [642–660] to 331 ns [326–334], now 49 ns above the plain chain (was 351 ns). Plain 10-job chain 299 ns to 282 ns; other cases unchanged |
 | 5 | `PriorityExecutor`: plain condition variable with a stop flag, completion lock taken only when the in-flight count reaches zero, and no wake-up when every worker is busy | 10-job chain 14.2 µs [13.2–14.7] to 12.5 µs [11.6–13.1]; 1000-job layered DAG 410 µs [395–452] to 337 µs [301–356]; 300-job fan-out 131 µs [115–161] to 77 µs [66–121], ranges overlapping. Inline and desktop cases unchanged |
+| 6 | Plain callables are stored directly instead of inside a second `std::function`; new `Pipeline::reserve(jobCount)` | Construct 10-job chain 1.99 µs [1.73–2.24] to 1.54 µs [1.23–1.60]; allocations per 10-job pipeline 28 to 18. With `reserve(1000)`, constructing the 1000-job layered DAG takes 82.3 µs [81.7–83.7] against 138.8 µs [129.4–144.0] without. Run cases unchanged |
+
+Finding 6's default-name cost was left alone: names are handed to observers as
+borrowed views, so they have to exist before a run, and short names do not
+allocate.
 
 Finding 5 is not exhausted. A threading profile after the change still puts all
 lock wait on the single queue mutex, split evenly between `dispatch` and the
