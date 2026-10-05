@@ -165,7 +165,7 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 | Core DAG execution | Always | Job state, dependency counters, cancellation checks and run guard. Each run renews the stop state of every job that takes a `std::stop_token` (one allocation each); plain jobs keep theirs until a stop is requested |
 | Validation | Automatic on topology change; explicit `validate()` available | Retains reusable graph-sized scratch; validation queries serialize; automatic validation is cached for unchanged repeated runs |
 | Failure propagation | Required failure/cancellation | Lazily reserves a graph-sized worklist, reuses it across runs, and drains callbacks before completion |
-| External cancellation forwarding | Supply a stoppable token | Stop callback registration per executing job; skipped for the no-token path |
+| External cancellation forwarding | Supply a stoppable token | One stop callback registration per run; a request then signals every job in the graph. Skipped for the no-token path |
 | Observer callbacks and tracing | Supply an `IObserver*` | Absent when no observer is supplied; an attached observer receives concurrent callbacks and pays its own capture/formatting costs |
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |

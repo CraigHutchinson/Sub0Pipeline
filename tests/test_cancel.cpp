@@ -324,6 +324,28 @@ TEST_CASE("Cancel: failed commit never acknowledges")
     CHECK(pipe.status(ack) == JobStatus::kSkipped);
 }
 
+TEST_CASE("Cancel: an external stop during a run does not block a later on-demand trigger")
+{
+    // The run-wide stop reaches every node, including on-demand ones that the
+    // run never dispatches; a trigger must still start from clean state.
+    RecordingExecutor exec;
+    Pipeline pipe;
+    std::stop_source external;
+    int demanded = 0;
+    (void)pipe.emplace([&] { external.request_stop(); });
+    auto job = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+        ++demanded;
+        return {};
+    });
+
+    CHECK(pipe.run(exec, external.get_token()).has_value());
+
+    pipe.arm(exec);
+    REQUIRE(pipe.trigger(job).has_value());
+    CHECK(demanded == 1);
+    CHECK(pipe.status(job) == JobStatus::kDone);
+}
+
 TEST_CASE("Cancel: queued on-demand execution uses the same cancellation gate")
 {
     Pipeline pipe;

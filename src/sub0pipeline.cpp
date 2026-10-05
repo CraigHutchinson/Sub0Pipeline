@@ -28,6 +28,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <stop_token>
 #include <string>
@@ -361,18 +362,6 @@ struct Pipeline::Impl
     {
         std::lock_guard lock{stopMtx_};
         return node.stopSource_;
-    }
-
-    auto execute(Node& node, std::stop_token external = {})
-        -> std::expected<void, PipelineError>
-    {
-        // Node stop sources are immutable between run initialization and join.
-        // External forwarding is paid for only when a stoppable token is supplied.
-        if (!external.stop_possible()) return invoke(node);
-        std::stop_callback forwardStop{external, [&node] {
-            node.stopSource_.request_stop();
-        }};
-        return invoke(node);
     }
 
     auto invokeWithDeadline(Node& node) -> std::expected<void, PipelineError>
@@ -793,7 +782,6 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         std::atomic<bool>&  hasFatalFailure;
         PipelineError&      fatalError;
         std::mutex&         fatalMtx;
-        std::stop_token externalStop;
 
         std::mutex skipMutex;
         std::size_t skipRead = 0;
@@ -852,7 +840,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                                                        std::memory_order_acq_rel)) return;
             if (observer) observer->onJobStart(runId, idx, nd.nameStr_);
 
-            auto result = impl.execute(nd, externalStop);
+            auto result = impl.invoke(nd);
 
             const auto jobStatus = statusOf(result);
             nd.jobStatus_.store(jobStatus, std::memory_order_release);
@@ -905,7 +893,22 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     const RunId runId = observer ? observer->onRunStart() : 0U;
     DispatchContext ctx{*impl_, *this, executor, observer, runId,
                         static_cast<uint32_t>(total),
-                        hasFatalFailure, fatalError, fatalMtx, external};
+                        hasFatalFailure, fatalError, fatalMtx};
+
+    // Forward an external stop with one registration for the whole run, not
+    // one per job. It reaches every node: jobs not yet started are refused at
+    // entry, and running cooperative jobs see it through their own token.
+    // Node stop sources are immutable from run initialization until this
+    // registration is destroyed, which waits for a callback still in progress.
+    struct ForwardStop {
+        Impl& impl;
+        void operator()() const noexcept
+        {
+            for (auto& node : impl.nodes_) node.stopSource_.request_stop();
+        }
+    };
+    std::optional<std::stop_callback<ForwardStop>> forwardStop;
+    if (external.stop_possible()) forwardStop.emplace(external, ForwardStop{*impl_});
 
     for (auto idx : impl_->roots_) {
         auto& nd = impl_->nodes_[idx];
@@ -1133,7 +1136,7 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
             const RunId runId = obs ? obs->onRunStart() : 0U;
             if (obs) obs->onJobStart(runId, idx, n.nameStr_);
 
-            auto result = impl->execute(n);
+            auto result = impl->invoke(n);
 
             const auto status = statusOf(result);
             n.jobStatus_.store(status, std::memory_order_release);
