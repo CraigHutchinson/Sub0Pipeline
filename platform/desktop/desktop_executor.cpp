@@ -4,8 +4,7 @@
 // Each dispatched job runs as a joinable std::thread.
 // Used for desktop simulation and integration testing with real parallelism.
 
-#include <sub0pipeline/executor.hpp>
-#include <sub0pipeline/executor_factory.hpp>
+#include <sub0pipeline/executor/desktop_executor.hpp>
 
 #include <condition_variable>
 #include <cstdint>

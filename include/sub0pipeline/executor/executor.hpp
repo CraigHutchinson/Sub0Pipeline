@@ -1,4 +1,4 @@
-// include/sub0pipeline/executor.hpp
+// include/sub0pipeline/executor/executor.hpp
 //
 // IExecutor — platform-injectable execution backend interface.
 #pragma once
