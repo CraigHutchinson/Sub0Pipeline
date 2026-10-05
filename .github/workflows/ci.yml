@@ -5,21 +5,45 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  workflow_dispatch:
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  ci-scope:
+    if: github.event.action != 'labeled' || github.event.label.name == 'ci:full'
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      matrix: ${{ steps.scope.outputs.matrix }}
+    steps:
+      - name: Select validation scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          LABEL_NAME: ${{ github.event.label.name }}
+        run: |
+          if [[ "$EVENT_NAME" != pull_request || "$EVENT_ACTION" == ready_for_review ||
+                ( "$EVENT_ACTION" == labeled && "$LABEL_NAME" == ci:full ) ]]; then
+            echo 'full=true' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"compiler":"gcc","cc":"gcc","cxx":"g++"},{"compiler":"clang","cc":"clang-19","cxx":"clang++-19"}]}' >> "$GITHUB_OUTPUT"
+          else
+            echo 'full=false' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"compiler":"gcc","cc":"gcc","cxx":"g++"}]}' >> "$GITHUB_OUTPUT"
+          fi
+
   build-linux:
+    needs: ci-scope
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        compiler: [gcc, clang]
-        include:
-          - compiler: gcc
-            cc: gcc
-            cxx: g++
-          - compiler: clang
-            cc: clang-19
-            cxx: clang++-19
+      matrix: ${{ fromJSON(needs.ci-scope.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - name: Install C++23 Clang toolchain
@@ -36,6 +60,8 @@ jobs:
         run: ctest --preset ci-unix
 
   build-windows:
+    needs: ci-scope
+    if: needs.ci-scope.outputs.full == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +73,8 @@ jobs:
         run: ctest --preset ci-msvc
 
   build-macos:
+    needs: ci-scope
+    if: needs.ci-scope.outputs.full == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,6 +86,8 @@ jobs:
         run: ctest --preset ci-unix
 
   sanitizers:
+    needs: ci-scope
+    if: needs.ci-scope.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +106,8 @@ jobs:
           cmake --build build-noexcept --target Sub0Pipeline
 
   thread-sanitizer:
+    needs: ci-scope
+    if: needs.ci-scope.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -91,6 +123,8 @@ jobs:
         run: ctest --preset ci-tsan --timeout 30
 
   qt-adapter:
+    needs: ci-scope
+    if: needs.ci-scope.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -105,6 +139,8 @@ jobs:
         run: ctest --test-dir build-qt --output-on-failure --timeout 30
 
   zephyr-adapter:
+    needs: ci-scope
+    if: needs.ci-scope.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

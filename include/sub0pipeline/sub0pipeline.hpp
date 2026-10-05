@@ -470,8 +470,8 @@ public:
      * @param error    The PipelineError code.
      * @param message  Diagnostic string set by the job via
      *                 Pipeline::set_current_job_error() -- empty if the job
-     *                 did not provide context.  Only allocated on the failure
-     *                 branch; the success hot-path never touches this string.
+     *                 did not provide context. The view is valid only during
+     *                 this callback; supplying diagnostic text may allocate.
      */
     virtual void onJobFailure([[maybe_unused]] RunId runId,
                               [[maybe_unused]] JobId jobId,
@@ -697,8 +697,7 @@ public:
      *
      * Call on the failure branch before returning `std::unexpected(...)`.  The
      * message is consumed by `dispatchJob` and forwarded to `IObserver::onJobFailure`.
-     * Zero cost on the success path -- the thread-local string is never read when
-     * the job succeeds.
+     * Supplying diagnostic text may allocate; leave it unset on success.
      *
      * @code
      *   auto fn = [&]() -> std::expected<void, PipelineError> {
@@ -717,7 +716,8 @@ public:
      *
      * Each `JobSnapshot` is a {name, status} pair read via relaxed atomic load --
      * no locks, no synchronisation barrier.  Safe to call from any thread at any
-     * time; results are a consistent point-in-time view of the per-job atomics.
+     * time while the graph is stable; individual status reads may reflect
+     * different instants and do not form a coherent whole-graph snapshot.
      * Allocates one `std::vector` per call; poll at the display frame rate (not
      * tighter than 16 ms) to avoid unnecessary pressure.
      *
