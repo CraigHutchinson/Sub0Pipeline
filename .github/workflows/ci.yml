@@ -39,6 +39,7 @@ jobs:
           fi
 
   build-linux:
+    name: build-linux (${{ matrix.compiler }})
     needs: ci-scope
     runs-on: ubuntu-latest
     strategy:
