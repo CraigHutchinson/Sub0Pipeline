@@ -53,9 +53,6 @@ fixed-capacity execution remain separate work. See
 
 ## Remaining work
 
-- One job can have at most about 360 successors; a wider fan-out throws (or
-  terminates without exceptions) while the graph is being built. See finding 1
-  of the [performance audit](docs/performance-audit.md).
 - Inline executors (`run_inline()`, `SequentialExecutor`) recurse once per
   dependency link, at roughly 0.5 KB of stack each on the audited host. Size
   the stack for the longest chain, or use a threaded executor.

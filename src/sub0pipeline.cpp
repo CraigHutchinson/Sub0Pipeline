@@ -87,13 +87,20 @@ void ensureNodeIndexFitsSuccessorStorage(std::size_t nodeCount)
 
 // ── PoolSuccessors: pool/arena-backed successor list ──────────────────────────
 // 12 bytes: stores up to 4 successor indices inline using uint16_t (node indices
-// ≤ 65535 cover all realistic pipelines). Overflow spills into a flat uint16_t
-// arena owned by Pipeline::Impl -- zero heap allocation after initial reserve.
+// ≤ 65535 cover all realistic pipelines). A longer list moves to a block in a
+// flat uint16_t arena owned by Pipeline::Impl, so the node itself never grows.
 //
 // Layout (12 bytes, align 2):
-//   [0..1]  size_    -- bit[15] = pool-mode flag; bits[14:0] = count (max 32767)
-//   [2..3]  poolIdx_ -- uint16_t start offset in Impl::succPool_ (pool mode)
-//   [4..11] inline_[4] -- 4 × uint16_t inline entries (8 bytes)
+//   [0..1]  size_      -- bit[15] = pool-mode flag; bits[14:0] = count (max 32767)
+//   [2..3]  poolIdx_   -- low 16 bits of the block's start in Impl::succPool_
+//   [4..11] inline_[4] -- inline mode: the entries themselves
+//                         pool mode:   [0] = block capacity, [1] = high 16 bits
+//                                      of the block's start, [2..3] unused
+//
+// A full block doubles. If it is the last block in the arena it grows in place;
+// otherwise the entries move to a new block at the end and the old one is
+// abandoned. Abandoned blocks sum to less than the live block, so the arena
+// holds under four entries per stored edge.
 
 struct PoolSuccessors
 {
@@ -102,8 +109,8 @@ struct PoolSuccessors
     static constexpr uint16_t kCountMask = 0x7FFFU; ///< bits[14:0] = count
 
     uint16_t size_{0};      ///< bit[15] = pool flag; bits[14:0] = entry count
-    uint16_t poolIdx_{0};   ///< start index into Impl::succPool_ (pool mode only)
-    uint16_t inline_[kInlineCap]{};  ///< inline storage: 4 × uint16_t = 8 bytes
+    uint16_t poolIdx_{0};   ///< low half of the block start (pool mode only)
+    uint16_t inline_[kInlineCap]{};  ///< entries, or block metadata in pool mode
 
     PoolSuccessors()  = default;
     ~PoolSuccessors() = default; // no owned resources -- pool owned by Impl
@@ -124,40 +131,50 @@ struct PoolSuccessors
     [[nodiscard]] uint16_t size()   const noexcept { return count(); }
     [[nodiscard]] bool     isPool() const noexcept { return (size_ & kPoolFlag) != 0U; }
 
-    // Push a node index into the arena-backed successor list.
-    // Pool overflow appends a new contiguous block; the old block is abandoned
-    // (wasted but bounded: typically ≤ 35 abandoned entries per node worst case).
+    // Append a successor index. May grow `pool`, which invalidates pointers
+    // previously returned by begin()/range() for any node.
     void push_back(uint16_t v, std::vector<uint16_t>& pool)
     {
         const uint16_t n = count();
-        if (!isPool() && n < kInlineCap) {
-            inline_[n] = v;
-            size_ = static_cast<uint16_t>(n + 1U);
-        } else if (!isPool()) {
-            // Spill inline → pool: append a new contiguous block.
-            if (pool.size() >= 0xFFFFU)
-                SUB0PIPELINE_THROW("succPool_ exceeded 65535-entry uint16_t address range");
-            const auto start = static_cast<uint16_t>(pool.size());
-            for (uint16_t i = 0; i < n; ++i) pool.push_back(inline_[i]);
-            pool.push_back(v);
-            poolIdx_ = start;
-            size_    = static_cast<uint16_t>(kPoolFlag | (n + 1U));
-        } else {
-            // Grow pool: allocate a fresh contiguous block (old block orphaned).
-            if (pool.size() >= 0xFFFFU)
-                SUB0PIPELINE_THROW("succPool_ exceeded 65535-entry uint16_t address range");
-            const auto start = static_cast<uint16_t>(pool.size());
-            for (uint16_t i = 0; i < n; ++i) pool.push_back(pool[poolIdx_ + i]);
-            pool.push_back(v);
-            poolIdx_ = start;
-            size_    = static_cast<uint16_t>(kPoolFlag | (n + 1U));
+        if (!isPool()) {
+            if (n < kInlineCap) {
+                inline_[n] = v;
+                size_ = static_cast<uint16_t>(n + 1U);
+                return;
+            }
+            // Spill: the inline entries become the head of a new block.
+            const std::size_t start = pool.size();
+            pool.resize(start + 2U * kInlineCap);
+            for (uint16_t i = 0; i < n; ++i) pool[start + i] = inline_[i];
+            setBlock(start, static_cast<uint16_t>(2U * kInlineCap));
+            size_ = static_cast<uint16_t>(kPoolFlag | n);
         }
+        if (n == kCountMask)
+            SUB0PIPELINE_THROW("A job cannot have more than 32767 successors");
+
+        std::size_t start = blockStart();
+        const uint16_t capacity = blockCapacity();
+        if (n == capacity) {
+            const auto grown = static_cast<uint16_t>(capacity > kCountMask / 2U
+                ? kCountMask : capacity * 2U);
+            if (start + capacity == pool.size()) {
+                pool.resize(start + grown);   // last block: extend in place
+            } else {
+                const std::size_t moved = pool.size();
+                pool.resize(moved + grown);
+                for (uint16_t i = 0; i < n; ++i) pool[moved + i] = pool[start + i];
+                start = moved;
+            }
+            setBlock(start, grown);
+        }
+        pool[start + n] = v;
+        size_ = static_cast<uint16_t>(kPoolFlag | (n + 1U));
     }
 
-    // Returns a pointer into either inline_ or Impl::succPool_.data() + poolIdx_.
+    // Returns a pointer into either inline_ or Impl::succPool_.
     // Pool pointer is valid until Impl::succPool_ is next modified (reallocated).
     const uint16_t* begin(const std::vector<uint16_t>& pool) const noexcept
-    { return isPool() ? pool.data() + poolIdx_ : inline_; }
+    { return isPool() ? pool.data() + blockStart() : inline_; }
     const uint16_t* end(const std::vector<uint16_t>& pool)   const noexcept
     { return begin(pool) + count(); }
 
@@ -169,6 +186,18 @@ struct PoolSuccessors
     };
     Range range(const std::vector<uint16_t>& pool) const noexcept
     { return {begin(pool), end(pool)}; }
+
+private:
+    [[nodiscard]] std::size_t blockStart() const noexcept
+    { return static_cast<std::size_t>(poolIdx_) | (static_cast<std::size_t>(inline_[1]) << 16U); }
+    [[nodiscard]] uint16_t blockCapacity() const noexcept { return inline_[0]; }
+
+    void setBlock(std::size_t start, uint16_t capacity) noexcept
+    {
+        poolIdx_   = static_cast<uint16_t>(start & 0xFFFFU);
+        inline_[1] = static_cast<uint16_t>(start >> 16U);
+        inline_[0] = capacity;
+    }
 };
 static_assert(sizeof(PoolSuccessors) == 12,
     "PoolSuccessors must be exactly 12 bytes");
@@ -541,8 +570,9 @@ Job& Job::succeed(Job other)
     auto& selfNode  = pipeline_->node(idx_);
     auto& otherNode = pipeline_->node(other.idx_);
     pipeline_->impl_->rootsCached_ = false;
-    ++selfNode.predecessorCount_;
+    // Record the edge first: if it is rejected, no dependency count is left behind.
     otherNode.successors_.push_back(static_cast<uint16_t>(idx_), pipeline_->impl_->succPool_);
+    ++selfNode.predecessorCount_;
     return *this;
 }
 
