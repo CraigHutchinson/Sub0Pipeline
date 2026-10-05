@@ -7,11 +7,10 @@
 #include "test_helpers.hpp"
 #include "doctest.h"
 
-#include <cstdint>
-#include <limits>
-
 #include <algorithm>
+#include <cstdint>
 #include <latch>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <thread>

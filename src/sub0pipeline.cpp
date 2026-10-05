@@ -834,7 +834,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
             if (!result && (!nd.isOptional() || result.error() == PipelineError::kCancelled)) {
                 // Report failure detail through the dedicated hook -- zero cost when
-                // no observer is attached or observer's onFailure is the default no-op.
+                // no observer is attached.
                 if (observer)
                     observer->onJobFailure(runId, idx, nd.nameStr_, result.error(), jobErrorCtx);
 
@@ -892,8 +892,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
 auto DependencyRange::Iterator::operator*() const noexcept -> Target
 {
-    const auto id = static_cast<JobId>(range_->ids_[index_]);
-    return {id, range_->pipeline_->name(id)};
+    const auto id = static_cast<JobId>(ids_[index_]);
+    return {id, pipeline_->name(id)};
 }
 
 auto Pipeline::status(Job j) const noexcept -> JobStatus

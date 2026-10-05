@@ -225,24 +225,28 @@ enum class JobStatus : uint8_t
     kCancelled,  ///< Cancelled externally via Job::cancel() or a stop token.
 };
 
-/// Stable node index within one Pipeline. Successor storage limits the graph
-/// to 65,536 jobs; nodes are append-only, so an id remains valid until its
-/// owning Pipeline is destroyed.
+/** Stable node index within one Pipeline. Graphs accept at most 65,536 jobs;
+ * append-only node indices remain valid until their owning Pipeline is destroyed.
+ */
 using JobId = uint32_t;
 /// An observer-defined identifier for one observed execution or trigger.
 using RunId = uint64_t;
 
-/** A non-owning range of a node's resolved successor identities. */
+/** A non-owning range of successor identities. Iterators borrow the graph,
+ * independently of the range wrapper; graph edits or destruction invalidate them.
+ */
 class DependencyRange
 {
 public:
     DependencyRange() noexcept = default;
 
+    /// One outgoing edge's destination and borrowed display name.
     struct Target {
         JobId id{};
         std::string_view name{};
     };
 
+    /// Input iterator borrowing the Pipeline and its successor storage.
     class Iterator
     {
     public:
@@ -264,15 +268,17 @@ public:
 
     private:
         friend class DependencyRange;
-        Iterator(const DependencyRange* range, std::size_t index) noexcept
-            : range_{range}, index_{index} {}
+        Iterator(const Pipeline* pipeline, const std::uint16_t* ids,
+                 std::size_t index) noexcept
+            : pipeline_{pipeline}, ids_{ids}, index_{index} {}
 
-        const DependencyRange* range_{};
+        const Pipeline* pipeline_{}; // non-owning
+        const std::uint16_t* ids_{}; // non-owning
         std::size_t index_{};
     };
 
-    [[nodiscard]] Iterator begin() const noexcept { return Iterator{this, 0U}; }
-    [[nodiscard]] Iterator end() const noexcept { return Iterator{this, size_}; }
+    [[nodiscard]] Iterator begin() const noexcept { return Iterator{pipeline_, ids_, 0U}; }
+    [[nodiscard]] Iterator end() const noexcept { return Iterator{pipeline_, ids_, size_}; }
     [[nodiscard]] std::size_t size() const noexcept { return size_; }
     [[nodiscard]] bool empty() const noexcept { return size_ == 0U; }
 
@@ -282,8 +288,8 @@ private:
                     std::size_t size) noexcept
         : pipeline_{pipeline}, ids_{ids}, size_{size} {}
 
-    const Pipeline* pipeline_{};
-    const std::uint16_t* ids_{};
+    const Pipeline* pipeline_{}; // non-owning
+    const std::uint16_t* ids_{}; // non-owning
     std::size_t size_{};
 };
 
@@ -409,10 +415,15 @@ private:
 // ── Observer interface ────────────────────────────────────────────────────────
 
 /**
- * @brief Pluggable observer for profiling and progress tracking.
+ * Pluggable observer for profiling and progress tracking.
  *
  * Attach via Pipeline::run() or Pipeline::arm() to receive identity-aware
  * callbacks. Events are not recorded unless a caller supplies an observer.
+ * Callbacks are synchronous and may overlap on parallel executors. Implementations
+ * must be thread-safe, bounded and non-throwing; callback exceptions are not
+ * converted to PipelineError. Keep the observer alive until executor callbacks join.
+ * Names and failure messages are borrowed; copy them during the callback to retain
+ * them. Do not mutate, move or destroy the graph from a callback.
  */
 class IObserver
 {
@@ -425,6 +436,7 @@ public:
      * Return an identifier that the following job and dependency callbacks
      * can use to group events. The default 0 is suitable when the observer
      * does not need run correlation.
+     * Called on the run() caller's thread, or an executor worker for trigger().
      */
     virtual RunId onRunStart() { return 0; }
 
@@ -432,12 +444,13 @@ public:
     virtual void onJobStart(RunId, JobId, std::string_view) {}
 
     /**
-     * @brief Called when a job completes (any terminal status).
+     * Called when a job completes, including skipped jobs with no start event.
      * @param runId    Observer-defined identifier for this run or trigger.
      * @param jobId    Stable node index within the Pipeline.
      * @param jobName  The job's name.
-     * @param status   Final status (kDone, kFailed, kSkipped, kTimedOut).
+     * @param status   Final status (kDone, kFailed, kSkipped, kTimedOut, kCancelled).
      * @param progress Fraction of total jobs completed (0.0–1.0).
+     * Concurrent callbacks may deliver progress values out of order.
      */
     virtual void onJobFinish([[maybe_unused]] RunId runId,
                              [[maybe_unused]] JobId jobId,
@@ -446,12 +459,13 @@ public:
                              [[maybe_unused]] float progress) {}
 
     /**
-     * @brief Called when a non-optional job fails -- default no-op.
+     * Called for non-optional failures and cancellation, even on optional jobs.
      *
      * Separate from onJobFinish so callers only opt into failure detail when they
-     * need it.  Zero cost when the default no-op is not overridden; the
-     * observer vtable dispatch itself is already gated by `if (observer)`.
+     * need it. The observer vtable dispatch is gated by `if (observer)`.
      *
+     * @param runId    Observer-defined identifier for this run or trigger.
+     * @param jobId    Stable node index within the Pipeline.
      * @param jobName  Name of the failed job.
      * @param error    The PipelineError code.
      * @param message  Diagnostic string set by the job via
@@ -656,9 +670,14 @@ public:
 
     /** @return Human-readable name of a job. */
     [[nodiscard]] auto name(Job j) const noexcept -> std::string_view;
-    /** @return Human-readable name for a stable node id, or an empty view if invalid. */
+    /** Return a borrowed name for a stable node id, or an empty view if invalid.
+     * Concurrent reads require a stable graph with no renaming or mutation.
+     */
     [[nodiscard]] auto name(JobId id) const noexcept -> std::string_view;
-    /** @return A non-owning view of a node's successors; invalidated by graph edits or destruction. */
+    /** Return a non-owning view of a node's successors, empty for invalid ids.
+     * Concurrent reads require a stable graph; graph edits or destruction
+     * invalidate the view and its iterators.
+     */
     [[nodiscard]] auto successors(JobId id) const noexcept -> DependencyRange;
 
     /**
@@ -677,7 +696,7 @@ public:
      * @brief Set a diagnostic message for the job currently executing on this thread.
      *
      * Call on the failure branch before returning `std::unexpected(...)`.  The
-     * message is consumed by `dispatchJob` and forwarded to `IObserver::onFailure`.
+     * message is consumed by `dispatchJob` and forwarded to `IObserver::onJobFailure`.
      * Zero cost on the success path -- the thread-local string is never read when
      * the job succeeds.
      *
@@ -702,7 +721,7 @@ public:
      * Allocates one `std::vector` per call; poll at the display frame rate (not
      * tighter than 16 ms) to avoid unnecessary pressure.
      *
-     * For single-string "current job" display prefer `IObserver::onStart` feeding
+     * For single-string "current job" display prefer `IObserver::onJobStart` feeding
      * an atomic pointer -- zero allocation, zero polling.
      */
     struct JobSnapshot {

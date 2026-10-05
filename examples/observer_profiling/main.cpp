@@ -25,8 +25,9 @@ using namespace sub0pipeline;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
-// ── BootObserver ──────────────────────────────────────────────────────────────
-
+/** Desktop terminal demonstration with synchronized timing records.
+ * Console I/O and allocation in callbacks are unsuitable for latency-sensitive use.
+ */
 class BootObserver : public IObserver
 {
 public:
@@ -36,7 +37,6 @@ public:
         std::scoped_lock lock{mutex_};
         startTime_[jobId] = Clock::now();
 
-        // Pad job name to a fixed width for alignment.
         char padded[20]{};
         std::snprintf(padded, sizeof(padded), "%-14s", key.c_str());
         std::printf("  [ ... ] %s\n", padded);
@@ -57,7 +57,6 @@ public:
 
         timings_[jobId] = { key, elapsedMs, status };
 
-        // Build a filled/empty progress bar (10 blocks wide).
         constexpr int kBarWidth = 10;
         const int filled = static_cast<int>(progress * kBarWidth + 0.5f);
         char bar[64]{};
@@ -104,7 +103,7 @@ public:
     void printSummary() const
     {
         std::scoped_lock lock{mutex_};
-        std::printf("\n--- Gantt summary (by start order) ---\n");
+        std::printf("\n--- Gantt summary (by job id) ---\n");
         std::printf("  %-14s  %8s  %s\n", "job", "ms", "status");
         std::printf("  %-14s  %8s  %s\n", "---", "--", "------");
 
