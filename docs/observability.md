@@ -60,6 +60,39 @@ snapshot; it is a UI/control-thread facility, not a worker callback.
 Live status is written to stderr, leaving stdout as valid trace JSON. Polling
 may miss short-lived running states and does not determine execution success.
 
+The README animation is generated from this same Chrome Trace output, so it
+shows observed execution rather than a separately timed mock. To regenerate it,
+use Python 3.10+ with the optional Pillow documentation dependency:
+
+```sh
+cmake -S . -B build -DSUB0PIPELINE_BUILD_EXAMPLES=ON
+cmake --build build --config Release --target Sub0Pipeline_TraceCapture
+```
+
+Redirect the built example's stdout to a trace file. A single-config generator
+typically puts it here:
+
+```sh
+./build/examples/trace_capture/Sub0Pipeline_TraceCapture > trace.json
+```
+
+For MSVC's multi-config generator, use:
+
+```powershell
+build/examples/trace_capture/Release/Sub0Pipeline_TraceCapture.exe > trace.json
+```
+
+Then generate the animation:
+
+```sh
+python -m pip install -r scripts/requirements-trace-gif.txt
+python scripts/render_trace_gif.py trace.json docs/media/sub0pipeline-overview.gif
+```
+
+The renderer consumes job IDs, names, start/finish timestamps, status values and
+dependency events. It runs offline after capture and has no scheduler/runtime
+dependency.
+
 `Pipeline::dump_text(std::ostream&)` emits the static graph to a caller-chosen
 stream. Static topology and runtime timeline are deliberately separate: the
 former is available without running jobs, while the latter exists only when an
