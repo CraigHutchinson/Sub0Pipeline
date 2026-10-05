@@ -208,6 +208,7 @@ audit. "Unchanged" means the ranges overlap. Summaries with every sample are in
 | Finding | Change | Result |
 |---|---|---|
 | 1 | Successor blocks double, growing in place when last in the arena; the arena is addressed with 32 bits | One job accepts 32,767 successors (was about 360). Construct 300-job fan-out 88.9 µs [83.5–96.5] to 46.1 µs [44.9–48.2]; every other case unchanged |
+| 3 | Plain jobs keep their stop state until a stop is requested and are handed an empty token; jobs that take a `std::stop_token` still get new state every run | Run 10-job chain 672 ns [668–680] to 299 ns [296–301]; 1000-job layered DAG 78.0 µs to 39.9 µs; external-token chain 1,029 ns to 654 ns; observer chain 745 ns to 372 ns. Warm run allocations 10 to 0. Construction, validation and timeout cases unchanged |
 
 ## Limits of this audit
 

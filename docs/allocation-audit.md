@@ -49,6 +49,18 @@ core registration path: it deliberately never expires and allocates no timer
 storage. It does not represent a real timer driver's memory budget. Behavior at
 expiry is covered separately by the deadline regression tests.
 
+### Update, 2026-10-05
+
+Plain jobs now keep their stop state between runs unless a stop was requested,
+because they never receive a token that could outlive a run. On the
+[performance audit](performance-audit.md) host (MSVC 19.51, Windows 11) the
+warm 10-job run, the external-token run, the failure-and-skip case and the
+on-demand retry all dropped to zero C++ allocation calls; the owned run scope
+dropped from 13 to 3. Jobs that take a `std::stop_token` are unchanged: one
+allocation each per run. [Before](benchmarks/2026-10-05-audit/followup/3-stop-state-allocations-before.csv)
+and [after](benchmarks/2026-10-05-audit/followup/3-stop-state-allocations-after.csv)
+CSVs are retained. The table above remains the GCC/libstdc++ record for `a3f1b20`.
+
 ## Implications for fixed/custom storage
 
 Graph-only PMR support would leave execution allocations in stop states, failure

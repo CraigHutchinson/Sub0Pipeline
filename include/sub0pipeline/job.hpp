@@ -149,7 +149,7 @@ enum class JobStatus : uint8_t
 
 /** Stable node index within one Pipeline. Graphs accept at most 65,536 jobs,
  * and one job at most 32,767 successors; exceeding either is a hard error.
- * append-only node indices remain valid until their owning Pipeline is destroyed.
+ * Append-only node indices remain valid until their owning Pipeline is destroyed.
  */
 using JobId = uint32_t;
 

@@ -1,0 +1,12 @@
+case,operations,new_calls,requested_bytes
+construct_destroy_chain10,100,2800,782400
+first_run_chain10,1,3,84
+warm_run_chain10,100,0,0
+warm_external_token_chain10,100,0,0
+explicit_validation_chain10,100,0,0
+snapshot_chain10,100,100,24000
+warm_failure_skip,100,0,0
+injected_cooperative_deadline,100,100,3200
+native_cooperative_deadline,100,400,19200
+owned_run_scope_chain10,100,300,9600
+on_demand_retry,100,0,0

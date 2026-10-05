@@ -442,14 +442,26 @@ struct Pipeline::Impl
 
     auto invoke(Node& node) -> std::expected<void, PipelineError>
     {
-        auto token = node.stopSource_.get_token();
-        if (token.stop_requested())
+        if (node.stopSource_.stop_requested())
             return std::unexpected(PipelineError::kCancelled);
 
-        if (node.timeout_ == std::chrono::milliseconds::max())
-            return node.fn_(std::move(token));
+        if (node.timeout_ == std::chrono::milliseconds::max()) {
+            // A plain job's wrapper discards its token, so skip the shared
+            // state's reference count and hand it an empty one.
+            return node.fn_(node.isCancellable() ? node.stopSource_.get_token()
+                                                 : std::stop_token{});
+        }
+        return invokeTimed(node, node.stopSource_.get_token());
+    }
 
-        return invokeTimed(node, token);
+    // Give the node cancellation state no earlier run can reach. A cancellable
+    // job was handed a token and may have kept it, so it always gets new state.
+    // A plain job never sees one: its state is only reachable from inside the
+    // library, so it is kept until a stop has actually been requested on it.
+    static void renewStopState(Node& node)
+    {
+        if (node.isCancellable() || node.stopSource_.stop_requested())
+            node.stopSource_ = std::stop_source{};
     }
 
     // Keep opt-in machinery out of the small untimed invocation path so that
@@ -755,7 +767,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     {
         std::lock_guard lock{impl_->stopMtx_};
         for (auto& node : impl_->nodes_) {
-            node.stopSource_ = std::stop_source{};
+            Impl::renewStopState(node);
             node.unmetDeps_.store(node.predecessorCount_, std::memory_order_relaxed);
             node.jobStatus_.store(node.predecessorCount_ == 0U && !node.isOnDemand()
                 ? JobStatus::kReady : JobStatus::kPending, std::memory_order_relaxed);
@@ -1103,7 +1115,7 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
         const auto status = nd.jobStatus_.load(std::memory_order_acquire);
         if (status == JobStatus::kReady || status == JobStatus::kRunning)
             return std::unexpected(PipelineError::kBusy);
-        nd.stopSource_ = std::stop_source{};
+        Impl::renewStopState(nd);
         nd.jobStatus_.store(JobStatus::kReady, std::memory_order_release);
     }
 
