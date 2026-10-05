@@ -147,7 +147,8 @@ enum class JobStatus : uint8_t
     kCancelled,  ///< Cancelled externally via Job::cancel() or a stop token.
 };
 
-/** Stable node index within one Pipeline. Graphs accept at most 65,536 jobs;
+/** Stable node index within one Pipeline. Graphs accept at most 65,536 jobs,
+ * and one job at most 32,767 successors; exceeding either is a hard error.
  * append-only node indices remain valid until their owning Pipeline is destroyed.
  */
 using JobId = uint32_t;

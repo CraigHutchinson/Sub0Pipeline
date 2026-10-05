@@ -359,6 +359,13 @@ int main(int argc, char** argv)
         ankerl::nanobench::doNotOptimizeAway(&pipeline);
     });
 
+    runner.run("construct 300-job fan-out (1 root + 299 leaves)", []
+    {
+        Pipeline pipeline;
+        buildFanOut(pipeline, 299);
+        ankerl::nanobench::doNotOptimizeAway(&pipeline);
+    });
+
     {
         Pipeline pipeline;
         buildChain(pipeline, 200);

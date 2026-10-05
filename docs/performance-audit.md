@@ -198,6 +198,17 @@ threads, so `hotspots` is the wrong tool for this executor; use `threading`.
 5. Single-wrap job storage (finding 6), then `reserve` with issue #4.
 6. Decide between documenting and removing the inline recursion (finding 2).
 
+## Follow-up
+
+Each change below went through the loop in CONTRIBUTING: five alternating
+process samples against the preceding `main`, on the same host and build as the
+audit. "Unchanged" means the ranges overlap. Summaries with every sample are in
+[benchmarks/2026-10-05-audit/followup](benchmarks/2026-10-05-audit/followup/).
+
+| Finding | Change | Result |
+|---|---|---|
+| 1 | Successor blocks double, growing in place when last in the arena; the arena is addressed with 32 bits | One job accepts 32,767 successors (was about 360). Construct 300-job fan-out 88.9 µs [83.5–96.5] to 46.1 µs [44.9–48.2]; every other case unchanged |
+
 ## Limits of this audit
 
 - One host, one compiler, one operating system. GCC and Clang inline and
