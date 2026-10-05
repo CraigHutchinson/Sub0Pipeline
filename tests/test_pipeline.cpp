@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <latch>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace sub0pipeline;
