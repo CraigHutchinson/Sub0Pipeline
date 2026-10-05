@@ -6,7 +6,7 @@
 
 #include <sub0pipeline/dependency_range.hpp>
 #include <sub0pipeline/error.hpp>
-#include <sub0pipeline/executor.hpp>
+#include <sub0pipeline/executor/executor.hpp>
 #include <sub0pipeline/job.hpp>
 #include <sub0pipeline/observer.hpp>
 #include <sub0pipeline/tick_job.hpp>

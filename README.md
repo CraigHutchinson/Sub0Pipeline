@@ -277,7 +277,7 @@ also be included on its own:
 |---|---|
 | `pipeline.hpp` | `Pipeline` |
 | `job.hpp`, `job_group.hpp` | `Job`, `JobId`, `JobStatus`; `JobGroup`, `parallel` |
-| `executor.hpp`, `scoped_executor.hpp`, `executor_factory.hpp` | `IExecutor`; `ScopedExecutor`; the `make...Executor` factories |
+| `executors.hpp` | Everything under `executor/`: `executor.hpp` (`IExecutor`), `scoped_executor.hpp`, and one header per bundled executor (`desktop_`, `sequential_`, `priority_`, `freertos_executor.hpp`) declaring its factory |
 | `observer.hpp`, `dependency_range.hpp` | `IObserver`, `RunId`; `DependencyRange` |
 | `error.hpp`, `tick_job.hpp`, `config.hpp` | `PipelineError`; `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
 | `dsl.hpp`, `deadline.hpp`, `run_scope.hpp` | Opt-in layers, not part of the umbrella |

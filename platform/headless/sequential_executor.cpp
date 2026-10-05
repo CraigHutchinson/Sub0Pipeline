@@ -5,8 +5,7 @@
 // parallelism. Deterministic execution order makes this ideal for unit tests
 // and environments where std::thread is unavailable (bare-metal, CI).
 
-#include <sub0pipeline/executor.hpp>
-#include <sub0pipeline/executor_factory.hpp>
+#include <sub0pipeline/executor/sequential_executor.hpp>
 
 #include <cstdint>
 #include <functional>

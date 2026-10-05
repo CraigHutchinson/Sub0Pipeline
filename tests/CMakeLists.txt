@@ -50,15 +50,16 @@ add_test(NAME Sub0Pipeline_DslTests COMMAND Sub0Pipeline_DslTests)
 # to exercise its include guard). A header that leans on another's transitive
 # includes fails this build.
 
-file(GLOB SUB0PIPELINE_PUBLIC_HEADERS CONFIGURE_DEPENDS
+file(GLOB_RECURSE SUB0PIPELINE_PUBLIC_HEADERS CONFIGURE_DEPENDS
+    RELATIVE "${PROJECT_SOURCE_DIR}/include"
     "${PROJECT_SOURCE_DIR}/include/sub0pipeline/*.hpp")
 set(SUB0PIPELINE_HEADER_CHECK_SOURCES "")
 foreach(header IN LISTS SUB0PIPELINE_PUBLIC_HEADERS)
-    get_filename_component(header_name "${header}" NAME_WE)
-    set(check_source "${CMAKE_CURRENT_BINARY_DIR}/header_check/${header_name}.cpp")
+    string(REPLACE ".hpp" ".cpp" check_name "${header}")
+    set(check_source "${CMAKE_CURRENT_BINARY_DIR}/header_check/${check_name}")
     file(CONFIGURE OUTPUT "${check_source}" CONTENT
-        "#include <sub0pipeline/${header_name}.hpp>
-#include <sub0pipeline/${header_name}.hpp>
+        "#include <${header}>
+#include <${header}>
 ")
     list(APPEND SUB0PIPELINE_HEADER_CHECK_SOURCES "${check_source}")
 endforeach()

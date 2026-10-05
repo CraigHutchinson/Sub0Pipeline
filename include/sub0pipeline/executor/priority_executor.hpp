@@ -1,26 +1,15 @@
-// include/sub0pipeline/executor_factory.hpp
+// include/sub0pipeline/executor/priority_executor.hpp
 //
-// Factory functions for the bundled platform executors. Each is defined in its
-// platform library (Sub0Pipeline::Desktop / ::Headless / ::Priority, or the
-// esp32p4 ESP-IDF component); link the one you call.
+// PriorityExecutor — bounded worker pool that starts higher-priority jobs first.
+// Link Sub0Pipeline::Priority.
 #pragma once
 
-#include <sub0pipeline/executor.hpp>
+#include <sub0pipeline/executor/executor.hpp>
 
 #include <functional>
 #include <memory>
 
 namespace sub0pipeline {
-
-// ── Executor factory functions ────────────────────────────────────────────────
-
-/// Returns a `DesktopExecutor` (one `std::thread` per job, no priority ordering).
-/// Defined in `platform/desktop/`.
-std::unique_ptr<IExecutor> makeDesktopExecutor();
-
-/// Returns a `SequentialExecutor` (inline, no threads, deterministic).
-/// Defined in `platform/headless/`.
-std::unique_ptr<IExecutor> makeSequentialExecutor();
 
 /**
  * @brief Returns a `PriorityExecutor` -- bounded thread pool that dispatches
@@ -47,9 +36,5 @@ std::unique_ptr<IExecutor> makeSequentialExecutor();
  */
 std::unique_ptr<IExecutor> makePriorityExecutor(
     unsigned int threadCount = 0, std::function<void()> onThreadStart = nullptr);
-
-/// Returns a `FreeRtosExecutor` (one FreeRTOS task per job). Defined in
-/// `platform/esp32p4/`, which builds only as an ESP-IDF component.
-std::unique_ptr<IExecutor> makeFreeRtosExecutor();
 
 } // namespace sub0pipeline

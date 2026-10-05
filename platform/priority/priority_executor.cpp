@@ -8,8 +8,7 @@
 // priority 10) from "prefetch" hints (background, priority 5). The pool runs
 // both but always starts the blocking fetch first.
 
-#include <sub0pipeline/executor.hpp>
-#include <sub0pipeline/executor_factory.hpp>
+#include <sub0pipeline/executor/priority_executor.hpp>
 
 #include <algorithm>
 #include <atomic>
