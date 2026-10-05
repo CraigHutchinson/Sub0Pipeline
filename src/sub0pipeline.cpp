@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cstdio>
 #include <condition_variable>
+#include <exception>
 #include <future>
 #include <mutex>
 #include <stop_token>
@@ -909,21 +910,27 @@ void Pipeline::add_tick(TickJob tick)
 
 void Pipeline::run_loop()
 {
+    run_loop(std::stop_token{});
+    std::terminate();
+}
+
+void Pipeline::run_loop(std::stop_token stop)
+{
     if (!impl_) {
-        // Post-move pipeline — yield continuously rather than busy-spinning.
-        while (true) {
+        while (!stop.stop_requested()) {
 #if __has_include(<freertos/FreeRTOS.h>)
             vTaskDelay(1);
 #else
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
 #endif
         }
+        return;
     }
 
     struct TickState { std::chrono::steady_clock::time_point lastRun_{}; };
     std::vector<TickState> tickStates(impl_->ticks_.size());
 
-    while (true) {
+    while (!stop.stop_requested()) {
         const auto now = std::chrono::steady_clock::now();
 
         for (std::size_t i = 0U; i < impl_->ticks_.size(); ++i) {
@@ -936,6 +943,8 @@ void Pipeline::run_loop()
                 state.lastRun_ = now;
             }
         }
+
+        if (stop.stop_requested()) break;
 
 #if __has_include(<freertos/FreeRTOS.h>)
         vTaskDelay(1);

@@ -8,14 +8,8 @@
 //        "heartbeat"   every 200ms  — prints tick count
 //        "sensor_poll" every 500ms  — prints sensor reading
 //        "watchdog"    every 100ms  — silent counter
-//   3. run_loop() is [[noreturn]], so it is launched on a std::thread.
-//      The main thread sleeps for 1 100 ms then calls std::exit(0).
-//
-// DISABLED: not built by examples/CMakeLists.txt. run_loop() has no stop
-// mechanism, so this example can only terminate by detaching a thread that
-// borrows `pipeline` and calling std::exit. AGENTS.md forbids detaching work
-// that can still access borrowed state. Re-enable once run_loop() can be
-// stopped and joined. Tracked by issue #8: https://github.com/CraigHutchinson/Sub0Pipeline/issues/8
+//   3. A std::jthread owns run_loop(stop_token); shutdown requests stop and
+//      joins the loop before the pipeline or tick state is destroyed.
 //
 // Expected tick counts over ~1 100 ms:
 //   heartbeat   every 200 ms  →  ~5 ticks
@@ -96,23 +90,19 @@ int main()
     std::printf("\n");
 
     // ── Tick loop (background thread) ─────────────────────────────────────────
-    // run_loop() never returns, so launch it on a detached thread.
-    // After 1 100 ms on the main thread we call std::exit(0). This is the
-    // reason the example is disabled — see the header comment.
     std::printf("=== Tick loop running for 1 100 ms ===\n");
 
-    std::thread([&pipeline] {
-        pipeline.run_loop();   // [[noreturn]]
-    }).detach();
+    std::jthread loop([&pipeline](std::stop_token stop) {
+        pipeline.run_loop(stop);
+    });
 
     std::this_thread::sleep_for(1100ms);
+    loop.request_stop();
+    loop.join();
 
     std::printf("\n=== Shutdown ===\n");
     std::printf("  heartbeat   fired %d time(s)\n",
                 heartbeatCount.load(std::memory_order_relaxed));
     std::printf("  watchdog    fired %d time(s)\n",
                 watchdogCount.load(std::memory_order_relaxed));
-    std::printf("  (std::exit — run_loop has no stop mechanism yet)\n");
-
-    std::exit(0);
 }

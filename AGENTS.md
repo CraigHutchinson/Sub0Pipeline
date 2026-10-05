@@ -36,6 +36,17 @@ Do not introduce consumer product names or consumer-specific dependencies.
 - Keep commits focused and descriptions current. Do not close an issue while
   its acceptance criteria remain unfulfilled.
 
+## Repository hygiene
+
+- Do not commit interim handoff notes, scratch documents, temporary probes,
+  generated build output or unfinished example code. Keep transient work in
+  ignored build directories or local scratch space.
+- Retain benchmark captures only when they are reproducible evidence with the
+  method, source revisions, toolchain and host limits documented. Keep design
+  documents only when they describe an owned, current proposal or contract.
+- Before delivery, inspect tracked and untracked changes for abandoned WIP files;
+  do not remove deliberate tests or historical benchmark evidence.
+
 ## Performance and delivery workflow
 
 - Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the review and validation gates.

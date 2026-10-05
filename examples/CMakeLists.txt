@@ -6,6 +6,5 @@ add_subdirectory(error_handling)
 add_subdirectory(validate_dag)
 add_subdirectory(observer_profiling)
 add_subdirectory(job_options)
-# Disabled until run_loop() has a stop mechanism (issue #8); see examples/tick_loop/main.cpp.
-# add_subdirectory(tick_loop)
+add_subdirectory(tick_loop)
 add_subdirectory(dsl_operators)

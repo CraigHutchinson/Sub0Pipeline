@@ -57,9 +57,10 @@ threads. Do not introduce it as an allocation-free profile. A useful next design
 must specify separate graph, execution and executor budgets, with no silent global
 heap fallback when a fixed budget is exhausted.
 
-Prioritize cancellation storage and reusable traversal scratch before promising
-zero-allocation warmed execution. Preserve per-run token freshness: a token retained
-from a completed run must never cancel a later run. Fixed-capacity APIs also need
+Reusable validation and failure-traversal scratch are now covered by
+[the traversal-storage follow-up](traversal-storage.md). Cancellation storage
+remains dynamic so each run gets fresh stop state; a token retained from a
+completed run must never cancel a later run. A fixed-capacity profile also needs
 admission/exhaustion results, callback storage limits, alignment tests, bounded
 stack use and no-exception behavior. Standard `stop_source` does not accept a
 caller allocator; changing its representation would be an API/lifetime design

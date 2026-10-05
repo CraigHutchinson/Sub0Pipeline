@@ -8,6 +8,7 @@
 #include "doctest.h"
 
 #include <algorithm>
+#include <latch>
 #include <string>
 #include <vector>
 
@@ -741,4 +742,78 @@ TEST_CASE("Pipeline: observer progress is monotonic and resets on re-run")
     (void)pipeline.run(exec, &obs);
     CHECK(obs.monotonic);
     CHECK(obs.progressValues.back() == doctest::Approx(1.0f));
+}
+
+TEST_CASE("Tick loop: stop token returns at a complete tick-pass boundary")
+{
+    Pipeline pipeline;
+    std::stop_source stop;
+    int stopTickCount = 0;
+    int laterTickCount = 0;
+
+    pipeline.add_tick({
+        .name = "request-stop",
+        .interval = 0ms,
+        .fn = [&] {
+            ++stopTickCount;
+            stop.request_stop();
+        }
+    });
+    pipeline.add_tick({
+        .name = "finish-current-pass",
+        .interval = 0ms,
+        .fn = [&] { ++laterTickCount; }
+    });
+
+    pipeline.run_loop(stop.get_token());
+
+    CHECK(stopTickCount == 1);
+    CHECK(laterTickCount == 1);
+}
+
+TEST_CASE("Tick loop: an already-requested stop dispatches no ticks")
+{
+    Pipeline pipeline;
+    std::stop_source stop;
+    int tickCount = 0;
+    stop.request_stop();
+
+    pipeline.add_tick({
+        .name = "must-not-run",
+        .interval = 0ms,
+        .fn = [&] { ++tickCount; }
+    });
+
+    pipeline.run_loop(stop.get_token());
+
+    CHECK(tickCount == 0);
+}
+
+TEST_CASE("Tick loop: external stop waits for the active callback to finish")
+{
+    Pipeline pipeline;
+    std::latch tickStarted{1};
+    std::latch finishTick{1};
+    int tickCount = 0;
+
+    pipeline.add_tick({
+        .name = "blocked-tick",
+        .interval = 0ms,
+        .fn = [&] {
+            tickStarted.count_down();
+            finishTick.wait();
+            ++tickCount;
+        }
+    });
+
+    std::jthread loop([&](std::stop_token stop) {
+        pipeline.run_loop(stop);
+    });
+
+    tickStarted.wait();
+    loop.request_stop();
+    finishTick.count_down();
+    loop.join();
+
+    CHECK(tickCount == 1);
 }

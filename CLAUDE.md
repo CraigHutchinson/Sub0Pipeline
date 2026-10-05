@@ -51,5 +51,15 @@ Follow `STYLE_GUIDE.md` for all C++ code. Key points:
 See `PLATFORM_ROADMAP.md` for planned future executors.
 
 ## Branch Strategy
-- `main` — stable releases
-- `develop` — active development
+- `main` is the integration branch. Use focused topic branches and pull requests
+  for changes; there is no `develop` branch.
+- Keep unfinished experiments outside tracked source/docs unless they have an
+  explicit issue, owner and acceptance criteria.
+
+## Repository Hygiene
+- Do not commit interim handoff notes, scratch documents, temporary probes,
+  generated build output or unfinished example code. Use ignored build
+  directories or local scratch space.
+- Keep reproducible benchmark evidence only with its method, source revisions,
+  toolchain and host limits documented. Preserve intentional regression tests
+  and historical benchmark evidence.
