@@ -262,7 +262,7 @@ exhaustion recoverable.
 
 | Area | Entry points |
 |---|---|
-| Construct / connect | `emplace`, `emplace_void`, `succeed`, `precede`, `parallel`, `size` |
+| Construct / connect | `emplace`, `emplace_void`, `reserve`, `succeed`, `precede`, `parallel`, `size` |
 | Execute / cancel | `run`, `run_inline`, `run_until`, `Job::cancel` |
 | Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `successors`, `snapshot` |
 | Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text(std::ostream&)` |

@@ -42,7 +42,9 @@ class IDeadlineService;
  * After run() completes, status() and name() are safe to call from any thread.
  *
  * Post-move state: after a move, the Pipeline is empty but valid; calling
- * emplace() on a moved-from Pipeline recreates the internal state.
+ * emplace() on a moved-from Pipeline recreates the internal state. Job handles
+ * point at the Pipeline object they came from, so moving invalidates them:
+ * move only while idle, and take new handles from the destination if needed.
  */
 class Pipeline
 {
@@ -52,8 +54,9 @@ public:
 
     Pipeline(const Pipeline&)            = delete;
     Pipeline& operator=(const Pipeline&) = delete;
-    Pipeline(Pipeline&&) noexcept        = default;
-    Pipeline& operator=(Pipeline&&)      = default;
+    // Defined out of line: moving needs the complete implementation type.
+    Pipeline(Pipeline&&) noexcept;
+    Pipeline& operator=(Pipeline&&);
 
     // ── DAG construction ─────────────────────────────────────────────────
 
@@ -97,17 +100,43 @@ public:
     [[nodiscard]] Job emplace_void(std::function<void()> fn);
 
     /**
-     * @brief Convenience overload: add a void-returning lambda.
+     * @brief Add a void-returning callable (always succeeds).
      *
-     * The concept constraint prevents this from matching expected-returning
-     * callables — those are routed to the std::function overload above.
+     * The callable is stored directly, without an intermediate std::function,
+     * so a small one costs no extra allocation and one indirect call per run.
      */
     template< typename F >
         requires std::invocable<F> && std::same_as<std::invoke_result_t<F>, void>
     [[nodiscard]] Job emplace(F&& f)
     {
-        return emplace_void(std::forward<F>(f));
+        return emplacePlain(
+            [fn = std::forward<F>(f)](std::stop_token) mutable
+                -> std::expected<void, PipelineError> { fn(); return {}; });
     }
+
+    /**
+     * @brief Add a callable returning std::expected<void, PipelineError>.
+     *
+     * Stored directly, as above. A std::function object passed as such still
+     * selects the std::function overload.
+     */
+    template< typename F >
+        requires std::invocable<F>
+              && std::same_as<std::invoke_result_t<F>, std::expected<void, PipelineError>>
+    [[nodiscard]] Job emplace(F&& f)
+    {
+        return emplacePlain(
+            [fn = std::forward<F>(f)](std::stop_token) mutable { return fn(); });
+    }
+
+    /**
+     * @brief Reserve storage for at least @p jobCount jobs.
+     *
+     * Optional. Avoids moving existing jobs as the graph grows; it does not
+     * reserve the callables, names or wide successor lists that jobs own.
+     * Build phase only, like emplace().
+     */
+    void reserve(std::size_t jobCount);
 
     /** @return Total number of jobs currently in the DAG. */
     [[nodiscard]] std::size_t size() const noexcept;
@@ -415,6 +444,10 @@ private:
     std::unique_ptr<Impl> impl_;
 
     friend class Job;
+
+    // Add a job whose callable ignores its stop token (not cancellable).
+    [[nodiscard]] Job emplacePlain(
+        std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
 
     Node&       node(uint32_t idx);
     const Node& node(uint32_t idx) const;

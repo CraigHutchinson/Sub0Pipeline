@@ -85,6 +85,63 @@ TEST_CASE("Pipeline: size tracks emplace count")
     CHECK(pipeline.size() == 3U);
 }
 
+TEST_CASE("Pipeline: reserve changes no behavior, before or after jobs exist")
+{
+    RecordingExecutor exec;
+    Pipeline pipeline;
+    pipeline.reserve(8);
+    CHECK(pipeline.size() == 0U);
+
+    int ran = 0;
+    auto first = pipeline.emplace([&] { ++ran; }).name("first");
+    pipeline.reserve(64);   // may move existing jobs; handles and names must survive
+    auto second = pipeline.emplace([&] { ++ran; });
+    second.succeed(first);
+
+    CHECK(pipeline.size() == 2U);
+    CHECK(pipeline.name(first) == "first");
+    CHECK(pipeline.run(exec).has_value());
+    CHECK(ran == 2);
+
+    Pipeline moved = std::move(pipeline);
+    pipeline.reserve(4);    // a moved-from pipeline is empty but usable
+    CHECK(pipeline.size() == 0U);
+    CHECK(moved.size() == 2U);
+}
+
+TEST_CASE("Pipeline: every plain callable form is accepted and runs")
+{
+    RecordingExecutor exec;
+    Pipeline pipeline;
+    int ran = 0;
+
+    struct Counter {
+        int* count;
+        void operator()() { ++*count; }             // non-const call operator
+    };
+    std::function<void()> erasedVoid = [&] { ++ran; };
+    std::function<std::expected<void, PipelineError>()> erasedExpected =
+        [&]() -> std::expected<void, PipelineError> { ++ran; return {}; };
+
+    (void)pipeline.emplace([&] { ++ran; });
+    (void)pipeline.emplace([&]() -> std::expected<void, PipelineError> { ++ran; return {}; });
+    (void)pipeline.emplace(Counter{&ran});
+    (void)pipeline.emplace(erasedVoid);
+    (void)pipeline.emplace(erasedExpected);
+    (void)pipeline.emplace_void(erasedVoid);
+
+    CHECK(pipeline.run(exec).has_value());
+    CHECK(ran == 6);
+
+    auto failing = pipeline.emplace([]() -> std::expected<void, PipelineError> {
+        return std::unexpected(PipelineError::kJobFailed);
+    });
+    auto result = pipeline.run(exec);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == PipelineError::kJobFailed);
+    CHECK(pipeline.status(failing) == JobStatus::kFailed);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Dependency ordering
 // ═══════════════════════════════════════════════════════════════════════════════
