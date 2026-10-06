@@ -128,10 +128,9 @@ TEST_CASE("Pipeline: every plain callable form is accepted and runs")
     (void)pipeline.emplace(Counter{&ran});
     (void)pipeline.emplace(erasedVoid);
     (void)pipeline.emplace(erasedExpected);
-    (void)pipeline.emplace_void(erasedVoid);
 
     CHECK(pipeline.run(exec).has_value());
-    CHECK(ran == 6);
+    CHECK(ran == 5);
 
     auto failing = pipeline.emplace([]() -> std::expected<void, PipelineError> {
         return std::unexpected(PipelineError::kJobFailed);
@@ -475,6 +474,106 @@ TEST_CASE("Job::pipeline() returns owning pipeline")
     Pipeline pipeline;
     auto a = pipeline.emplace([] {}).name("A");
     CHECK(a.pipeline() == &pipeline);
+}
+
+TEST_CASE("Job::id() is the identifier observers and JobId queries use")
+{
+    struct Recorder final : IObserver {
+        std::vector<JobId> started;
+        void onJobStart(RunId, JobId id, std::string_view) override { started.push_back(id); }
+    } recorder;
+
+    RecordingExecutor exec;
+    Pipeline pipeline;
+    auto first  = pipeline.emplace([] {}).name("first");
+    auto second = pipeline.emplace([] {}).name("second");
+    second.succeed(first);
+
+    CHECK(first.id() != second.id());
+    CHECK(pipeline.name(first.id()) == "first");
+    CHECK(pipeline.name(second.id()) == "second");
+    REQUIRE(pipeline.successors(first.id()).size() == 1U);
+    CHECK((*pipeline.successors(first.id()).begin()).id == second.id());
+
+    REQUIRE(pipeline.run(exec, &recorder).has_value());
+    CHECK(recorder.started == std::vector<JobId>{first.id(), second.id()});
+}
+
+TEST_CASE("Job: handles from different pipelines are never equal")
+{
+    Pipeline one;
+    Pipeline two;
+    auto a = one.emplace([] {});
+    auto b = two.emplace([] {});
+
+    CHECK(a.id() == b.id());        // both are the first job of their pipeline
+    CHECK_FALSE(a == b);
+    CHECK(a == a);
+    CHECK(Job{} == Job{});
+}
+
+TEST_CASE("Job::statusText is readable by id, from a snapshot and from an observer")
+{
+    struct Display final : IObserver {
+        const Pipeline* pipeline{nullptr};
+        std::vector<std::string> shown;
+        void onJobStart(RunId, JobId id, std::string_view) override
+        {
+            shown.emplace_back(pipeline->statusText(id));
+        }
+    } display;
+
+    RecordingExecutor exec;
+    Pipeline pipeline;
+    display.pipeline = &pipeline;
+    auto load  = pipeline.emplace([] {}).name("load").statusText("Loading settings");
+    auto plain = pipeline.emplace([] {}).name("plain");
+    plain.succeed(load);
+
+    CHECK(pipeline.statusText(load.id()) == "Loading settings");
+    CHECK(pipeline.statusText(plain.id()).empty());
+    CHECK(pipeline.statusText(JobId{999}).empty());
+
+    const auto snapshot = pipeline.snapshot();
+    REQUIRE(snapshot.size() == 2U);
+    CHECK(snapshot[0].statusText == "Loading settings");
+    CHECK(snapshot[1].statusText.empty());
+
+    REQUIRE(pipeline.run(exec, &display).has_value());
+    CHECK(display.shown == std::vector<std::string>{"Loading settings", ""});
+
+    load.statusText(nullptr);
+    CHECK(pipeline.statusText(load.id()).empty());
+}
+
+TEST_CASE("Pipeline: Job handles stay valid when the Pipeline is moved")
+{
+    RecordingExecutor exec;
+    Pipeline source;
+    int ran = 0;
+    auto first  = source.emplace([&] { ++ran; }).name("first");
+    auto second = source.emplace([&] { ++ran; });
+
+    Pipeline moved = std::move(source);
+    CHECK(first.pipeline() == &moved);
+    CHECK(source.size() == 0U);
+
+    // The handles taken before the move keep building and querying the graph.
+    second.name("second").succeed(first);
+    CHECK(moved.name(second) == "second");
+    REQUIRE(moved.run(exec).has_value());
+    CHECK(ran == 2);
+    CHECK(moved.status(first) == JobStatus::kDone);
+    CHECK(exec.order() == std::vector<std::string>{"first", "second"});
+
+    // They belong to the destination now, not to the pipeline they came from.
+    CHECK(source.status(first) == JobStatus::kPending);
+    CHECK(source.name(first).empty());
+
+    Pipeline assigned;
+    assigned = std::move(moved);
+    CHECK(first.pipeline() == &assigned);
+    CHECK(assigned.status(second) == JobStatus::kDone);
 }
 
 TEST_CASE("Job::pipeline() returns nullptr for default job")
@@ -827,26 +926,24 @@ TEST_CASE("Pipeline: observer progress is monotonic and resets on re-run")
 
 TEST_CASE("Tick loop: stop token returns at a complete tick-pass boundary")
 {
-    Pipeline pipeline;
+    TickLoop ticks;
     std::stop_source stop;
     int stopTickCount = 0;
     int laterTickCount = 0;
 
-    pipeline.add_tick({
-        .name = "request-stop",
+    ticks.add({   // request-stop
         .interval = 0ms,
         .fn = [&] {
             ++stopTickCount;
             stop.request_stop();
         }
     });
-    pipeline.add_tick({
-        .name = "finish-current-pass",
+    ticks.add({   // finish-current-pass
         .interval = 0ms,
         .fn = [&] { ++laterTickCount; }
     });
 
-    pipeline.run_loop(stop.get_token());
+    ticks.run(stop.get_token());
 
     CHECK(stopTickCount == 1);
     CHECK(laterTickCount == 1);
@@ -854,31 +951,29 @@ TEST_CASE("Tick loop: stop token returns at a complete tick-pass boundary")
 
 TEST_CASE("Tick loop: an already-requested stop dispatches no ticks")
 {
-    Pipeline pipeline;
+    TickLoop ticks;
     std::stop_source stop;
     int tickCount = 0;
     stop.request_stop();
 
-    pipeline.add_tick({
-        .name = "must-not-run",
+    ticks.add({   // must-not-run
         .interval = 0ms,
         .fn = [&] { ++tickCount; }
     });
 
-    pipeline.run_loop(stop.get_token());
+    ticks.run(stop.get_token());
 
     CHECK(tickCount == 0);
 }
 
 TEST_CASE("Tick loop: external stop waits for the active callback to finish")
 {
-    Pipeline pipeline;
+    TickLoop ticks;
     std::latch tickStarted{1};
     std::latch finishTick{1};
     int tickCount = 0;
 
-    pipeline.add_tick({
-        .name = "blocked-tick",
+    ticks.add({   // blocked-tick
         .interval = 0ms,
         .fn = [&] {
             tickStarted.count_down();
@@ -888,7 +983,7 @@ TEST_CASE("Tick loop: external stop waits for the active callback to finish")
     });
 
     std::jthread loop([&](std::stop_token stop) {
-        pipeline.run_loop(stop);
+        ticks.run(stop);
     });
 
     tickStarted.wait();

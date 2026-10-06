@@ -14,9 +14,7 @@ enum class PipelineError : uint8_t
 {
     kTimeout,           ///< Job exceeded its declared timeout.
     kJobFailed,         ///< Job function returned an unexpected error.
-    kDependencyFailed,  ///< A required predecessor job failed.
     kCyclicDependency,  ///< The DAG contains a cycle.
-    kDuplicateJob,      ///< Job was added more than once.
     kUnknownJob,        ///< Operation on an invalid Job handle.
     kNotArmed,          ///< trigger() called before arm() -- no executor stored.
     kNotOnDemand,       ///< trigger() called on a job not registered via add_on_demand().

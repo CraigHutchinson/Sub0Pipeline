@@ -129,7 +129,7 @@ TEST_CASE("Concurrent: DesktopExecutor wait_all waits for a job still blocked wh
     std::latch release{1};
     std::atomic<bool> finished{false};
 
-    exec.dispatch("blocked", [&] { release.wait(); finished = true; }, nullptr, -1, 5);
+    exec.dispatch("blocked", [&] { release.wait(); finished = true; }, nullptr, -1, 5, 8192U);
     std::jthread releaser{[&] { release.count_down(); }};
     exec.wait_all();
 
@@ -141,7 +141,7 @@ TEST_CASE("Concurrent: DesktopExecutor destruction joins work nobody waited for"
     std::atomic<bool> finished{false};
     {
         DesktopExecutor exec;
-        exec.dispatch("unwaited", [&] { finished = true; }, nullptr, -1, 5);
+        exec.dispatch("unwaited", [&] { finished = true; }, nullptr, -1, 5, 8192U);
     }
     CHECK(finished.load());
 }

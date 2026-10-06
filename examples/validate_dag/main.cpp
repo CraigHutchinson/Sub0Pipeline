@@ -32,9 +32,7 @@ static std::string_view errorName(PipelineError e) noexcept
     switch (e) {
         case PipelineError::kTimeout:          return "kTimeout";
         case PipelineError::kJobFailed:        return "kJobFailed";
-        case PipelineError::kDependencyFailed: return "kDependencyFailed";
         case PipelineError::kCyclicDependency: return "kCyclicDependency";
-        case PipelineError::kDuplicateJob:     return "kDuplicateJob";
         case PipelineError::kUnknownJob:       return "kUnknownJob";
     }
     return "unknown";

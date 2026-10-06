@@ -27,7 +27,7 @@ through `std::expected`.
 | Job hints | Names, status text, timeout, priority, core affinity and stack size; platform hints depend on the executor |
 | Observation and diagnostics | Optional identity-aware run/job/dependency events, status/name queries, snapshots, first failure name, error context and caller-selected text DAG output |
 | On-demand jobs | `add_on_demand`, `arm`, `trigger`; excluded from normal roots and invoked individually |
-| Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with `add_tick` / `run_loop(stop_token)` |
+| Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with the separate `TickLoop` |
 | Build and validation | CMake targets/install support, optional executor builds, no-exception core configuration, examples, functional/sanitizer suites and opt-in benchmarks |
 
 ### The scheduler in motion
@@ -61,10 +61,9 @@ fixed-capacity execution remain separate work. See
   measured, explicit bounded-allocation profiles. The current implementation
   retains some reusable scratch but still uses dynamic allocation; it does not
   promise heap-free execution or a caller-selected total memory budget.
-- `run_loop(std::stop_token)` returns after the current tick pass; callbacks in
-  that pass are not interrupted, and the platform yield may delay return by one
-  interval. The legacy no-argument `run_loop()` stays non-returning for
-  compatibility ([issue #8](https://github.com/CraigHutchinson/Sub0Pipeline/issues/8)).
+- `TickLoop::run(std::stop_token)` returns after the current tick pass;
+  callbacks in that pass are not interrupted, and the platform yield may delay
+  return by one interval.
 - The optional observer supports identity-aware job/run events and one batched
   dependency callback per completed node with successors. Static graph output
   uses `dump_text(std::ostream&)`; bounded capture and Chrome Trace export are
@@ -229,10 +228,11 @@ wait for executor completion before retrying. Each accepted invocation receives
 a fresh cancellation state. Foreign handles are rejected.
 
 `run_until()` reruns a graph until stopped; the caller supplies pacing.
-`run_loop(stop_token)` returns after the current tick pass when stopped; the
-legacy no-argument `run_loop()` remains blocking and non-returning. Its
-approximately millisecond host polling (one RTOS tick on FreeRTOS) is not
-interruptible, and neither loop is a hard real-time scheduling guarantee.
+`TickLoop` is a separate class for periodic work after start-up; it shares no
+state with a `Pipeline`. `TickLoop::run(stop_token)` returns after the current
+tick pass when stopped. Its approximately millisecond host polling (one RTOS
+tick on FreeRTOS) is not interruptible, and neither loop is a hard real-time
+scheduling guarantee.
 Scheduler APIs are **task-context only**. ISR integration should enqueue a bounded
 event for later task-context dispatch using platform-proven primitives.
 
@@ -276,12 +276,12 @@ exhaustion recoverable.
 
 | Area | Entry points |
 |---|---|
-| Construct / connect | `emplace`, `emplace_void`, `reserve`, `succeed`, `precede`, `parallel`, `size` |
+| Construct / connect | `emplace`, `reserve`, `succeed`, `precede`, `parallel`, `size` |
 | Execute / cancel | `run`, `run_inline`, `run_until`, `Job::cancel` |
-| Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `successors`, `snapshot` |
+| Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `statusText`, `successors`, `snapshot`, `Job::id` |
 | Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text(std::ostream&)` |
-| Events / ticks | `add_on_demand`, `arm`, `trigger`, `add_tick`, `run_loop(stop_token)`; legacy non-returning `run_loop()` |
-| Job configuration | `name`, `status`, `timeout`, `optional`, `priority`, `core`, `stack` |
+| Events / ticks | `add_on_demand`, `arm`, `trigger`; `TickLoop::add`, `TickLoop::run(stop_token)` |
+| Job configuration | `name`, `statusText`, `timeout`, `optional`, `priority`, `core`, `stack` |
 
 `<sub0pipeline/sub0pipeline.hpp>` includes the whole core API. Each part can
 also be included on its own:
@@ -292,14 +292,18 @@ also be included on its own:
 | `job.hpp`, `job_group.hpp` | `Job`, `JobId`, `JobStatus`; `JobGroup`, `parallel` |
 | `executors.hpp` | Everything under `executor/`: `executor.hpp` (`IExecutor`), `scoped_executor.hpp`, one header per bundled executor class (`desktop_`, `sequential_`, `priority_`, `freertos_executor.hpp`) and `default_executor.hpp` |
 | `observer.hpp`, `dependency_range.hpp` | `IObserver`, `RunId`; `DependencyRange` |
-| `error.hpp`, `tick_job.hpp`, `config.hpp` | `PipelineError`; `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
+| `error.hpp`, `tick_loop.hpp`, `config.hpp` | `PipelineError`; `TickLoop`, `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
 | `dsl.hpp`, `deadline.hpp`, `run_scope.hpp` | Opt-in layers, not part of the umbrella |
 
 Job statuses distinguish pending, ready, running, done, failed, skipped, timed
 out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
-`kCyclicDependency`, `kUnknownJob`, `kNotArmed`, `kNotOnDemand` and `kBusy`.
-`kDependencyFailed` and `kDuplicateJob` are also declared error values; they are
-not a promise of additional runtime duplicate/dependency diagnostics.
+`kCyclicDependency`, `kUnknownJob`, `kNotArmed`, `kNotOnDemand`, `kBusy` and
+`kDeadlineUnavailable`. A job skipped because a predecessor failed has status
+`kSkipped`; `run()` returns the error of the job that caused it.
+
+`Job::id()` gives the `JobId` that observers receive and that `name(JobId)`,
+`statusText(JobId)` and `successors(JobId)` accept. Job handles stay valid when
+their `Pipeline` is moved.
 
 `IObserver` provides run, identity-aware job start/finish and dependency
 resolution hooks, plus failure details. Existing name-only callbacks remain

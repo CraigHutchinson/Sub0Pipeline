@@ -37,11 +37,6 @@
 #include <utility>
 #include <vector>
 
-#if __has_include(<freertos/FreeRTOS.h>)
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#endif
-
 namespace sub0pipeline {
 
 namespace {
@@ -50,16 +45,6 @@ namespace {
 // immediately cleared.  On the success path the string is never touched --
 // zero allocation, zero reads, branch-predictor-friendly empty check.
 thread_local std::string t_jobError;
-
-// Yield between tick-loop passes: one RTOS tick, or 1 ms elsewhere.
-void yieldTickLoop()
-{
-#if __has_include(<freertos/FreeRTOS.h>)
-    vTaskDelay(1);
-#else
-    std::this_thread::sleep_for(std::chrono::milliseconds{1});
-#endif
-}
 
 JobStatus statusOf(const std::expected<void, PipelineError>& result) noexcept
 {
@@ -228,7 +213,7 @@ struct Pipeline::Node
 
     // ── Cold section: build-time only ────────────────────────────────────
     std::string             nameStr_;
-    const char*             statusText_{nullptr};
+    const char*             statusText_{nullptr}; ///< non-owning; borrowed from the caller
 
     // ── Flag constants ────────────────────────────────────────────────────
     static constexpr uint8_t kFlagOptional    = 0x01; ///< Failure does not block dependents.
@@ -267,7 +252,7 @@ struct Pipeline::Node
 
 // ── Pipeline implementation structure ─────────────────────────────────────────
 
-struct Pipeline::Impl
+struct Pipeline::Impl : detail::PipelineAnchor
 {
     using JobFn = std::function<std::expected<void, PipelineError>(std::stop_token)>;
 
@@ -277,7 +262,6 @@ struct Pipeline::Impl
 
     // Build-time / init-time fields (written once, read during run setup).
     std::vector<Node>         nodes_;
-    std::vector<TickJob>      ticks_;
     std::vector<uint32_t>     roots_;
     // Graph-sized scratch retains capacity across validations/runs. Validation
     // has its own lock; failure traversal is serialized by DispatchContext.
@@ -319,9 +303,12 @@ struct Pipeline::Impl
     ~Impl() { joinOrphans(); }
 
     // A moved-from Pipeline has no Impl; mutating calls recreate it.
-    static Impl& ensure(std::unique_ptr<Impl>& impl)
+    static Impl& ensure(std::unique_ptr<Impl>& impl, Pipeline* owner)
     {
-        if (!impl) impl = std::make_unique<Impl>();
+        if (!impl) {
+            impl = std::make_unique<Impl>();
+            impl->owner = owner;
+        }
         return *impl;
     }
 
@@ -508,85 +495,85 @@ struct Pipeline::Impl
 
 void Pipeline::set_deadline_service(IDeadlineService* service)
 {
-    Impl::ensure(impl_).deadlines_ = service;
+    Impl::ensure(impl_, this).deadlines_ = service;
 }
 
 // ── Job builder methods ───────────────────────────────────────────────────────
 
 Job& Job::name(std::string_view n)
 {
-    if (pipeline_ && valid()) pipeline_->node(idx_).nameStr_ = std::string{n};
+    if (pipeline() && valid()) pipeline()->node(idx_).nameStr_ = std::string{n};
     return *this;
 }
 
 Job& Job::timeout(std::chrono::milliseconds t) noexcept
 {
-    if (pipeline_ && valid()) pipeline_->node(idx_).timeout_ = t;
+    if (pipeline() && valid()) pipeline()->node(idx_).timeout_ = t;
     return *this;
 }
 
 Job& Job::stack(uint32_t bytes) noexcept
 {
-    if (pipeline_ && valid()) pipeline_->node(idx_).stackBytes_ = bytes;
+    if (pipeline() && valid()) pipeline()->node(idx_).stackBytes_ = bytes;
     return *this;
 }
 
 Job& Job::core(int c) noexcept
 {
-    if (pipeline_ && valid()) pipeline_->node(idx_).coreAffinity_ = c;
+    if (pipeline() && valid()) pipeline()->node(idx_).coreAffinity_ = c;
     return *this;
 }
 
 Job& Job::priority(uint8_t p) noexcept
 {
-    if (pipeline_ && valid()) pipeline_->node(idx_).priority_ = p;
+    if (pipeline() && valid()) pipeline()->node(idx_).priority_ = p;
     return *this;
 }
 
 Job& Job::optional(bool opt) noexcept
 {
-    if (pipeline_ && valid()) {
-        auto& nd = pipeline_->node(idx_);
+    if (pipeline() && valid()) {
+        auto& nd = pipeline()->node(idx_);
         if (opt) nd.flags_ |= Pipeline::Node::kFlagOptional;
         else     nd.flags_ &= static_cast<uint8_t>(~Pipeline::Node::kFlagOptional);
     }
     return *this;
 }
 
-Job& Job::status(const char* text) noexcept
+Job& Job::statusText(const char* text) noexcept
 {
-    if (pipeline_ && valid()) pipeline_->node(idx_).statusText_ = text;
+    if (pipeline() && valid()) pipeline()->node(idx_).statusText_ = text;
     return *this;
 }
 
 void Job::cancel() noexcept
 {
-    if (pipeline_ && valid()) {
+    if (pipeline() && valid()) {
         // Copy under the reset lock; invoke user stop callbacks outside it.
-        auto source = pipeline_->impl_->stopSource(pipeline_->node(idx_));
+        auto source = pipeline()->impl_->stopSource(pipeline()->node(idx_));
         source.request_stop();
     }
 }
 
 Job& Job::succeed(Job other)
 {
-    if (!pipeline_ || !valid() || !other.valid()) return *this;
-    auto& selfNode  = pipeline_->node(idx_);
-    auto& otherNode = pipeline_->node(other.idx_);
-    pipeline_->impl_->rootsCached_ = false;
+    if (!pipeline() || !valid() || !other.valid()) return *this;
+    auto& selfNode  = pipeline()->node(idx_);
+    auto& otherNode = pipeline()->node(other.idx_);
+    pipeline()->impl_->rootsCached_ = false;
     // Record the edge first: if it is rejected, no dependency count is left behind.
-    otherNode.successors_.push_back(static_cast<uint16_t>(idx_), pipeline_->impl_->succPool_);
+    otherNode.successors_.push_back(static_cast<uint16_t>(idx_), pipeline()->impl_->succPool_);
     ++selfNode.predecessorCount_;
     return *this;
 }
 
 Job& Job::precede(Job other)
 {
-    if (!pipeline_ || !valid() || !other.valid()) return *this;
-    auto& selfNode  = pipeline_->node(idx_);
-    auto& otherNode = pipeline_->node(other.idx_);
-    pipeline_->impl_->rootsCached_ = false;
-    selfNode.successors_.push_back(static_cast<uint16_t>(other.idx_), pipeline_->impl_->succPool_);
+    if (!pipeline() || !valid() || !other.valid()) return *this;
+    auto& selfNode  = pipeline()->node(idx_);
+    auto& otherNode = pipeline()->node(other.idx_);
+    pipeline()->impl_->rootsCached_ = false;
+    selfNode.successors_.push_back(static_cast<uint16_t>(other.idx_), pipeline()->impl_->succPool_);
     ++otherNode.predecessorCount_;
     return *this;
 }
@@ -635,10 +622,22 @@ JobGroup& JobGroup::precede(JobGroup const& other)
 
 // ── Pipeline lifecycle ────────────────────────────────────────────────────────
 
-Pipeline::Pipeline() : impl_{std::make_unique<Impl>()} {}
+Pipeline::Pipeline() : impl_{std::make_unique<Impl>()} { impl_->owner = this; }
 Pipeline::~Pipeline() = default;
-Pipeline::Pipeline(Pipeline&&) noexcept = default;
-Pipeline& Pipeline::operator=(Pipeline&&) = default;
+
+// Job handles point at the Impl, which does not move; re-point it at the
+// Pipeline object that now owns it so the handles follow.
+Pipeline::Pipeline(Pipeline&& other) noexcept : impl_{std::move(other.impl_)}
+{
+    if (impl_) impl_->owner = this;
+}
+
+Pipeline& Pipeline::operator=(Pipeline&& other)
+{
+    impl_ = std::move(other.impl_);
+    if (impl_) impl_->owner = this;
+    return *this;
+}
 
 // ── Internal node access ──────────────────────────────────────────────────────
 
@@ -662,24 +661,17 @@ Job Pipeline::emplace(std::function<std::expected<void, PipelineError>()> fn)
 Job Pipeline::emplace(
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
-    return Job{Impl::ensure(impl_).addNode(std::move(fn), "job_", Node::kFlagCancellable), this};
-}
-
-Job Pipeline::emplace_void(std::function<void()> fn)
-{
-    return emplacePlain(
-        [f = std::move(fn)](std::stop_token) -> std::expected<void, PipelineError>
-        { f(); return {}; });
+    return Job{Impl::ensure(impl_, this).addNode(std::move(fn), "job_", Node::kFlagCancellable), impl_.get()};
 }
 
 Job Pipeline::emplacePlain(std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
-    return Job{Impl::ensure(impl_).addNode(std::move(fn), "job_", 0U), this};
+    return Job{Impl::ensure(impl_, this).addNode(std::move(fn), "job_", 0U), impl_.get()};
 }
 
 void Pipeline::reserve(std::size_t jobCount)
 {
-    Impl::ensure(impl_).nodes_.reserve(jobCount);
+    Impl::ensure(impl_, this).nodes_.reserve(jobCount);
 }
 
 std::size_t Pipeline::size() const noexcept
@@ -970,14 +962,14 @@ auto DependencyRange::Iterator::operator*() const noexcept -> Target
 
 auto Pipeline::status(Job j) const noexcept -> JobStatus
 {
-    if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
+    if (!impl_ || j.pipeline() != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return JobStatus::kPending;
     return impl_->nodes_[j.idx_].jobStatus_.load(std::memory_order_acquire);
 }
 
 auto Pipeline::name(Job j) const noexcept -> std::string_view
 {
-    if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
+    if (!impl_ || j.pipeline() != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return {};
     return impl_->nodes_[j.idx_].nameStr_;
 }
@@ -1010,58 +1002,23 @@ void Pipeline::set_current_job_error(std::string_view msg) noexcept
     t_jobError = msg;
 }
 
-std::vector<Pipeline::JobSnapshot> Pipeline::snapshot() const noexcept
+auto Pipeline::statusText(JobId id) const noexcept -> std::string_view
+{
+    if (!impl_ || id >= impl_->nodes_.size()) return {};
+    const char* text = impl_->nodes_[id].statusText_;
+    return text ? std::string_view{text} : std::string_view{};
+}
+
+std::vector<Pipeline::JobSnapshot> Pipeline::snapshot() const
 {
     if (!impl_) return {};
     std::vector<JobSnapshot> out;
     out.reserve(impl_->nodes_.size());
     for (const auto& nd : impl_->nodes_) {
-        out.push_back({nd.nameStr_, nd.jobStatus_.load(std::memory_order_relaxed)});
+        out.push_back({nd.nameStr_, nd.jobStatus_.load(std::memory_order_relaxed),
+                       nd.statusText_ ? std::string_view{nd.statusText_} : std::string_view{}});
     }
     return out;
-}
-
-// ── Tick loop ─────────────────────────────────────────────────────────────────
-
-void Pipeline::add_tick(TickJob tick)
-{
-    Impl::ensure(impl_).ticks_.push_back(std::move(tick));
-}
-
-void Pipeline::run_loop()
-{
-    run_loop(std::stop_token{});
-    std::terminate();
-}
-
-void Pipeline::run_loop(std::stop_token stop)
-{
-    if (!impl_) {
-        while (!stop.stop_requested()) yieldTickLoop();
-        return;
-    }
-
-    struct TickState { std::chrono::steady_clock::time_point lastRun_{}; };
-    std::vector<TickState> tickStates(impl_->ticks_.size());
-
-    while (!stop.stop_requested()) {
-        const auto now = std::chrono::steady_clock::now();
-
-        for (std::size_t i = 0U; i < impl_->ticks_.size(); ++i) {
-            auto& tick  = impl_->ticks_[i];
-            auto& state = tickStates[i];
-            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now - state.lastRun_);
-            if (elapsed >= tick.interval) {
-                tick.fn();
-                state.lastRun_ = now;
-            }
-        }
-
-        if (stop.stop_requested()) break;
-
-        yieldTickLoop();
-    }
 }
 
 namespace {
@@ -1114,27 +1071,27 @@ void Pipeline::run_until(IExecutor& executor, std::stop_token stop,
 
 void Pipeline::arm(IExecutor& executor, IObserver* observer) noexcept
 {
-    auto& impl = Impl::ensure(impl_);
+    auto& impl = Impl::ensure(impl_, this);
     impl.armedExecutor_ = &executor;
     impl.armedObserver_ = observer;
 }
 
 Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> fn)
 {
-    return Job{Impl::ensure(impl_).addNode(Impl::ignoringStop(std::move(fn)), "on_demand_",
-                                           Node::kFlagOnDemand), this};
+    return Job{Impl::ensure(impl_, this).addNode(Impl::ignoringStop(std::move(fn)), "on_demand_",
+                                           Node::kFlagOnDemand), impl_.get()};
 }
 
 Job Pipeline::add_on_demand(
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
-    return Job{Impl::ensure(impl_).addNode(std::move(fn), "on_demand_",
-                                           Node::kFlagOnDemand | Node::kFlagCancellable), this};
+    return Job{Impl::ensure(impl_, this).addNode(std::move(fn), "on_demand_",
+                                           Node::kFlagOnDemand | Node::kFlagCancellable), impl_.get()};
 }
 
 auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
 {
-    if (!impl_ || j.pipeline_ != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
+    if (!impl_ || j.pipeline() != this || !j.valid() || j.idx_ >= impl_->nodes_.size())
         return std::unexpected(PipelineError::kUnknownJob);
 
     if (!impl_->armedExecutor_)

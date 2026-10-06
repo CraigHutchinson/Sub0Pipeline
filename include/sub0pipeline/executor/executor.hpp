@@ -42,7 +42,7 @@ public:
         std::function<void()>         onComplete,
         int                           coreAffinity,
         uint8_t                       priority,
-        uint32_t                      stackBytes = 4096U) = 0;
+        uint32_t                      stackBytes) = 0;
 
     /** Block until dispatched jobs and their completion callbacks have returned. */
     virtual void wait_all() = 0;

@@ -9,7 +9,6 @@
 #include <sub0pipeline/executor/executor.hpp>
 #include <sub0pipeline/job.hpp>
 #include <sub0pipeline/observer.hpp>
-#include <sub0pipeline/tick_job.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -43,8 +42,8 @@ class IDeadlineService;
  *
  * Post-move state: after a move, the Pipeline is empty but valid; calling
  * emplace() on a moved-from Pipeline recreates the internal state. Job handles
- * point at the Pipeline object they came from, so moving invalidates them:
- * move only while idle, and take new handles from the destination if needed.
+ * stay valid across a move and then refer to the destination. Move only while
+ * idle: not during a run, a trigger or while orphaned work remains.
  */
 class Pipeline
 {
@@ -91,13 +90,6 @@ public:
      */
     [[nodiscard]] Job emplace(
         std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
-
-    /**
-     * @brief Add a void-returning job (always succeeds).
-     * @param fn  The job function.
-     * @return    A Job handle for setting name, timeouts, and dependencies.
-     */
-    [[nodiscard]] Job emplace_void(std::function<void()> fn);
 
     /**
      * @brief Add a void-returning callable (always succeeds).
@@ -284,10 +276,21 @@ public:
      * an atomic pointer -- zero allocation, zero polling.
      */
     struct JobSnapshot {
-        std::string_view name;    ///< Stable pointer into the pipeline's node; valid until pipeline is destroyed.
-        JobStatus        status;  ///< Relaxed atomic load of the job's current status.
+        std::string_view name;        ///< Stable pointer into the pipeline's node; valid until pipeline is destroyed.
+        JobStatus        status;      ///< Relaxed atomic load of the job's current status.
+        std::string_view statusText;  ///< Display text set with Job::statusText(); empty if none.
     };
-    [[nodiscard]] std::vector<JobSnapshot> snapshot() const noexcept;
+    /** @note Not noexcept: building the vector can throw std::bad_alloc. */
+    [[nodiscard]] std::vector<JobSnapshot> snapshot() const;
+
+    /**
+     * @brief Display text set for a job with Job::statusText().
+     * @param id  A job identifier, as observers receive it.
+     * @return The text, or an empty view if none was set or @p id is invalid.
+     *         Borrowed from the caller that set it.
+     * @note Safe to call from an observer callback during a run.
+     */
+    [[nodiscard]] auto statusText(JobId id) const noexcept -> std::string_view;
 
     // ── Validation ───────────────────────────────────────────────────────
 
@@ -300,29 +303,6 @@ public:
      * @return std::unexpected(PipelineError::kCyclicDependency) on cycle.
      */
     [[nodiscard]] auto validate() const -> std::expected<void, PipelineError>;
-
-    // ── Tick loop ─────────────────────────────────────────────────────────
-
-    /** Register a recurring job for the tick event loop. */
-    void add_tick(TickJob tick);
-
-    /**
-     * @brief Enter the main event loop — runs tick jobs at their intervals.
-     *
-     * Does not return. Call after run() completes to begin steady-state
-     * operation. Yields between iterations using a platform-appropriate
-     * sleep (1 ms).
-     */
-    [[noreturn]] void run_loop();
-
-    /**
-     * @brief Run recurring tick jobs until stop is requested.
-     *
-     * Stop is observed between complete tick passes. A running tick callback
-     * is allowed to finish; the platform yield between passes is not
-     * interruptible and may delay return by one yield interval.
-     */
-    void run_loop(std::stop_token stop);
 
     /**
      * @brief Re-run the pipeline repeatedly until the stop token is signalled.
