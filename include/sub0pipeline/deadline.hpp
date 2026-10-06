@@ -72,7 +72,7 @@ public:
      *         free capacity, in which case nothing is registered.
      * @note Thread-safe, non-throwing, task context only.
      */
-    virtual bool arm(Deadline& deadline, std::chrono::milliseconds delay) noexcept = 0;
+    [[nodiscard]] virtual bool arm(Deadline& deadline, std::chrono::milliseconds delay) noexcept = 0;
 
     /**
      * Removes the registration for @p deadline and drains any expiry callback.
