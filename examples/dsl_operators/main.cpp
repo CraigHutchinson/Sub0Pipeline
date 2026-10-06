@@ -8,7 +8,7 @@
 // Compare with examples/boot_sequence/main.cpp for the same pattern
 // expressed with the core API.
 
-#include <sub0pipeline/dsl.hpp>
+#include "sub0pipeline/dsl.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -18,30 +18,31 @@ using namespace std::chrono_literals;
 using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;
 
-namespace {
+namespace
+{
 
-auto load_data() -> std::expected<void, PipelineError>
+auto loadData() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(20ms);
     std::printf("  [load]     done\n");
     return {};
 }
 
-auto parse_input() -> std::expected<void, PipelineError>
+auto parseInput() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(80ms);
     std::printf("  [parse]    done\n");
     return {};
 }
 
-auto validate_input() -> std::expected<void, PipelineError>
+auto validateInput() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(120ms);
     std::printf("  [validate] done\n");
     return {};
 }
 
-auto commit_result() -> std::expected<void, PipelineError>
+auto commitResult() -> std::expected<void, PipelineError>
 {
     std::printf("  [commit]   done\n");
     return {};
@@ -56,10 +57,10 @@ int main()
         std::printf("=== Demo 1: Structured bindings + operator wiring ===\n");
         Pipeline pipe;
         auto [load, parse, validate, commit] = pipe.emplace(
-            "load"_job(load_data),
-            "parse"_job(parse_input).timeout(500ms),
-            "validate"_job(validate_input).timeout(500ms),
-            "commit"_job(commit_result)
+            "load"_job(loadData),
+            "parse"_job(parseInput).timeout(500ms),
+            "validate"_job(validateInput).timeout(500ms),
+            "commit"_job(commitResult)
         );
 
         load >> parse + validate >> commit;
@@ -73,9 +74,9 @@ int main()
     {
         std::printf("=== Demo 2: Inline pipe syntax ===\n");
         Pipeline pipe;
-        pipe >> "load"_job(load_data)
-             >> "parse"_job(parse_input).timeout(500ms) + "validate"_job(validate_input).timeout(500ms)
-             >> "commit"_job(commit_result);
+        pipe >> "load"_job(loadData)
+             >> "parse"_job(parseInput).timeout(500ms) + "validate"_job(validateInput).timeout(500ms)
+             >> "commit"_job(commitResult);
 
         DesktopExecutor exec;
         auto result = pipe.run(exec);

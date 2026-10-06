@@ -4,14 +4,15 @@
 // Each dispatched job runs as a joinable std::thread.
 // Used for desktop simulation and integration testing with real parallelism.
 
-#include <sub0pipeline/executor/desktop_executor.hpp>
+#include "sub0pipeline/executor/desktop_executor.hpp"
 
 #include <utility>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 // A std::thread must not die joinable.
-DesktopExecutor::~DesktopExecutor() { wait_all(); }
+DesktopExecutor::~DesktopExecutor() { waitAll(); }
 
 void DesktopExecutor::dispatch(
     std::string_view              /*name*/,
@@ -36,12 +37,13 @@ void DesktopExecutor::dispatch(
     ++inFlight_;
 }
 
-void DesktopExecutor::wait_all()
+void DesktopExecutor::waitAll()
 {
     std::unique_lock lk{mtx_};
     // Jobs may dispatch successors, and joining releases the lock, so
     // repeat until a pass finds nothing running and nothing left to join.
-    while (inFlight_ != 0U || !threads_.empty()) {
+    while (inFlight_ != 0U || !threads_.empty())
+    {
         idle_.wait(lk, [this] { return inFlight_ == 0U; });
         auto finished = std::move(threads_);
         threads_.clear();

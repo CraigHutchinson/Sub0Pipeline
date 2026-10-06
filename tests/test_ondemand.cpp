@@ -1,38 +1,38 @@
 // tests/test_ondemand.cpp
 //
-// On-demand job tests (run_inline and add_on_demand / arm / trigger).
+// On-demand job tests (runInline and addOnDemand / arm / trigger).
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "test_helpers.hpp"
 #include "doctest.h"
 
 using namespace sub0pipeline;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// run_inline
+// runInline
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("run_inline: executes pipeline synchronously without an explicit executor")
+TEST_CASE("runInline: executes pipeline synchronously without an explicit executor")
 {
     Pipeline pipe;
     int count = 0;
     pipe.emplace([&]{ ++count; }).name("a");
     pipe.emplace([&]{ ++count; }).name("b");
 
-    auto result = pipe.run_inline();
+    auto result = pipe.runInline();
 
     CHECK(result.has_value());
     CHECK(count == 2);
 }
 
-TEST_CASE("run_inline: failure propagates correctly")
+TEST_CASE("runInline: failure propagates correctly")
 {
     Pipeline pipe;
     pipe.emplace([]() -> std::expected<void, PipelineError> {
         return std::unexpected(PipelineError::kJobFailed);
     }).name("fail");
 
-    auto result = pipe.run_inline();
+    auto result = pipe.runInline();
     CHECK_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kJobFailed);
 }
@@ -47,7 +47,7 @@ TEST_CASE("OnDemand: on-demand job does not run during normal run()")
     Pipeline pipe;
 
     int callCount = 0;
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+    auto od = pipe.addOnDemand([&]() -> std::expected<void, PipelineError> {
         ++callCount;
         return {};
     });
@@ -66,7 +66,7 @@ TEST_CASE("OnDemand: trigger() dispatches job via armed executor")
     Pipeline pipe;
 
     int callCount = 0;
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+    auto od = pipe.addOnDemand([&]() -> std::expected<void, PipelineError> {
         ++callCount;
         return {};
     });
@@ -81,7 +81,8 @@ TEST_CASE("OnDemand: trigger() dispatches job via armed executor")
 
 TEST_CASE("OnDemand: observer receives failure details for a failed trigger")
 {
-    struct FailureObserver final : IObserver {
+    struct FailureObserver final : IObserver
+    {
         RunId runId{};
         JobId jobId{};
         PipelineError error{PipelineError::kTimeout};
@@ -99,7 +100,7 @@ TEST_CASE("OnDemand: observer receives failure details for a failed trigger")
 
     RecordingExecutor exec;
     Pipeline pipe;
-    auto job = pipe.add_on_demand([]() -> std::expected<void, PipelineError> {
+    auto job = pipe.addOnDemand([]() -> std::expected<void, PipelineError> {
         return std::unexpected(PipelineError::kJobFailed);
     });
     pipe.arm(exec, &observer);
@@ -116,7 +117,7 @@ TEST_CASE("OnDemand: trigger() can be called multiple times independently")
     Pipeline pipe;
 
     int callCount = 0;
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+    auto od = pipe.addOnDemand([&]() -> std::expected<void, PipelineError> {
         ++callCount;
         return {};
     });
@@ -134,7 +135,7 @@ TEST_CASE("OnDemand: trigger() without arm() returns kNotArmed")
     RecordingExecutor exec;
     Pipeline pipe;
 
-    auto od = pipe.add_on_demand([]() -> std::expected<void, PipelineError> {
+    auto od = pipe.addOnDemand([]() -> std::expected<void, PipelineError> {
         return {};
     });
 
@@ -171,7 +172,7 @@ TEST_CASE("OnDemand: normal jobs and on-demand jobs coexist -- only normal jobs 
         ++normalCount; return {};
     }).name("normal");
 
-    auto od = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+    auto od = pipe.addOnDemand([&]() -> std::expected<void, PipelineError> {
         ++onDemandCount; return {};
     });
     od.name("on_demand");

@@ -16,7 +16,7 @@
 //   sensor_poll every 500 ms  →  ~2 ticks
 //   watchdog    every 100 ms  →  ~11 ticks
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -44,7 +44,8 @@ int main()
     ready.succeed(init);
 
     auto bootResult = pipeline.run(exec);
-    if (!bootResult) {
+    if (!bootResult)
+    {
         std::printf("Boot failed — aborting.\n");
         return 1;
     }

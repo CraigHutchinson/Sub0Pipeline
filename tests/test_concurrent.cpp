@@ -3,7 +3,7 @@
 // Thread-safety tests using real std::thread parallelism.
 // Validates that the Pipeline DAG engine is safe under concurrent dispatch.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "doctest.h"
 
 #include <atomic>
@@ -39,18 +39,20 @@ public:
         });
     }
 
-    void wait_all() override
+    void waitAll() override
     {
         // Drain loop: successor jobs may be dispatched during execution, so keep
         // joining until all threads are exhausted and inFlight_ reaches zero.
-        while (true) {
+        while (true)
+        {
             std::vector<std::thread> batch;
             {
                 std::lock_guard lk{mtx_};
                 if (threads_.empty() && inFlight_.load(std::memory_order_relaxed) == 0) break;
                 batch = std::move(threads_);
             }
-            for (auto& t : batch) {
+            for (auto& t : batch)
+            {
                 if (t.joinable()) t.join();
             }
         }
@@ -96,7 +98,8 @@ TEST_CASE("Concurrent: wide fan-out stress N=50 with real threads")
     constexpr int      cN = 50;
 
     auto root = pipeline.emplace([&] { counter.fetch_add(1, std::memory_order_relaxed); }).name("root");
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         pipeline.emplace([&] { counter.fetch_add(1, std::memory_order_relaxed); })
             .name("task_" + std::to_string(i))
             .succeed(root);
@@ -123,7 +126,7 @@ TEST_CASE("Concurrent: DesktopExecutor smoke test — sequential pipeline succee
     CHECK(counter == 2);
 }
 
-TEST_CASE("Concurrent: DesktopExecutor wait_all waits for a job still blocked when it is called")
+TEST_CASE("Concurrent: DesktopExecutor waitAll waits for a job still blocked when it is called")
 {
     DesktopExecutor exec;
     std::latch release{1};
@@ -131,7 +134,7 @@ TEST_CASE("Concurrent: DesktopExecutor wait_all waits for a job still blocked wh
 
     exec.dispatch("blocked", [&] { release.wait(); finished = true; }, nullptr, -1, 5, 8192U);
     std::jthread releaser{[&] { release.count_down(); }};
-    exec.wait_all();
+    exec.waitAll();
 
     CHECK(finished.load());
 }
@@ -177,7 +180,7 @@ TEST_CASE("SubDAG: ScopedExecutor -- desktop job creates dynamic inner pipeline 
     std::atomic<int> innerRuns{0};
     outer.emplace([&]() -> std::expected<void, PipelineError>
     {
-        // ScopedExecutor shares the thread pool but scopes wait_all()
+        // ScopedExecutor shares the thread pool but scopes waitAll()
         // to only the inner jobs -- avoids the self-wait deadlock.
         ScopedExecutor scoped{exec};
         Pipeline inner;

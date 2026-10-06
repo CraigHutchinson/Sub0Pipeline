@@ -4,7 +4,7 @@
 // Link Sub0Pipeline::Priority.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -16,10 +16,11 @@
 #include <thread>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
- * @brief Fixed-size worker pool that starts queued jobs in priority order.
+ * Runs jobs on a fixed-size worker pool, starting queued jobs in priority order.
  *
  * A job with a larger `.priority()` value starts before lower-priority jobs
  * that are still queued. Running jobs are not preempted, and jobs of equal
@@ -32,7 +33,7 @@ namespace sub0pipeline {
  * Owns its worker threads, which start in the constructor. The destructor
  * waits for every dispatched job and then joins the workers. Construct it
  * wherever suits the caller (stack, member, static); it is neither copyable
- * nor movable. dispatch() is thread-safe. Do not call wait_all() from inside a
+ * nor movable. dispatch() is thread-safe. Do not call waitAll() from inside a
  * job running on this executor; use ScopedExecutor for nested runs.
  */
 class PriorityExecutor final : public IExecutor
@@ -56,7 +57,10 @@ public:
     /** Start a pool with default Options. */
     PriorityExecutor();
 
-    /** Start a pool configured by @p options. */
+    /**
+     * Start a pool configured by @p options.
+     * @param options  The worker count and per-thread setup.
+     */
     explicit PriorityExecutor(Options options);
 
     /** Waits for every dispatched job, then stops and joins the workers. */
@@ -73,9 +77,9 @@ public:
         uint8_t                       priority,
         uint32_t                      stackBytes) override;
 
-    void wait_all() override;
+    void waitAll() override;
 
-    /** @return The number of worker threads. */
+    /** Returns the number of worker threads. */
     [[nodiscard]] int concurrency() const noexcept override;
 
 private:

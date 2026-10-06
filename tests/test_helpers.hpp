@@ -4,7 +4,7 @@
 // Shared test helpers -- InlineExecutor and RecordingExecutor used across
 // multiple test translation units.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 
 #include <string>
 #include <deque>
@@ -23,11 +23,11 @@ public:
         fn();
         if (onComplete) onComplete();
     }
-    void wait_all() override {}
+    void waitAll() override {}
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 };
 
-/// Controllable FIFO: all dispatches are queued until wait_all().
+/// Controllable FIFO: all dispatches are queued until waitAll().
 class QueuedExecutor final : public IExecutor
 {
 public:
@@ -39,9 +39,10 @@ public:
             if (complete) complete();
         });
     }
-    void wait_all() override
+    void waitAll() override
     {
-        while (!queue_.empty()) {
+        while (!queue_.empty())
+        {
             auto fn = std::move(queue_.front());
             queue_.pop_front();
             fn();
@@ -69,7 +70,7 @@ public:
         if (onComplete) onComplete();
     }
 
-    void wait_all() override {}
+    void waitAll() override {}
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 
     [[nodiscard]] const std::vector<std::string>& order() const { return order_; }

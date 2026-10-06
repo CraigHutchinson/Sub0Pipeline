@@ -2,7 +2,7 @@
 //
 // PoolSuccessors: pool/arena behaviour tests.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "test_helpers.hpp"
 #include "doctest.h"
 
@@ -97,7 +97,8 @@ TEST_CASE("PoolSuccessors: pool iteration matches push order")
     std::mutex mtx;
 
     auto root = pipe.emplace([]{}); // root with no action
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i)
+    {
         pipe.emplace([&results, &mtx, i]{
             std::lock_guard lk{mtx};
             results.push_back(i);
@@ -130,7 +131,7 @@ TEST_CASE("PoolSuccessors: a 5000-job fan-out builds, keeps push order and runs 
     JobId expected = 1;
     for (const auto target : successors) CHECK(target.id == expected++);
 
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
     CHECK(ran.load() == cN + 1);
 }
 
@@ -142,7 +143,8 @@ TEST_CASE("PoolSuccessors: interleaved wide fan-outs relocate without disturbing
     Pipeline pipe;
     auto first  = pipe.emplace([] {});
     auto second = pipe.emplace([] {});
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         first.precede(pipe.emplace([] {}));
         pipe.emplace([] {}).succeed(second);
     }
@@ -157,7 +159,7 @@ TEST_CASE("PoolSuccessors: interleaved wide fan-outs relocate without disturbing
     for (const auto target : fromSecond) { CHECK(target.id == expected); expected += 2; }
 
     CHECK(pipe.validate().has_value());
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
 }
 
 #if SUB0PIPELINE_EXCEPTIONS
@@ -176,7 +178,7 @@ TEST_CASE("PoolSuccessors: one job accepts 32767 successors and rejects the next
     CHECK(pipe.successors(JobId{0}).size() == static_cast<std::size_t>(cLimit));
 
     // The rejected edge left nothing behind: the job is an ordinary root.
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
     CHECK(extraRan.load());
 }
 #endif

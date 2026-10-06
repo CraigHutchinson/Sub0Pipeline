@@ -4,7 +4,7 @@
 // no heap), configured through their own constructors, and used through the
 // IExecutor interface by Pipeline.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "doctest.h"
 
 #include <algorithm>
@@ -16,7 +16,8 @@
 
 using namespace sub0pipeline;
 
-namespace {
+namespace
+{
 
 // 1 root -> `leaves` leaves; returns how many jobs ran.
 template<typename Executor>
@@ -45,7 +46,7 @@ TEST_CASE("Executors: SequentialExecutor is usable as a plain local object")
 {
     SequentialExecutor executor;
     CHECK(executor.concurrency() == 1);
-    CHECK(executor.runs_inline());
+    CHECK(executor.runsInline());
     CHECK(runFanOut(executor, 8) == 9);
 }
 
@@ -54,10 +55,11 @@ TEST_CASE("Executors: DesktopExecutor is usable as a local object and as a membe
     {
         DesktopExecutor executor;
         CHECK(runFanOut(executor, 8) == 9);
-        CHECK(runFanOut(executor, 3) == 4);   // reusable after wait_all()
+        CHECK(runFanOut(executor, 3) == 4);   // reusable after waitAll()
     }
 
-    struct Owner {
+    struct Owner
+    {
         DesktopExecutor executor;
         Pipeline pipeline;
     } owner;
@@ -125,7 +127,8 @@ TEST_CASE("Executors: DefaultExecutor needs no arguments and runs a pipeline")
 
 TEST_CASE("Executors: an executor chosen at run time is held through IExecutor")
 {
-    for (const bool parallel : {false, true}) {
+    for (const bool parallel : {false, true})
+    {
         std::unique_ptr<IExecutor> executor;
         if (parallel) executor = std::make_unique<PriorityExecutor>(PriorityExecutor::Options{.threadCount = 2});
         else          executor = std::make_unique<SequentialExecutor>();

@@ -1,9 +1,9 @@
 // include/sub0pipeline/executor/scoped_executor.hpp
 //
-// ScopedExecutor — scopes wait_all() to its own dispatches for nested sub-DAG runs.
+// ScopedExecutor — scopes waitAll() to its own dispatches for nested sub-DAG runs.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -13,22 +13,23 @@
 #include <string_view>
 #include <utility>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 // ── ScopedExecutor ───────────────────────────────────────────────────────────
 
 /**
- * @brief Executor wrapper that scopes wait_all() to jobs dispatched through
- *        this instance, enabling sub-DAG execution from within a running job.
+ * Scopes waitAll() to the jobs dispatched through this instance, so a
+ * running job can execute a sub-DAG.
  *
  * The canonical deadlock scenario without ScopedExecutor:
  *   - Outer job T runs on DesktopExecutor (inFlight_ counts T).
- *   - T calls inner.run(outerExec) -> inner.run() calls outerExec.wait_all().
- *   - outerExec.wait_all() waits for inFlight_ == 0, but T contributes 1
+ *   - T calls inner.run(outerExec) -> inner.run() calls outerExec.waitAll().
+ *   - outerExec.waitAll() waits for inFlight_ == 0, but T contributes 1
  *     and T is the waiter -> deadlock.
  *
  * ScopedExecutor fixes this by maintaining its own inFlight_ counter.
- * wait_all() waits only for jobs dispatched through this scope -- not for
+ * waitAll() waits only for jobs dispatched through this scope -- not for
  * the caller's own contribution to the parent executor's inFlight_.
  *
  * The parent executor's thread pool is reused (no extra threads created):
@@ -45,8 +46,13 @@ namespace sub0pipeline {
 class ScopedExecutor final : public IExecutor
 {
 public:
+    /**
+     * Creates a scope over @p parent.
+     * @param parent  The executor that actually runs the jobs. Borrowed; it
+     *                must outlive this scope.
+     */
     explicit ScopedExecutor(IExecutor& parent) noexcept : parent_{parent} {}
-    ~ScopedExecutor() override { wait_all(); }
+    ~ScopedExecutor() override { waitAll(); }
 
     void dispatch(
         std::string_view      name,
@@ -71,7 +77,7 @@ public:
             coreAffinity, priority, stackBytes);
     }
 
-    void wait_all() override
+    void waitAll() override
     {
         std::unique_lock lk{mtx_};
         cv_.wait(lk, [this]
@@ -85,9 +91,9 @@ public:
         return parent_.concurrency();
     }
 
-    [[nodiscard]] bool runs_inline() const noexcept override
+    [[nodiscard]] bool runsInline() const noexcept override
     {
-        return parent_.runs_inline();
+        return parent_.runsInline();
     }
 
 private:

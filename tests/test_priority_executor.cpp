@@ -5,7 +5,7 @@
 // factory, not a fake IExecutor -- these properties only exist in the real
 // thread-pool implementation.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "doctest.h"
 
 #include <atomic>
@@ -25,7 +25,7 @@ TEST_CASE("PriorityExecutor: dispatches and completes a single job")
     std::atomic<bool> ran{false};
 
     exec.dispatch("job", [&] { ran = true; }, nullptr, -1, 5, 8192U);
-    exec.wait_all();
+    exec.waitAll();
 
     CHECK(ran.load());
     CHECK(exec.concurrency() == 2);
@@ -65,7 +65,7 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
         releaseHold = true;
     }
     holdCv.notify_one();
-    exec.wait_all();
+    exec.waitAll();
 
     REQUIRE(order.size() == 3U);
     CHECK(order[0] == "high"); // highest priority among the three queued jobs
@@ -96,7 +96,8 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
     unsigned int            arrived = 0;
     std::atomic<unsigned int> jobsOnUnprimedThread{0};
 
-    for (unsigned int i = 0; i < kThreads; ++i) {
+    for (unsigned int i = 0; i < kThreads; ++i)
+    {
         exec.dispatch("job", [&] {
             {
                 std::lock_guard lk{seenMtx};
@@ -104,14 +105,17 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
                     jobsOnUnprimedThread.fetch_add(1, std::memory_order_relaxed);
             }
             std::unique_lock lk{barrierMtx};
-            if (++arrived == kThreads) {
+            if (++arrived == kThreads)
+            {
                 barrierCv.notify_all();
-            } else {
+            }
+            else
+            {
                 barrierCv.wait(lk, [&] { return arrived == kThreads; });
             }
         }, nullptr, -1, 5, 8192U);
     }
-    exec.wait_all();
+    exec.waitAll();
 
     CHECK(startCount.load() == kThreads);
     CHECK(jobsOnUnprimedThread.load() == 0U);
@@ -124,7 +128,7 @@ TEST_CASE("PriorityExecutor: default (no onThreadStart) still dispatches correct
 
     for (int i = 0; i < 10; ++i)
         exec.dispatch("job", [&] { completed.fetch_add(1, std::memory_order_relaxed); }, nullptr, -1, 5, 8192U);
-    exec.wait_all();
+    exec.waitAll();
 
     CHECK(completed.load() == 10);
 }

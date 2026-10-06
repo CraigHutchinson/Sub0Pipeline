@@ -4,7 +4,7 @@
 // Each dispatched job runs as a pinned FreeRTOS task with configurable
 // priority and core affinity. Tasks self-delete on completion.
 
-#include <sub0pipeline/executor/freertos_executor.hpp>
+#include "sub0pipeline/executor/freertos_executor.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -22,9 +22,11 @@
 
 static constexpr const char* cTag = "sub0pipeline";
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
-namespace {
+namespace
+{
 // The public header stores the handle as void* so that it needs no FreeRTOS headers.
 SemaphoreHandle_t semaphore(void* handle) noexcept
 {
@@ -70,7 +72,8 @@ void FreeRtosExecutor::dispatch(
     auto* ctx = new (std::nothrow) Ctx{
         std::move(fn), std::move(onComplete), semaphore(completionSem_), &inFlight_};
 
-    if (!ctx) {
+    if (!ctx)
+    {
         ESP_LOGE(cTag, "dispatch alloc failed for '%.*s' (free_heap=%lu)",
                  static_cast<int>(name.size()), name.data(),
                  static_cast<unsigned long>(xPortGetFreeHeapSize()));
@@ -109,7 +112,8 @@ void FreeRtosExecutor::dispatch(
         nullptr,
         core);
 
-    if (rc != pdPASS) {
+    if (rc != pdPASS)
+    {
         ESP_LOGE(cTag, "xTaskCreate failed for '%s' (stack=%lu, free_heap=%lu)",
                  taskName,
                  static_cast<unsigned long>(stackBytes),
@@ -124,10 +128,11 @@ void FreeRtosExecutor::dispatch(
     }
 }
 
-void FreeRtosExecutor::wait_all()
+void FreeRtosExecutor::waitAll()
 {
     // Drain: block until all in-flight tasks have completed.
-    while (inFlight_.load(std::memory_order_acquire) > 0U) {
+    while (inFlight_.load(std::memory_order_acquire) > 0U)
+    {
         xSemaphoreTake(semaphore(completionSem_), pdMS_TO_TICKS(100));
     }
 }

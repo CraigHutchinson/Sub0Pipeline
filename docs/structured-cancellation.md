@@ -18,7 +18,7 @@ scheduler cannot make external side effects idempotent.
   requests reset before dispatch. Cancellation is fatal even for optional jobs;
   ordinary optional failures retain their existing behavior.
 - `run()` waits for executor callbacks. Non-cooperative timed-out jobs remain
-  owned: call `join_orphans()` before releasing borrowed state. Pending queries
+  owned: call `joinOrphans()` before releasing borrowed state. Pending queries
   stay true during joins and report unreaped work, not thread liveness.
 - Subsequent runs join previous orphans before resetting state. Concurrent or
   reentrant runs return `kBusy`. Do not overlap graph mutation, `arm`, `trigger`,
@@ -40,13 +40,13 @@ shutdown sequence with borrowed state under sanitizers.
 
 ## Injected deadlines
 
-Include `sub0pipeline/deadline.hpp` and configure `set_deadline_service()` while
+Include `sub0pipeline/deadline.hpp` and configure `setDeadlineService()` while
 idle. Services receive a caller-owned stack registration and a relative execution
 duration; queue time is excluded. Return false on capacity exhaustion with no
 retained pointer. This fails closed with `kDeadlineUnavailable`. Zero/negative
 relative durations should expire synchronously. Untimed jobs bypass the service.
 
-`cancel_and_wait()` must remove the registration and drain all expiry activity,
+`cancelAndWait()` must remove the registration and drain all expiry activity,
 including when it already fired. `Deadline::expire()` requests stop synchronously:
 use task context, release service locks first, and keep consumer callbacks bounded.
 A single-thread manual clock is appropriate only with sequential execution; a

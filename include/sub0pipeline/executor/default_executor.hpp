@@ -20,19 +20,20 @@
 #endif
 
 #if SUB0PIPELINE_DEFAULT_EXECUTOR_SEQUENTIAL
-#  include <sub0pipeline/executor/sequential_executor.hpp>
+#  include "sub0pipeline/executor/sequential_executor.hpp"
 #elif __has_include(<freertos/FreeRTOS.h>)
-#  include <sub0pipeline/executor/freertos_executor.hpp>
+#  include "sub0pipeline/executor/freertos_executor.hpp"
 #elif defined(__STDCPP_THREADS__)
-#  include <sub0pipeline/executor/priority_executor.hpp>
+#  include "sub0pipeline/executor/priority_executor.hpp"
 #else
-#  include <sub0pipeline/executor/sequential_executor.hpp>
+#  include "sub0pipeline/executor/sequential_executor.hpp"
 #endif
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
- * @brief The bundled executor selected for the platform being built.
+ * Names the bundled executor selected for the platform being built.
  *
  * An alias for FreeRtosExecutor, PriorityExecutor or SequentialExecutor; see
  * the top of this header for the rule. Every candidate is default-constructible

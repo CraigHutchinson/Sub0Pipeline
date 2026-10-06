@@ -4,12 +4,13 @@
 // Higher-priority jobs (larger uint8_t value) start before lower-priority ones
 // that have not yet started executing.
 
-#include <sub0pipeline/executor/priority_executor.hpp>
+#include "sub0pipeline/executor/priority_executor.hpp"
 
 #include <algorithm>
 #include <utility>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 PriorityExecutor::PriorityExecutor() : PriorityExecutor{Options{}} {}
 
@@ -19,7 +20,8 @@ PriorityExecutor::PriorityExecutor(Options options)
         ? options.threadCount
         : std::max(1U, std::thread::hardware_concurrency());
     workers_.reserve(threadCount);
-    for (unsigned int i = 0; i < threadCount; ++i) {
+    for (unsigned int i = 0; i < threadCount; ++i)
+    {
         workers_.emplace_back([this, onThreadStart = options.onThreadStart] {
             work(onThreadStart);
         });
@@ -28,7 +30,7 @@ PriorityExecutor::PriorityExecutor(Options options)
 
 PriorityExecutor::~PriorityExecutor()
 {
-    wait_all();
+    waitAll();
     {
         std::lock_guard lk{mtx_};
         stopping_ = true;
@@ -58,7 +60,7 @@ void PriorityExecutor::dispatch(
     if (wake) wake_.notify_one();
 }
 
-void PriorityExecutor::wait_all()
+void PriorityExecutor::waitAll()
 {
     std::unique_lock lk{doneMtx_};
     doneCv_.wait(lk, [this]{ return inFlight_.load(std::memory_order_acquire) == 0U; });
@@ -72,7 +74,8 @@ int PriorityExecutor::concurrency() const noexcept
 void PriorityExecutor::work(const std::function<void()>& onThreadStart)
 {
     if (onThreadStart) onThreadStart();
-    for (;;) {
+    for (;;)
+    {
         QueuedJob job;
         {
             std::unique_lock lk{mtx_};
@@ -88,7 +91,8 @@ void PriorityExecutor::work(const std::function<void()>& onThreadStart)
         // Only the completion that empties the executor has a waiter to
         // wake. Taking doneMtx_ there orders the notify after the waiter's
         // predicate check, so it cannot be missed.
-        if (inFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+        if (inFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U)
+        {
             std::lock_guard done{doneMtx_};
             doneCv_.notify_all();
         }

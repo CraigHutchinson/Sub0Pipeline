@@ -11,7 +11,7 @@
 //   display(60ms) → ui(30ms)
 //   mqtt + ui → app(10ms)
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <chrono>
 #include <map>
 #include <mutex>
@@ -48,7 +48,8 @@ public:
         long long elapsedMs = 0;
 
         auto it = startTime_.find(jobId);
-        if (it != startTime_.end()) {
+        if (it != startTime_.end())
+        {
             elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 Clock::now() - it->second).count();
         }
@@ -60,11 +61,15 @@ public:
         char bar[64]{};
         int pos = 0;
         bar[pos++] = '[';
-        for (int i = 0; i < kBarWidth; ++i) {
+        for (int i = 0; i < kBarWidth; ++i)
+        {
             // UTF-8 for U+2588 (FULL BLOCK) is 3 bytes; U+2591 (LIGHT SHADE) is 3 bytes.
-            if (i < filled) {
+            if (i < filled)
+            {
                 bar[pos++] = '\xe2'; bar[pos++] = '\x96'; bar[pos++] = '\x88'; // █
-            } else {
+            }
+            else
+            {
                 bar[pos++] = '\xe2'; bar[pos++] = '\x96'; bar[pos++] = '\x91'; // ░
             }
         }
@@ -91,7 +96,8 @@ public:
                                 DependencyRange successors) override
     {
         std::scoped_lock lock{mutex_};
-        for (const auto target : successors) {
+        for (const auto target : successors)
+        {
             std::printf("  edge: %.*s \xe2\x86\x92 %.*s\n",
                         static_cast<int>(from.size()), from.data(),
                         static_cast<int>(target.name.size()), target.name.data());
@@ -105,7 +111,8 @@ public:
         std::printf("  %-14s  %8s  %s\n", "job", "ms", "status");
         std::printf("  %-14s  %8s  %s\n", "---", "--", "------");
 
-        for (const auto& [jobId, rec] : timings_) {
+        for (const auto& [jobId, rec] : timings_)
+        {
             (void)jobId;
             const char* statusStr =
                 (rec.status == JobStatus::kDone)    ? "kDone"
@@ -119,7 +126,8 @@ public:
     }
 
 private:
-    struct TimingRecord {
+    struct TimingRecord
+    {
         std::string name;
         long long elapsedMs{};
         JobStatus status{JobStatus::kPending};
@@ -132,39 +140,40 @@ private:
 
 // ── Subsystem initialisers ────────────────────────────────────────────────────
 
-namespace {
+namespace
+{
 
-auto nvs_init() -> std::expected<void, PipelineError>
+auto nvsInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(20ms);
     return {};
 }
 
-auto wifi_init() -> std::expected<void, PipelineError>
+auto wifiInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(80ms);
     return {};
 }
 
-auto display_init() -> std::expected<void, PipelineError>
+auto displayInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(60ms);
     return {};
 }
 
-auto mqtt_init() -> std::expected<void, PipelineError>
+auto mqttInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(40ms);
     return {};
 }
 
-auto ui_init() -> std::expected<void, PipelineError>
+auto uiInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(30ms);
     return {};
 }
 
-auto app_start() -> std::expected<void, PipelineError>
+auto appStart() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(10ms);
     return {};
@@ -178,12 +187,12 @@ int main()
 {
     Pipeline boot;
 
-    auto nvs     = boot.emplace(nvs_init).name("nvs");
-    auto wifi    = boot.emplace(wifi_init).name("wifi").timeout(500ms);
-    auto display = boot.emplace(display_init).name("display").timeout(500ms);
-    auto mqtt    = boot.emplace(mqtt_init).name("mqtt").timeout(500ms);
-    auto ui      = boot.emplace(ui_init).name("ui");
-    auto app     = boot.emplace(app_start).name("app");
+    auto nvs     = boot.emplace(nvsInit).name("nvs");
+    auto wifi    = boot.emplace(wifiInit).name("wifi").timeout(500ms);
+    auto display = boot.emplace(displayInit).name("display").timeout(500ms);
+    auto mqtt    = boot.emplace(mqttInit).name("mqtt").timeout(500ms);
+    auto ui      = boot.emplace(uiInit).name("ui");
+    auto app     = boot.emplace(appStart).name("app");
 
     wifi.succeed(nvs);
     display.succeed(nvs);
@@ -203,10 +212,13 @@ int main()
         Clock::now() - t0);
 
     std::printf("\n");
-    if (result) {
+    if (result)
+    {
         std::printf("Boot complete in %lld ms\n",
                     static_cast<long long>(elapsed.count()));
-    } else {
+    }
+    else
+    {
         std::printf("Boot failed.\n");
     }
 

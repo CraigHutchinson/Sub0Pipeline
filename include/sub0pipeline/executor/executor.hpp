@@ -7,12 +7,13 @@
 #include <functional>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 // ── Executor interface ────────────────────────────────────────────────────────
 
 /**
- * @brief Platform-injectable execution backend.
+ * Abstracts the execution backend so each platform can inject its own.
  *
  * Provides an abstraction layer so the same Pipeline DAG engine runs on
  * any platform: threaded, sequential/inline, or RTOS-based.
@@ -20,7 +21,7 @@ namespace sub0pipeline {
  * Contract:
  *   - dispatch() MUST increment its in-flight counter before returning.
  *   - dispatch() MUST eventually call onComplete() from the dispatched context.
- *   - wait_all() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
+ *   - waitAll() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
  */
 class IExecutor
 {
@@ -28,7 +29,7 @@ public:
     virtual ~IExecutor() = default;
 
     /**
-     * @brief Dispatch a job for asynchronous execution.
+     * Dispatch a job for asynchronous execution.
      * @param name         Human-readable label (for logging).
      * @param fn           The job function to execute.
      * @param onComplete   Callback fired when fn returns (required by contract).
@@ -45,14 +46,16 @@ public:
         uint32_t                      stackBytes) = 0;
 
     /** Block until dispatched jobs and their completion callbacks have returned. */
-    virtual void wait_all() = 0;
+    virtual void waitAll() = 0;
 
-    /** @return Number of parallel execution slots (cores / thread pool size). */
+    /**
+     * Reports how many jobs can run in parallel.
+     * @return Number of parallel execution slots (cores / thread pool size).
+     */
     [[nodiscard]] virtual int concurrency() const noexcept = 0;
 
     /**
-     * @return true if dispatch() runs the job to completion on the calling
-     *         thread before it returns.
+     * Reports whether dispatch() runs each job on the calling thread.
      *
      * Pipeline::run() then calls ready jobs itself, in the order they become
      * ready, and does not use dispatch(). Stack depth stays constant however
@@ -60,8 +63,11 @@ public:
      * dispatch() would nest one call per link. Core affinity, priority and
      * stack hints do not apply to such a run. Pipeline::trigger() still goes
      * through dispatch().
+     *
+     * @return true if dispatch() runs the job to completion on the calling
+     *         thread before it returns.
      */
-    [[nodiscard]] virtual bool runs_inline() const noexcept { return false; }
+    [[nodiscard]] virtual bool runsInline() const noexcept { return false; }
 };
 
 } // namespace sub0pipeline

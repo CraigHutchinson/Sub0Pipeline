@@ -5,17 +5,18 @@
 // FreeRTOS headers, so it can be included on any host.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <atomic>
 #include <cstdint>
 #include <functional>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
- * @brief Executor that runs each job as its own FreeRTOS task.
+ * Runs each job as its own FreeRTOS task.
  *
  * Honours the job's core affinity (cores 0 and 1; anything else is unpinned),
  * priority (clamped to 1–24) and stack size. Each task deletes itself when its
@@ -24,7 +25,7 @@ namespace sub0pipeline {
  *
  * Owns one counting semaphore, created in the constructor. Construct it
  * wherever suits the caller (stack, member, static); it is neither copyable
- * nor movable. Call wait_all() before destroying it: the destructor does not
+ * nor movable. Call waitAll() before destroying it: the destructor does not
  * wait for running tasks. Task context only; not for use from an ISR.
  */
 class FreeRtosExecutor final : public IExecutor
@@ -47,9 +48,9 @@ public:
         uint8_t                       priority,
         uint32_t                      stackBytes) override;
 
-    void wait_all() override;
+    void waitAll() override;
 
-    /** @return The number of processor cores FreeRTOS schedules on. */
+    /** Returns the number of processor cores FreeRTOS schedules on. */
     [[nodiscard]] int concurrency() const noexcept override;
 
 private:

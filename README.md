@@ -19,15 +19,15 @@ through `std::expected`.
 | Optional DSL | Separate `dsl.hpp`; `>>`, `+`, `_job`, job groups, tuples and structured bindings |
 | Job results | `std::expected<void, PipelineError>`; void jobs are wrapped as successful jobs |
 | Failure propagation | Required failures skip successors; optional ordinary failures allow them to continue; cancellation remains fatal |
-| Cancellation | Per-job `cancel()` and external stop tokens for `run`, `run_inline` and `run_until`; queued plain jobs are also suppressible |
+| Cancellation | Per-job `cancel()` and external stop tokens for `run`, `runInline` and `runUntil`; queued plain jobs are also suppressible |
 | Timeouts | Native helpers or an injected deadline service with caller-owned registrations; expiry reports `kTimeout`; owned plain workers require reaping |
 | Structured completion | Opt-in `RunScope` requests stop and joins executor callbacks, deadline callbacks and orphan workers before teardown |
-| Completion and reuse | `run()` waits for executor callbacks; `join_orphans()` waits for timed-out helper jobs; subsequent runs reap old work; concurrent/reentrant runs return `kBusy` |
+| Completion and reuse | `run()` waits for executor callbacks; `joinOrphans()` waits for timed-out helper jobs; subsequent runs reap old work; concurrent/reentrant runs return `kBusy` |
 | Executors | Inline/headless, desktop thread-per-job, priority worker pool, scoped adapter, and an ESP32-P4 FreeRTOS source adapter |
 | Job hints | Names, status text, timeout, priority, core affinity and stack size; platform hints depend on the executor |
 | Observation and diagnostics | Optional identity-aware run/job/dependency events, status/name queries, snapshots, first failure name, error context and caller-selected text DAG output |
-| On-demand jobs | `add_on_demand`, `arm`, `trigger`; excluded from normal roots and invoked individually |
-| Repeated work | Stop-controlled DAG reruns with `run_until`; periodic ticks with the separate `TickLoop` |
+| On-demand jobs | `addOnDemand`, `arm`, `trigger`; excluded from normal roots and invoked individually |
+| Repeated work | Stop-controlled DAG reruns with `runUntil`; periodic ticks with the separate `TickLoop` |
 | Build and validation | CMake targets/install support, optional executor builds, no-exception core configuration, examples, functional/sanitizer suites and opt-in benchmarks |
 
 ### The scheduler in motion
@@ -55,7 +55,7 @@ fixed-capacity execution remain separate work. See
 
 - A custom executor that runs each job from inside `dispatch()` nests one call
   per dependency link, so stack use grows with the longest chain. Override
-  `IExecutor::runs_inline()` to return true, as `run_inline()` and
+  `IExecutor::runsInline()` to return true, as `runInline()` and
   `SequentialExecutor` do, and the pipeline calls ready jobs from a loop instead.
 - [Issue #4](https://github.com/CraigHutchinson/Sub0Pipeline/issues/4) tracks
   measured, explicit bounded-allocation profiles. The current implementation
@@ -66,7 +66,7 @@ fixed-capacity execution remain separate work. See
   return by one interval.
 - The optional observer supports identity-aware job/run events and one batched
   dependency callback per completed node with successors. Static graph output
-  uses `dump_text(std::ostream&)`; bounded capture and Chrome Trace export are
+  uses `dumpText(std::ostream&)`; bounded capture and Chrome Trace export are
   demonstrated in [trace_capture](examples/trace_capture/main.cpp). See the
   [observability guide](docs/observability.md) for capture, transport and
   embedded-use guidance.
@@ -74,7 +74,7 @@ fixed-capacity execution remain separate work. See
 ## Quick start
 
 ```cpp
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 using namespace sub0pipeline;
 
 Pipeline pipe;
@@ -87,7 +87,7 @@ auto commit = pipe.emplace([]() -> std::expected<void, PipelineError> {
 validate.succeed(decode);
 commit.succeed(validate);
 
-auto result = pipe.run_inline();
+auto result = pipe.runInline();
 ```
 
 Choose an executor explicitly for parallel work:
@@ -96,13 +96,13 @@ Choose an executor explicitly for parallel work:
 PriorityExecutor executor{{.threadCount = 2}}; // two workers; queue is dynamically sized
 // Keep the executor, pipeline and anything borrowed by jobs alive through joining.
 auto result = pipe.run(executor);
-pipe.join_orphans();
+pipe.joinOrphans();
 ```
 
 ### Optional DSL
 
 ```cpp
-#include <sub0pipeline/dsl.hpp>
+#include "sub0pipeline/dsl.hpp"
 using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;
 
@@ -130,8 +130,8 @@ auto transfer = pipe.emplace([](std::stop_token stop)
     // Use stop-aware transport waits for real blocking I/O.
     return {};
 });
-auto result = pipe.run_inline(shutdown.get_token());
-pipe.join_orphans(); // before destroying anything borrowed by a timed-out job
+auto result = pipe.runInline(shutdown.get_token());
+pipe.joinOrphans(); // before destroying anything borrowed by a timed-out job
 ```
 
 An external request reaches executing cooperative jobs through their token.
@@ -141,9 +141,9 @@ Per-job cancellation before a run resets during initialization; requests during
 the run survive until the job is reached.
 
 `run()` returning and **all borrowed state being safe to release are distinct**
-when non-cooperative jobs time out. `has_pending_orphans()` reports unreaped work,
+when non-cooperative jobs time out. `hasPendingOrphans()` reports unreaped work,
 including threads being joined; it is not a replacement for synchronization.
-`join_orphans()` can block indefinitely if a job never returns. The next run joins
+`joinOrphans()` can block indefinitely if a job never returns. The next run joins
 old timed-out work before reinitializing. Untimed inline jobs stay on the calling
 thread; timeout enforcement can create native helper threads even inline.
 
@@ -227,7 +227,7 @@ is no per-invocation future. Duplicate queued/running submissions return `kBusy`
 wait for executor completion before retrying. Each accepted invocation receives
 a fresh cancellation state. Foreign handles are rejected.
 
-`run_until()` reruns a graph until stopped; the caller supplies pacing.
+`runUntil()` reruns a graph until stopped; the caller supplies pacing.
 `TickLoop` is a separate class for periodic work after start-up; it shares no
 state with a `Pipeline`. `TickLoop::run(stop_token)` returns after the current
 tick pass when stopped. Its approximately millisecond host polling (one RTOS
@@ -277,13 +277,13 @@ exhaustion recoverable.
 | Area | Entry points |
 |---|---|
 | Construct / connect | `emplace`, `reserve`, `succeed`, `precede`, `parallel`, `size` |
-| Execute / cancel | `run`, `run_inline`, `run_until`, `Job::cancel` |
-| Join / inspect | `join_orphans`, `has_pending_orphans`, `status`, `name`, `statusText`, `successors`, `snapshot`, `Job::id` |
-| Diagnose | `validate`, `first_failure_name`, `set_current_job_error`, `dump_text(std::ostream&)` |
-| Events / ticks | `add_on_demand`, `arm`, `trigger`; `TickLoop::add`, `TickLoop::run(stop_token)` |
+| Execute / cancel | `run`, `runInline`, `runUntil`, `Job::cancel` |
+| Join / inspect | `joinOrphans`, `hasPendingOrphans`, `status`, `name`, `statusText`, `successors`, `snapshot`, `Job::id` |
+| Diagnose | `validate`, `firstFailureName`, `setCurrentJobError`, `dumpText(std::ostream&)` |
+| Events / ticks | `addOnDemand`, `arm`, `trigger`; `TickLoop::add`, `TickLoop::run(stop_token)` |
 | Job configuration | `name`, `statusText`, `timeout`, `optional`, `priority`, `core`, `stack` |
 
-`<sub0pipeline/sub0pipeline.hpp>` includes the whole core API. Each part can
+`"sub0pipeline/sub0pipeline.hpp"` includes the whole core API. Each part can
 also be included on its own:
 
 | Header | Provides |
@@ -318,11 +318,11 @@ and [observer header](include/sub0pipeline/observer.hpp).
 ## Injected deadlines and owned runs
 
 ```cpp
-#include <sub0pipeline/deadline.hpp>
-#include <sub0pipeline/run_scope.hpp>
+#include "sub0pipeline/deadline.hpp"
+#include "sub0pipeline/run_scope.hpp"
 
 // service, executor, graph and borrowed state must outlive the run scope.
-pipeline.set_deadline_service(&service); // IDeadlineService, configured while idle
+pipeline.setDeadlineService(&service); // IDeadlineService, configured while idle
 sub0pipeline::RunScope run{pipeline, executor};
 run.request_stop();                     // a request, not completion
 const auto result = run.join();         // callbacks + timed-out workers joined
@@ -330,7 +330,7 @@ const auto result = run.join();         // callbacks + timed-out workers joined
 
 `IDeadlineService` arms a caller-owned `Deadline` for the job's execution duration.
 It can use a platform timer or a manually advanced clock and fixed registration
-slots. `cancel_and_wait` must unregister and drain expiry callbacks; exhaustion
+slots. `cancelAndWait` must unregister and drain expiry callbacks; exhaustion
 returns `kDeadlineUnavailable` without running the body. Expire from task context,
 because stop callbacks execute synchronously. See [the contract and coverage](docs/structured-cancellation.md).
 
@@ -372,7 +372,7 @@ and manually triggered CI workflow retain machine-readable evidence, and
 | [on_demand_jobs](examples/on_demand_jobs/main.cpp) | Armed event jobs |
 | [dsl_operators](examples/dsl_operators/main.cpp) | DSL composition and structured bindings |
 | [error_handling](examples/error_handling/main.cpp) | Required/optional failure propagation and `std::expected` jobs |
-| [validate_dag](examples/validate_dag/main.cpp) | `validate()`, cycle detection and `dump_text(std::ostream&)` |
+| [validate_dag](examples/validate_dag/main.cpp) | `validate()`, cycle detection and `dumpText(std::ostream&)` |
 | [observer_profiling](examples/observer_profiling/main.cpp) | Custom `IObserver` progress and per-job timing |
 | [trace_capture](examples/trace_capture/main.cpp) | Bounded concurrent event capture, Chrome Trace JSON and live snapshot polling |
 | [job_options](examples/job_options/main.cpp) | Job builder methods, `precede()`/`succeed()` and optional chains |

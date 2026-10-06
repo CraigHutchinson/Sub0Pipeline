@@ -12,7 +12,7 @@
 #undef _GLIBCXX_USE_POSIX_SEMAPHORE
 #endif
 
-#include <sub0pipeline/tick_loop.hpp>
+#include "sub0pipeline/tick_loop.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -26,9 +26,11 @@
 #include <freertos/task.h>
 #endif
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
-namespace {
+namespace
+{
 // Yield between passes: one RTOS tick, or 1 ms elsewhere.
 void yieldBetweenPasses()
 {
@@ -51,13 +53,16 @@ void TickLoop::run(std::stop_token stop)
     // Default time points sit at the clock's epoch, so every job is due on the first pass.
     std::vector<Clock::time_point> lastRun(ticks_.size());
 
-    while (!stop.stop_requested()) {
+    while (!stop.stop_requested())
+    {
         const auto now = Clock::now();
 
-        for (std::size_t i = 0U; i < ticks_.size(); ++i) {
+        for (std::size_t i = 0U; i < ticks_.size(); ++i)
+        {
             const auto elapsed =
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - lastRun[i]);
-            if (elapsed >= ticks_[i].interval) {
+            if (elapsed >= ticks_[i].interval)
+            {
                 ticks_[i].fn();
                 lastRun[i] = now;
             }

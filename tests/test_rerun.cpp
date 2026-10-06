@@ -2,7 +2,7 @@
 //
 // Re-runnability tests (epoch-based reset).
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "test_helpers.hpp"
 #include "doctest.h"
 
@@ -55,7 +55,8 @@ TEST_CASE("Pipeline: re-run preserves correct execution order")
     auto c = pipeline.emplace([] {}).name("C");
     a.precede(b, c);
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         exec.clear();
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
@@ -77,7 +78,8 @@ TEST_CASE("Pipeline: re-run diamond graph")
     a.precede(b, c);
     d.succeed(b, c);
 
-    for (int run = 1; run <= 5; ++run) {
+    for (int run = 1; run <= 5; ++run)
+    {
         exec.clear();
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
@@ -122,7 +124,8 @@ TEST_CASE("Pipeline: re-run single job (simplest case)")
 
     pipeline.emplace([&] { ++counter; }).name("solo");
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
         CHECK(counter == run);
@@ -138,7 +141,8 @@ TEST_CASE("Pipeline: re-run all-roots (no edges)")
     for (int i = 0; i < 5; ++i)
         pipeline.emplace([&] { ++counter; }).name("r" + std::to_string(i));
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         exec.clear();
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
@@ -161,7 +165,8 @@ TEST_CASE("Pipeline: re-run disconnected subgraphs")
     b.succeed(a);
     d.succeed(c);
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         exec.clear();
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
@@ -193,13 +198,15 @@ TEST_CASE("Pipeline: re-run deep chain (20 nodes)")
 
     std::vector<Job> jobs;
     jobs.reserve(cN);
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         auto j = pipeline.emplace([&] { ++counter; }).name("j" + std::to_string(i));
         if (!jobs.empty()) j.succeed(jobs.back());
         jobs.push_back(j);
     }
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         exec.clear();
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
@@ -221,13 +228,15 @@ TEST_CASE("Pipeline: re-run wide fan-out (1 root + many leaves)")
     int               counter = 0;
 
     auto root = pipeline.emplace([&] { ++counter; }).name("root");
-    for (int i = 0; i < cLeaves; ++i) {
+    for (int i = 0; i < cLeaves; ++i)
+    {
         pipeline.emplace([&] { ++counter; })
             .name("leaf_" + std::to_string(i))
             .succeed(root);
     }
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         exec.clear();
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
@@ -246,7 +255,8 @@ TEST_CASE("Pipeline: re-run with observer receives callbacks each run")
     auto b = pipeline.emplace([] {}).name("B");
     b.succeed(a);
 
-    struct CountingObserver final : IObserver {
+    struct CountingObserver final : IObserver
+    {
         int starts = 0, finishes = 0;
         void onJobStart(RunId, JobId, std::string_view) override { ++starts; }
         void onJobFinish(RunId, JobId, std::string_view, JobStatus, float) override { ++finishes; }
@@ -342,7 +352,8 @@ TEST_CASE("Pipeline: re-run fan-in (many predecessors -> one sink)")
     auto sink = pipeline.emplace([&] { ++counter; }).name("sink");
     for (auto& leaf : leaves) sink.succeed(leaf);
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         exec.clear();
         auto result = pipeline.run(exec);
         REQUIRE(result.has_value());
@@ -357,7 +368,8 @@ TEST_CASE("Pipeline: re-run fan-in (many predecessors -> one sink)")
 
 TEST_CASE("Pipeline: topology edits invalidate cached roots and validation")
 {
-    for (bool usePrecede : {false, true}) {
+    for (bool usePrecede : {false, true})
+    {
         Pipeline pipeline;
         RecordingExecutor executor;
         auto first = pipeline.emplace([] {}).name("first");

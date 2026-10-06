@@ -3,14 +3,15 @@
 // DependencyRange — non-owning view of a node's successors.
 #pragma once
 
-#include <sub0pipeline/job.hpp>
+#include "sub0pipeline/job.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 class Pipeline;
 
@@ -23,7 +24,8 @@ public:
     DependencyRange() noexcept = default;
 
     /// One outgoing edge's destination and borrowed display name.
-    struct Target {
+    struct Target
+    {
         JobId id{};
         std::string_view name{};
     };
@@ -59,9 +61,28 @@ public:
         std::size_t index_{};
     };
 
+    /**
+     * Returns an iterator to the first successor.
+     * @return The iterator; equal to end() when the range is empty.
+     */
     [[nodiscard]] Iterator begin() const noexcept { return Iterator{pipeline_, ids_, 0U}; }
+
+    /**
+     * Returns the iterator one past the last successor.
+     * @return The end iterator.
+     */
     [[nodiscard]] Iterator end() const noexcept { return Iterator{pipeline_, ids_, size_}; }
+
+    /**
+     * Returns the number of successors.
+     * @return The successor count.
+     */
     [[nodiscard]] std::size_t size() const noexcept { return size_; }
+
+    /**
+     * Reports whether the range has no successors.
+     * @return true if size() is zero.
+     */
     [[nodiscard]] bool empty() const noexcept { return size_ == 0U; }
 
 private:

@@ -3,7 +3,7 @@
 // Core DAG construction and execution ordering tests.
 // Uses a RecordingExecutor (sequential, inline) for deterministic results.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "test_helpers.hpp"
 #include "doctest.h"
 
@@ -115,7 +115,8 @@ TEST_CASE("Pipeline: every plain callable form is accepted and runs")
     Pipeline pipeline;
     int ran = 0;
 
-    struct Counter {
+    struct Counter
+    {
         int* count;
         void operator()() { ++*count; }             // non-const call operator
     };
@@ -255,7 +256,8 @@ TEST_CASE("Pipeline: large linear chain N=100")
 
     std::vector<Job> jobs;
     jobs.reserve(cN);
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         auto j = pipeline.emplace([&] { ++counter; }).name("job_" + std::to_string(i));
         if (!jobs.empty()) j.succeed(jobs.back());
         jobs.push_back(j);
@@ -274,7 +276,8 @@ TEST_CASE("Pipeline: wide fan-out N=50")
     int               counter = 0;
 
     auto root = pipeline.emplace([] {}).name("root");
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         pipeline.emplace([&] { ++counter; })
             .name("leaf_" + std::to_string(i))
             .succeed(root);
@@ -294,7 +297,8 @@ TEST_CASE("Pipeline: wide fan-in N=50")
 
     std::vector<Job> leaves;
     leaves.reserve(cN);
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         leaves.push_back(pipeline.emplace([] {}).name("leaf_" + std::to_string(i)));
     }
 
@@ -310,7 +314,7 @@ TEST_CASE("Pipeline: wide fan-in N=50")
 // Diagnostics
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("Pipeline: dump_text writes the graph to a caller-selected stream")
+TEST_CASE("Pipeline: dumpText writes the graph to a caller-selected stream")
 {
     Pipeline pipeline;
     auto root = pipeline.emplace([] {}).name("root");
@@ -320,7 +324,7 @@ TEST_CASE("Pipeline: dump_text writes the graph to a caller-selected stream")
     right.succeed(root);
 
     std::ostringstream output;
-    pipeline.dump_text(output);
+    pipeline.dumpText(output);
 
     CHECK(output.str() ==
           "Pipeline DAG (3 jobs):\n"
@@ -478,7 +482,8 @@ TEST_CASE("Job::pipeline() returns owning pipeline")
 
 TEST_CASE("Job::id() is the identifier observers and JobId queries use")
 {
-    struct Recorder final : IObserver {
+    struct Recorder final : IObserver
+    {
         std::vector<JobId> started;
         void onJobStart(RunId, JobId id, std::string_view) override { started.push_back(id); }
     } recorder;
@@ -514,7 +519,8 @@ TEST_CASE("Job: handles from different pipelines are never equal")
 
 TEST_CASE("Job::statusText is readable by id, from a snapshot and from an observer")
 {
-    struct Display final : IObserver {
+    struct Display final : IObserver
+    {
         const Pipeline* pipeline{nullptr};
         std::vector<std::string> shown;
         void onJobStart(RunId, JobId id, std::string_view) override
@@ -586,7 +592,8 @@ TEST_CASE("Job::pipeline() returns nullptr for default job")
 // Generic emplace(Spec)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-namespace {
+namespace
+{
 struct TestSpec
 {
     std::string nameStr;
@@ -713,12 +720,14 @@ TEST_CASE("Pipeline: hourglass (fan-out -> narrow -> fan-out)")
     auto mid  = pipeline.emplace([] {}).name("mid");
 
     std::vector<Job> left, right;
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 5; ++i)
+    {
         left.push_back(pipeline.emplace([] {}).name("L" + std::to_string(i)));
         left.back().succeed(root);
         mid.succeed(left.back());
     }
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 5; ++i)
+    {
         right.push_back(pipeline.emplace([] {}).name("R" + std::to_string(i)));
         right.back().succeed(mid);
     }
@@ -733,7 +742,8 @@ TEST_CASE("Pipeline: hourglass (fan-out -> narrow -> fan-out)")
 
     CHECK(order.front() == "root");
     auto midPos = pos("mid");
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 5; ++i)
+    {
         CHECK(pos("L" + std::to_string(i)) < midPos);
         CHECK(pos("R" + std::to_string(i)) > midPos);
     }
@@ -750,8 +760,10 @@ TEST_CASE("Pipeline: binary tree depth 5 (31 nodes)")
     std::vector<std::vector<Job>> levels(5);
     levels[0].push_back(pipeline.emplace([] {}).name("L0_0"));
 
-    for (int depth = 1; depth < 5; ++depth) {
-        for (std::size_t i = 0; i < levels[static_cast<std::size_t>(depth) - 1].size(); ++i) {
+    for (int depth = 1; depth < 5; ++depth)
+    {
+        for (std::size_t i = 0; i < levels[static_cast<std::size_t>(depth) - 1].size(); ++i)
+        {
             auto left  = pipeline.emplace([] {}).name("L" + std::to_string(depth) + "_" + std::to_string(i * 2));
             auto right = pipeline.emplace([] {}).name("L" + std::to_string(depth) + "_" + std::to_string(i * 2 + 1));
             left.succeed(levels[static_cast<std::size_t>(depth) - 1][i]);
@@ -784,7 +796,8 @@ TEST_CASE("Pipeline: large fan-out + fan-in stress (100 nodes)")
     auto root = pipeline.emplace([] {}).name("root");
     auto sink = pipeline.emplace([] {}).name("sink");
 
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         auto j = pipeline.emplace([] {}).name("w" + std::to_string(i));
         j.succeed(root);
         sink.succeed(j);
@@ -898,12 +911,14 @@ TEST_CASE("Pipeline: observer progress is monotonic and resets on re-run")
     for (int i = 0; i < 5; ++i)
         pipeline.emplace([] {}).name("j" + std::to_string(i));
 
-    struct ProgressObserver final : IObserver {
+    struct ProgressObserver final : IObserver
+    {
         std::vector<float> progressValues;
         float lastProgress = -1.0f;
         bool monotonic = true;
         void onJobStart(RunId, JobId, std::string_view) override {}
-        void onJobFinish(RunId, JobId, std::string_view, JobStatus, float progress) override {
+        void onJobFinish(RunId, JobId, std::string_view, JobStatus, float progress) override
+        {
             progressValues.push_back(progress);
             if (progress < lastProgress) monotonic = false;
             lastProgress = progress;
@@ -995,7 +1010,7 @@ TEST_CASE("Tick loop: external stop waits for the active callback to finish")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Library inline executors: run_inline() and SequentialExecutor
+// Library inline executors: runInline() and SequentialExecutor
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // These used to call each job from inside its predecessor's completion, so
@@ -1008,13 +1023,14 @@ TEST_CASE("Inline executors: a 20000-job chain runs without recursing per link")
     pipeline.reserve(cJobs);
     int ran = 0;
     Job previous;
-    for (int i = 0; i < cJobs; ++i) {
+    for (int i = 0; i < cJobs; ++i)
+    {
         auto job = pipeline.emplace([&] { ++ran; });
         if (previous.valid()) job.succeed(previous);
         previous = job;
     }
 
-    CHECK(pipeline.run_inline().has_value());
+    CHECK(pipeline.runInline().has_value());
     CHECK(ran == cJobs);
 
     SequentialExecutor sequential;
@@ -1040,7 +1056,7 @@ TEST_CASE("Inline executors: jobs run in the order they become ready")
     e.succeed(b);
 
     const std::vector<char> expected{'a', 'b', 'c', 'e', 'd'};
-    CHECK(pipeline.run_inline().has_value());
+    CHECK(pipeline.runInline().has_value());
     CHECK(order == expected);
 
     order.clear();

@@ -4,20 +4,21 @@
 // Header-only: nothing to link beyond the core library.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <cstdint>
 #include <functional>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
- * @brief Executor that runs every job on the calling thread.
+ * Runs every job on the calling thread.
  *
  * No threads and no state, so execution order is deterministic: ideal for unit
  * tests and for targets without `std::thread`. Because it reports
- * runs_inline(), Pipeline::run() calls ready jobs from a loop in the order they
+ * runsInline(), Pipeline::run() calls ready jobs from a loop in the order they
  * become ready, and stack depth does not grow with the length of a dependency
  * chain. Core affinity, priority and stack hints are ignored.
  *
@@ -41,13 +42,13 @@ public:
     }
 
     /** Nothing to wait for: every job has finished by the time dispatch() returns. */
-    void wait_all() override {}
+    void waitAll() override {}
 
-    /** @return 1. */
+    /** Returns 1: jobs never run in parallel. */
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 
-    /** @return true. */
-    [[nodiscard]] bool runs_inline() const noexcept override { return true; }
+    /** Returns true: dispatch() runs each job before it returns. */
+    [[nodiscard]] bool runsInline() const noexcept override { return true; }
 };
 
 } // namespace sub0pipeline

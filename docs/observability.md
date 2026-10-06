@@ -132,7 +132,7 @@ python scripts/render_trace_gif.py build/failure-trace.json docs/media/sub0pipel
 For single-config builds, omit `Release/` and the `.exe` suffix. The optional
 Pillow dependency is needed only for offline rendering.
 
-`Pipeline::dump_text(std::ostream&)` emits the static graph to a caller-chosen
+`Pipeline::dumpText(std::ostream&)` emits the static graph to a caller-chosen
 stream. Static topology and runtime timeline are deliberately separate: the
 former is available without running jobs, while the latter exists only when an
 observer captures it. The former no-op `dump_trace()` has been removed rather

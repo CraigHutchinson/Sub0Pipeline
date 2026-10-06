@@ -4,11 +4,11 @@
 // validation, tick loop and on-demand jobs.
 #pragma once
 
-#include <sub0pipeline/dependency_range.hpp>
-#include <sub0pipeline/error.hpp>
-#include <sub0pipeline/executor/executor.hpp>
-#include <sub0pipeline/job.hpp>
-#include <sub0pipeline/observer.hpp>
+#include "sub0pipeline/dependency_range.hpp"
+#include "sub0pipeline/error.hpp"
+#include "sub0pipeline/executor/executor.hpp"
+#include "sub0pipeline/job.hpp"
+#include "sub0pipeline/observer.hpp"
 
 #include <concepts>
 #include <cstddef>
@@ -24,14 +24,15 @@
 #include <utility>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 class IDeadlineService;
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
 /**
- * @brief DAG-based job scheduler.
+ * Schedules jobs as a directed acyclic graph of dependencies.
  *
  * Owns all job nodes and their dependency edges. Jobs are emplaced during a
  * build phase, then executed in dependency order via run(). Independent jobs
@@ -48,19 +49,38 @@ class IDeadlineService;
 class Pipeline
 {
 public:
+    /** Creates an empty pipeline with no jobs. */
     Pipeline();
+
+    /**
+     * Destroys the pipeline and its jobs.
+     * @note Not while a run or trigger is active or orphaned work remains.
+     */
     ~Pipeline();
 
     Pipeline(const Pipeline&)            = delete;
     Pipeline& operator=(const Pipeline&) = delete;
-    // Defined out of line: moving needs the complete implementation type.
+
+    /**
+     * Moves the graph from @p other, leaving it empty but valid.
+     * Defined out of line: moving needs the complete implementation type.
+     * @param other  The pipeline to take over. Must be idle.
+     * @note Job handles stay valid and then refer to this pipeline.
+     */
     Pipeline(Pipeline&&) noexcept;
+
+    /**
+     * Replaces this graph with the one in @p other, leaving it empty but valid.
+     * @param other  The pipeline to take over. Must be idle, as must this one.
+     * @return *this.
+     * @note Job handles stay valid and then refer to this pipeline.
+     */
     Pipeline& operator=(Pipeline&&);
 
     // ── DAG construction ─────────────────────────────────────────────────
 
     /**
-     * @brief Add a job that returns std::expected<void, PipelineError>.
+     * Add a job that returns std::expected<void, PipelineError>.
      * @param fn  The job function.
      * @return    A Job handle for setting name, timeouts, and dependencies.
      * @note      The returned handle should not be discarded if dependencies
@@ -69,7 +89,7 @@ public:
     [[nodiscard]] Job emplace(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
-     * @brief Add a cancellable job whose function receives a `std::stop_token`.
+     * Add a cancellable job whose function receives a `std::stop_token`.
      *
      * The stop token is signalled when:
      *   - The job's `.timeout()` expires (cooperative stop request; the body must return).
@@ -79,23 +99,31 @@ public:
      * return `std::unexpected(PipelineError::kCancelled)` when it fires:
      * @code
      *   pipe.emplace([](std::stop_token st) -> std::expected<void, PipelineError> {
-     *       while (!st.stop_requested()) {
-     *           if (!fetch_chunk()) break;
+     *       while (!st.stop_requested())
+     *       {
+     *           if (!fetchChunk()) break;
      *       }
      *       if (st.stop_requested())
      *           return std::unexpected(PipelineError::kCancelled);
      *       return {};
      *   }).name("fetch").timeout(5s);
      * @endcode
+     *
+     * @param fn  The job function; it receives this job's stop token.
+     * @return    A Job handle for setting name, timeouts, and dependencies.
      */
     [[nodiscard]] Job emplace(
         std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
 
     /**
-     * @brief Add a void-returning callable (always succeeds).
+     * Add a void-returning callable (always succeeds).
      *
      * The callable is stored directly, without an intermediate std::function,
      * so a small one costs no extra allocation and one indirect call per run.
+     *
+     * @tparam F  A callable invocable with no arguments that returns void.
+     * @param f   The callable; moved or copied into the job.
+     * @return    A Job handle for setting name, timeouts, and dependencies.
      */
     template< typename F >
         requires std::invocable<F> && std::same_as<std::invoke_result_t<F>, void>
@@ -107,10 +135,15 @@ public:
     }
 
     /**
-     * @brief Add a callable returning std::expected<void, PipelineError>.
+     * Add a callable returning std::expected<void, PipelineError>.
      *
      * Stored directly, as above. A std::function object passed as such still
      * selects the std::function overload.
+     *
+     * @tparam F  A callable invocable with no arguments that returns
+     *            std::expected<void, PipelineError>.
+     * @param f   The callable; moved or copied into the job.
+     * @return    A Job handle for setting name, timeouts, and dependencies.
      */
     template< typename F >
         requires std::invocable<F>
@@ -122,28 +155,36 @@ public:
     }
 
     /**
-     * @brief Reserve storage for at least @p jobCount jobs.
+     * Reserve storage for at least @p jobCount jobs.
      *
      * Optional. Avoids moving existing jobs as the graph grows; it does not
      * reserve the callables, names or wide successor lists that jobs own.
      * Build phase only, like emplace().
+     *
+     * @param jobCount  The number of jobs to make room for.
      */
     void reserve(std::size_t jobCount);
 
-    /** @return Total number of jobs currently in the DAG. */
+    /**
+     * Reports how many jobs the DAG holds.
+     * @return Total number of jobs currently in the DAG.
+     */
     [[nodiscard]] std::size_t size() const noexcept;
 
     /** Borrow an optional deadline service. Set only while idle, with no
      * pending callbacks or orphans. nullptr restores native timeout helpers.
      * Cooperative timed bodies use no helper thread with an injected service;
      * plain timed bodies still need a native worker to enforce a cutoff.
+     *
+     * @param service  The service to borrow, or nullptr for native helpers. It
+     *                 must outlive every run and trigger that uses it.
      */
-    void set_deadline_service(IDeadlineService* service);
+    void setDeadlineService(IDeadlineService* service);
 
     // ── Execution ────────────────────────────────────────────────────────
 
     /**
-     * @brief Execute all jobs in dependency order, parallelising independent jobs.
+     * Execute all jobs in dependency order, parallelising independent jobs.
      *
      * Validates the DAG, seeds root jobs, then dispatches successors as their
      * predecessors complete. Blocks until all jobs finish or a required job fails.
@@ -170,81 +211,113 @@ public:
      * Consumers must make retries idempotent using durable operation identifiers.
      *
      * run() waits for executor callbacks, but timed-out non-cooperative jobs may
-     * remain: call join_orphans() before releasing borrowed state. Subsequent
+     * remain: call joinOrphans() before releasing borrowed state. Subsequent
      * runs join previous orphans before resetting state; concurrent runs return
      * kBusy. The executor, observer, Pipeline and borrowed state must remain
-     * alive until run() and join_orphans() have completed. Owner teardown must
+     * alive until run() and joinOrphans() have completed. Owner teardown must
      * request stop and join its run thread before destroying those members.
+     *
+     * @param executor  Execution backend (threaded, sequential, custom, ...).
+     * @param external  Token whose stop request cancels the run.
+     * @param observer  Optional observer for progress and tracing.
+     * @return          Empty on success, or the first fatal error encountered
+     *                  (kCancelled if the external token stopped the run).
      */
     [[nodiscard]] auto run(IExecutor& executor, std::stop_token external,
                            IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
     /**
-     * @brief Run the pipeline synchronously on the calling thread (no executor required).
+     * Run the pipeline synchronously on the calling thread (no executor required).
      *
      * Convenience overload that creates an inline sequential executor internally.
      * Untimed jobs execute in dependency order on the calling thread. Timeout
-     * enforcement may create helper threads; join_orphans() still applies.
+     * enforcement may create helper threads; joinOrphans() still applies.
      * Useful for request-scoped pipelines, tests, and embedded contexts where
      * creating an executor explicitly would be boilerplate.
      *
      * @code
      *   Pipeline pipe;
      *   pipe >> "parse"_job(parse) >> "validate"_job(validate) >> "commit"_job(commit);
-     *   auto result = pipe.run_inline();   // no executor needed
+     *   auto result = pipe.runInline();   // no executor needed
      * @endcode
+     *
+     * @param observer  Optional observer for progress and tracing.
+     * @return          Empty on success, or the first fatal error encountered.
      */
-    [[nodiscard]] auto run_inline(IObserver* observer = nullptr)
+    [[nodiscard]] auto runInline(IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
     /** Execute with external cancellation using the inline executor.
-     * Timed jobs may use helper threads; the run()/join_orphans() contract applies.
+     * Timed jobs may use helper threads; the run()/joinOrphans() contract applies.
+     *
+     * @param external  Token whose stop request cancels the run.
+     * @param observer  Optional observer for progress and tracing.
+     * @return          Empty on success, or the first fatal error encountered.
      */
-    [[nodiscard]] auto run_inline(std::stop_token external, IObserver* observer = nullptr)
+    [[nodiscard]] auto runInline(std::stop_token external, IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
-    /** Join timed-out non-cooperative jobs after run() or executor.wait_all().
+    /** Join timed-out non-cooperative jobs after run() or executor.waitAll().
      * May block indefinitely if a job never returns. Concurrent joiners are
      * serialized. Do not call from a job, or start new work during teardown.
-     * Returns whether this call reaped any threads.
+     *
+     * @return true if this call reaped any threads.
      */
-    bool join_orphans();
+    bool joinOrphans();
 
-    /** True while timed-out threads remain unreaped, including during a join.
+    /**
+     * Reports whether timed-out threads remain unreaped, including during a join.
      * Thread-safe query, not a substitute for joining or synchronizing producers.
+     * @return true while unreaped threads remain.
      */
-    [[nodiscard]] bool has_pending_orphans() const noexcept;
+    [[nodiscard]] bool hasPendingOrphans() const noexcept;
 
-    /** @return Current status of a job (kPending before run()). */
+    /**
+     * Reports the current status of a job.
+     * @param j  The job to query.
+     * @return Current status of the job (kPending before run()).
+     */
     [[nodiscard]] auto status(Job j) const noexcept -> JobStatus;
 
-    /** @return Human-readable name of a job. */
+    /**
+     * Returns the name of a job.
+     * @param j  The job to query.
+     * @return Human-readable name of the job.
+     */
     [[nodiscard]] auto name(Job j) const noexcept -> std::string_view;
-    /** Return a borrowed name for a stable node id, or an empty view if invalid.
+    /**
+     * Return a borrowed name for a stable node id, or an empty view if invalid.
      * Concurrent reads require a stable graph with no renaming or mutation.
+     * @param id  A job identifier, as observers receive it.
+     * @return The name, or an empty view if @p id is invalid.
      */
     [[nodiscard]] auto name(JobId id) const noexcept -> std::string_view;
-    /** Return a non-owning view of a node's successors, empty for invalid ids.
+    /**
+     * Return a non-owning view of a node's successors, empty for invalid ids.
      * Concurrent reads require a stable graph; graph edits or destruction
      * invalidate the view and its iterators.
+     * @param id  A job identifier, as observers receive it.
+     * @return The successors of the node.
      */
     [[nodiscard]] auto successors(JobId id) const noexcept -> DependencyRange;
 
     /**
-     * @brief Name of the first non-optional job that failed in the most recent run().
+     * Returns the name of the first non-optional job that failed in the most recent run().
      *
      * Empty string if the last run() succeeded or has not been called yet.
      * Useful for error reporting without requiring an IObserver:
      * @code
      *   auto r = pipe.run(exec);
-     *   if (!r) fmt::print("Failed job: {}\n", pipe.first_failure_name());
+     *   if (!r) fmt::print("Failed job: {}\n", pipe.firstFailureName());
      * @endcode
+     *
+     * @return The job's name, borrowed from the pipeline.
      */
-    [[nodiscard]] std::string_view first_failure_name() const noexcept;
+    [[nodiscard]] std::string_view firstFailureName() const noexcept;
 
     /**
-     * @brief Set a diagnostic message for the job currently executing on this thread.
+     * Set a diagnostic message for the job currently executing on this thread.
      *
      * Call on the failure branch before returning `std::unexpected(...)`.  The
      * message is consumed by `dispatchJob` and forwarded to `IObserver::onJobFailure`.
@@ -252,18 +325,22 @@ public:
      *
      * @code
      *   auto fn = [&]() -> std::expected<void, PipelineError> {
-     *       if (!connect()) {
-     *           Pipeline::set_current_job_error("TCP connect timed out after 30s");
+     *       if (!connect())
+     *       {
+     *           Pipeline::setCurrentJobError("TCP connect timed out after 30s");
      *           return std::unexpected(PipelineError::kJobFailed);
      *       }
      *       return {};
      *   };
      * @endcode
+     *
+     * @param msg  The message. Copied into thread-local storage and cleared
+     *             once the job returns.
      */
-    static void set_current_job_error(std::string_view msg) noexcept;
+    static void setCurrentJobError(std::string_view msg) noexcept;
 
     /**
-     * @brief Lightweight status snapshot of all jobs (for status bars and UI).
+     * Returns a lightweight status snapshot of all jobs, for status bars and UI.
      *
      * Each `JobSnapshot` is a {name, status} pair read via relaxed atomic load --
      * no locks, no synchronisation barrier.  Safe to call from any thread at any
@@ -275,16 +352,21 @@ public:
      * For single-string "current job" display prefer `IObserver::onJobStart` feeding
      * an atomic pointer -- zero allocation, zero polling.
      */
-    struct JobSnapshot {
+    struct JobSnapshot
+    {
         std::string_view name;        ///< Stable pointer into the pipeline's node; valid until pipeline is destroyed.
         JobStatus        status;      ///< Relaxed atomic load of the job's current status.
         std::string_view statusText;  ///< Display text set with Job::statusText(); empty if none.
     };
-    /** @note Not noexcept: building the vector can throw std::bad_alloc. */
+    /**
+     * Takes the status snapshot described on JobSnapshot.
+     * @return One entry per job, in node order.
+     * @note Not noexcept: building the vector can throw std::bad_alloc.
+     */
     [[nodiscard]] std::vector<JobSnapshot> snapshot() const;
 
     /**
-     * @brief Display text set for a job with Job::statusText().
+     * Returns the display text set for a job with Job::statusText().
      * @param id  A job identifier, as observers receive it.
      * @return The text, or an empty view if none was set or @p id is invalid.
      *         Borrowed from the caller that set it.
@@ -295,7 +377,7 @@ public:
     // ── Validation ───────────────────────────────────────────────────────
 
     /**
-     * @brief Validate the DAG before execution.
+     * Validate the DAG before execution.
      *
      * Uses Kahn's algorithm to detect cycles. Called automatically by run(),
      * but can be called explicitly during the build phase.
@@ -305,7 +387,7 @@ public:
     [[nodiscard]] auto validate() const -> std::expected<void, PipelineError>;
 
     /**
-     * @brief Re-run the pipeline repeatedly until the stop token is signalled.
+     * Re-run the pipeline repeatedly until the stop token is signalled.
      *
      * Each iteration calls run(executor) and discards the result. Useful for
      * perpetual update loops (game frame loop, streaming processor, background
@@ -315,24 +397,26 @@ public:
      * iterations in the job functions or by wrapping this call:
      * @code
      *   std::jthread worker([&](std::stop_token st) {
-     *       pipe.run_until(exec, st, observer,
+     *       pipe.runUntil(exec, st, observer,
      *           [&](PipelineError e) { reconnect(); });
      *   });
      * @endcode
      *
+     * @param executor  Execution backend forwarded to each run() call.
+     * @param stop      Token whose stop request ends the loop.
      * @param observer  Optional observer forwarded to each run() call.
      * @param onError   Optional callback invoked when run() returns a fatal
      *                  error. The callback may call stop.request_stop() on the
      *                  outer jthread to abort the loop on unrecoverable errors.
      */
-    void run_until(IExecutor& executor, std::stop_token stop,
+    void runUntil(IExecutor& executor, std::stop_token stop,
                    IObserver* observer = nullptr,
                    std::function<void(PipelineError)> onError = nullptr);
 
     // ── On-demand jobs ────────────────────────────────────────────────────
 
     /**
-     * @brief Arm the pipeline with an executor for on-demand dispatch.
+     * Arm the pipeline with an executor for on-demand dispatch.
      *
      * Must be called before trigger(). The executor and observer are stored
      * by pointer; the caller must keep them alive for the lifetime of any
@@ -345,35 +429,44 @@ public:
      *   // ... later from any thread:
      *   pipeline.trigger(job);
      * @endcode
+     *
+     * @param executor  Execution backend for triggered jobs. Borrowed.
+     * @param observer  Optional observer for triggered jobs, or nullptr. Borrowed.
      */
     void arm(IExecutor& executor, IObserver* observer = nullptr) noexcept;
 
     /**
-     * @brief Register a job that is excluded from normal run() execution
-     *        and dispatched only when trigger() is called.
+     * Register a job that is excluded from normal run() execution
+     * and dispatched only when trigger() is called.
      *
      * On-demand jobs are not included in the root set for run() -- they do
      * not execute during the normal DAG execution phase. Call arm() with an
      * executor before calling trigger().
+     *
+     * @param fn  The job function.
+     * @return    A Job handle for setting name, timeouts, and dependencies.
      */
-    [[nodiscard]] Job add_on_demand(std::function<std::expected<void, PipelineError>()> fn);
+    [[nodiscard]] Job addOnDemand(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
-     * @brief Register a cancellable on-demand job (receives `std::stop_token`).
+     * Register a cancellable on-demand job (receives `std::stop_token`).
      *
-     * Equivalent to `add_on_demand()` but the function is called with the job's
+     * Equivalent to `addOnDemand()` but the function is called with the job's
      * stop token, enabling cooperative cancellation via `Job::cancel()` or
      * `.timeout()`. Sets `kFlagCancellable` so the watchdog path is used rather
      * than the hard packaged_task cutoff.
      *
      * Primary use case: a device transfer queue drainer that must exit cleanly when
      * a client session disconnects.
+     *
+     * @param fn  The job function; it receives this job's stop token.
+     * @return    A Job handle for setting name, timeouts, and dependencies.
      */
-    [[nodiscard]] Job add_on_demand(
+    [[nodiscard]] Job addOnDemand(
         std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
 
     /**
-     * @brief Dispatch an on-demand job via the armed executor.
+     * Dispatch an on-demand job via the armed executor.
      *
      * Requires arm(), a stable graph and a thread-safe executor for concurrent
      * submissions. Do not overlap run(), mutation or destruction. Returns kBusy
@@ -383,16 +476,26 @@ public:
      *
      * The job executes asynchronously; completion is reported via the observer
      * passed to arm() (if any).
+     *
+     * @param j  The on-demand job to dispatch.
+     * @return   Empty if the job was queued. Otherwise kUnknownJob for a foreign
+     *           handle, kNotArmed before arm(), kNotOnDemand for a job not
+     *           registered with addOnDemand(), or kBusy for an active run, a queued or running
+     *           duplicate, or unreaped timeout work.
      */
     [[nodiscard]] std::expected<void, PipelineError> trigger(Job j);
 
     // ── Generic emplace (concept-based extension point) ─────────────────
 
     /**
-     * @brief Emplace a job described by a spec object with a .build() method.
+     * Emplace a job described by a spec object with a .build() method.
      *
      * Accepts any type satisfying: `spec.build(Pipeline&) -> Job`.
      * This is the extension point used by the DSL's JobSpec type.
+     *
+     * @tparam Spec  A type with `build(Pipeline&) -> Job`.
+     * @param spec   The spec to build into this pipeline.
+     * @return       The Job that `spec.build()` returned.
      */
     template<typename Spec>
         requires requires(Spec& s, Pipeline& p) { { s.build(p) } -> std::same_as<Job>; }
@@ -402,8 +505,11 @@ public:
     }
 
     /**
-     * @brief Multi-emplace returning a tuple for structured bindings.
+     * Emplace several specs at once, returning a tuple for structured bindings.
      * @example auto [a, b, c] = pipe.emplace(specA, specB, specC);
+     * @tparam Specs  Two or more spec types, each with `build(Pipeline&) -> Job`.
+     * @param specs   The specs to build into this pipeline, in order.
+     * @return        A std::tuple of the Job handles, one per spec.
      */
     template<typename... Specs>
         requires (sizeof...(Specs) > 1)
@@ -415,8 +521,11 @@ public:
 
     // ── Diagnostics ───────────────────────────────────────────────────────
 
-    /** Write a human-readable dependency list to the caller-selected stream. */
-    void dump_text(std::ostream& output) const;
+    /**
+     * Write a human-readable dependency list to the caller-selected stream.
+     * @param output  The stream to write to.
+     */
+    void dumpText(std::ostream& output) const;
 
 private:
     struct Node;

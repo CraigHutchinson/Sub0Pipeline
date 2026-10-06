@@ -5,7 +5,7 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
-#include <sub0pipeline/dsl.hpp>
+#include "sub0pipeline/dsl.hpp"
 #include "doctest.h"
 #include "test_helpers.hpp"
 
@@ -639,7 +639,8 @@ TEST_CASE("Long pipe chain via DSL (20 >> operators)")
 
     // Build: pipe >> j0 >> j1 >> ... >> j19
     Job prev;
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 20; ++i)
+    {
         auto spec = ("j" + std::to_string(i) + ""s);
         auto j = pipe.emplace(job([] {}));
         j.name(spec);
@@ -671,7 +672,8 @@ TEST_CASE("Inline pipe chain 10 deep")
     CHECK(exec.order().size() == 10U);
     CHECK(exec.order().front() == "j0");
     CHECK(exec.order().back() == "j9");
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 9; ++i)
+    {
         auto pos_i  = std::find(exec.order().begin(), exec.order().end(), "j" + std::to_string(i)) - exec.order().begin();
         auto pos_i1 = std::find(exec.order().begin(), exec.order().end(), "j" + std::to_string(i + 1)) - exec.order().begin();
         CHECK(pos_i < pos_i1);
@@ -782,7 +784,8 @@ TEST_CASE("Re-run DSL-built pipeline")
          >> "B"_job([&] { ++counter; }) + "C"_job([&] { ++counter; })
          >> "D"_job([&] { ++counter; });
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         exec.clear();
         auto result = pipe.run(exec);
         REQUIRE(result.has_value());
@@ -815,7 +818,8 @@ TEST_CASE("Complex mixed: emplaced root >> inline layers >> emplaced sink, re-ru
     CHECK(pipe.name(d) == "D");
     CHECK(pipe.size() == 6U);
 
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         exec.clear();
         auto result = pipe.run(exec);
         REQUIRE(result.has_value());
@@ -851,7 +855,8 @@ TEST_CASE("Large DSL: 50-worker fan-out/in via structured bindings")
 
     // Create 50 workers and wire them
     std::vector<Job> workers;
-    for (int i = 0; i < 50; ++i) {
+    for (int i = 0; i < 50; ++i)
+    {
         auto w = pipe.emplace(job([] {}));
         w.name("w" + std::to_string(i));
         workers.push_back(w);

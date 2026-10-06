@@ -1,11 +1,11 @@
 // examples/validate_dag/main.cpp
 //
-// Demonstrates Pipeline::validate(), stream-based dump_text(), and cycle detection.
+// Demonstrates Pipeline::validate(), stream-based dumpText(), and cycle detection.
 // Uses SequentialExecutor for deterministic output.
 //
 // Demo 1 — Valid DAG passes validation:
 //   root → (A, B) → sink  (diamond shape, 4 nodes)
-//   Explicit validate(), dump_text(std::cout), then run().
+//   Explicit validate(), dumpText(std::cout), then run().
 //
 // Demo 2 — Cycle is caught before execution:
 //   X → Y → Z → X   (3-node cycle)
@@ -19,7 +19,7 @@
 //   Re-uses the valid diamond DAG from Demo 1.
 //   No explicit validate() call — run() handles it automatically.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <cstdio>
 #include <iostream>
 
@@ -29,7 +29,8 @@ using namespace sub0pipeline;
 
 static std::string_view errorName(PipelineError e) noexcept
 {
-    switch (e) {
+    switch (e)
+    {
         case PipelineError::kTimeout:          return "kTimeout";
         case PipelineError::kJobFailed:        return "kJobFailed";
         case PipelineError::kCyclicDependency: return "kCyclicDependency";
@@ -65,8 +66,8 @@ int main()
         std::printf("  validate()==pass:  %s\n", valid.has_value() ? "pass" : "FAIL");
 
         // Print the DAG structure for inspection.
-        std::printf("  DAG structure (dump_text):\n");
-        pipeline.dump_text(std::cout);
+        std::printf("  DAG structure (dumpText):\n");
+        pipeline.dumpText(std::cout);
 
         auto result = pipeline.run(exec);
         std::printf("  pipeline.size():   %zu\n", pipeline.size());
@@ -91,7 +92,8 @@ int main()
         // Explicit validation surfaces the cycle.
         auto valid = pipeline.validate();
         std::printf("  validate() passed: %s\n", valid.has_value() ? "yes" : "no");
-        if (!valid) {
+        if (!valid)
+        {
             std::printf("  error code:        %s\n", errorName(valid.error()).data());
         }
         std::printf("  error==kCyclic:    %s\n",
@@ -116,7 +118,8 @@ int main()
 
         auto valid = pipeline.validate();
         std::printf("  validate() passed: %s\n", valid.has_value() ? "yes" : "no");
-        if (!valid) {
+        if (!valid)
+        {
             std::printf("  error code:        %s\n", errorName(valid.error()).data());
         }
         std::printf("  error==kCyclic:    %s\n",

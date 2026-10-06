@@ -3,7 +3,7 @@
 // Minimal Sub0Pipeline example: three jobs in a linear chain.
 // Demonstrates emplace(), .name(), .succeed(), and run().
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <cstdio>
 
 
@@ -23,9 +23,12 @@ int main()
     SequentialExecutor exec;
     auto result = pipeline.run(exec);
 
-    if (result) {
+    if (result)
+    {
         std::printf("Pipeline completed successfully.\n");
-    } else {
+    }
+    else
+    {
         std::printf("Pipeline failed.\n");
         return 1;
     }

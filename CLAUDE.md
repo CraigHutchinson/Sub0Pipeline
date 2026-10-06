@@ -29,11 +29,14 @@ Any commit that changes the public API surface in `include/sub0pipeline/`
 - `DefaultExecutor`, the compile-time alias for the platform's executor
 
 ### Style
-Follow `STYLE_GUIDE.md` for all C++ code. Key points:
-- 4 spaces, no tabs
+Follow `STYLE_GUIDE.md` (profile `sub0`) for all C++ code. Key points:
+- 4 spaces, no tabs; Allman braces everywhere, control flow included
 - `SUB0PIPELINE_` prefix for all configuration macros
 - `sub0pipeline` namespace (lowercase)
-- Classes `PascalCase`, members `camelCase_` (trailing underscore)
+- Classes `PascalCase`, functions and methods `camelCase` (`waitAll`, `runInline`),
+  members `camelCase_` (trailing underscore)
+- Own headers are quoted and library-rooted: `#include "sub0pipeline/job.hpp"`
+- Doxygen `/** */` on public declarations with `@param`/`@return`/`@tparam`; no `@brief`
 
 ### Tests
 - All new features must have corresponding tests in `tests/`

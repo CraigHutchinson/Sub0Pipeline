@@ -1,4 +1,4 @@
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 
 #include <array>
 #include <atomic>
@@ -11,7 +11,8 @@
 #include <thread>
 
 
-namespace {
+namespace
+{
 
 using Clock = std::chrono::steady_clock;
 
@@ -19,7 +20,8 @@ using Clock = std::chrono::steady_clock;
 enum class EventKind : std::uint8_t { Start, Finish, Dependency };
 
 /// Display names borrow the unchanged Pipeline until serialization completes.
-struct TraceEvent {
+struct TraceEvent
+{
     EventKind kind{};
     sub0pipeline::RunId runId{};
     sub0pipeline::JobId jobId{};
@@ -36,8 +38,10 @@ void writeJsonString(std::ostream& output, std::string_view value)
 {
     constexpr char hex[] = "0123456789abcdef";
     output.put('"');
-    for (const unsigned char ch : value) {
-        switch (ch) {
+    for (const unsigned char ch : value)
+    {
+        switch (ch)
+        {
             case '"': output << "\\\""; break;
             case '\\': output << "\\\\"; break;
             case '\b': output << "\\b"; break;
@@ -46,9 +50,12 @@ void writeJsonString(std::ostream& output, std::string_view value)
             case '\r': output << "\\r"; break;
             case '\t': output << "\\t"; break;
             default:
-                if (ch < 0x20U) {
+                if (ch < 0x20U)
+                {
                     output << "\\u00" << hex[ch >> 4U] << hex[ch & 0x0fU];
-                } else {
+                }
+                else
+                {
                     output.put(static_cast<char>(ch));
                 }
         }
@@ -85,7 +92,8 @@ public:
                                 std::string_view fromName,
                                 sub0pipeline::DependencyRange successors) override
     {
-        for (const auto target : successors) {
+        for (const auto target : successors)
+        {
             record({EventKind::Dependency, runId, from, target.id,
                     fromName, target.name});
         }
@@ -106,7 +114,8 @@ public:
     {
         output << "{\"traceEvents\":[";
         bool first = true;
-        for (const auto& event : std::span{events_}.first(size())) {
+        for (const auto& event : std::span{events_}.first(size()))
+        {
             if (!first) output.put(',');
             first = false;
             output << "{\"name\":";
@@ -126,11 +135,14 @@ public:
                    << ",\"pid\":1,\"tid\":" << event.threadId
                    << ",\"args\":{\"run_id\":" << event.runId
                    << ",\"job_id\":" << event.jobId;
-            if (event.kind == EventKind::Finish) {
+            if (event.kind == EventKind::Finish)
+            {
                 output << ",\"status\":"
                        << static_cast<unsigned>(event.status)
                        << ",\"progress\":" << event.progress;
-            } else if (event.kind == EventKind::Dependency) {
+            }
+            else if (event.kind == EventKind::Dependency)
+            {
                 output << ",\"to_job_id\":" << event.otherJobId
                        << ",\"from\":";
                 writeJsonString(output, event.name);
@@ -146,7 +158,8 @@ private:
     void record(TraceEvent event) noexcept
     {
         const auto index = nextEvent_.fetch_add(1U, std::memory_order_relaxed);
-        if (index >= events_.size()) {
+        if (index >= events_.size())
+        {
             dropped_.fetch_add(1U, std::memory_order_relaxed);
             return;
         }
@@ -175,14 +188,16 @@ int main(int argc, char* argv[])
     using namespace sub0pipeline;
 
     const std::string_view scenario = argc == 2 ? argv[1] : "diamond";
-    if (argc > 2 || (scenario != "diamond" && scenario != "boot" && scenario != "failure")) {
+    if (argc > 2 || (scenario != "diamond" && scenario != "boot" && scenario != "failure"))
+    {
         std::cerr << "Usage: trace_capture [diamond|boot|failure]\n";
         return 1;
     }
 
     Pipeline pipeline;
     std::size_t expectedEvents{};
-    if (scenario == "diamond") {
+    if (scenario == "diamond")
+    {
         auto root = pipeline.emplace(work).name("root");
         auto left = pipeline.emplace(work).name("left");
         auto right = pipeline.emplace(work).name("right");
@@ -191,7 +206,9 @@ int main(int argc, char* argv[])
         right.succeed(root);
         join.succeed(left, right);
         expectedEvents = 12U;
-    } else if (scenario == "boot") {
+    }
+    else if (scenario == "boot")
+    {
         auto storage = pipeline.emplace(work).name("storage");
         auto network = pipeline.emplace(work).name("network");
         auto display = pipeline.emplace(work).name("display");
@@ -204,11 +221,13 @@ int main(int argc, char* argv[])
         controls.succeed(display);
         ready.succeed(telemetry, controls);
         expectedEvents = 18U;
-    } else {
+    }
+    else
+    {
         auto validate = pipeline.emplace(work).name("validate");
         auto commit = pipeline.emplace([]() -> std::expected<void, PipelineError> {
             std::this_thread::sleep_for(std::chrono::milliseconds{40});
-            Pipeline::set_current_job_error("simulated required commit failure");
+            Pipeline::setCurrentJobError("simulated required commit failure");
             return std::unexpected(PipelineError::kJobFailed);
         }).name("commit");
         auto acknowledge = pipeline.emplace(work).name("acknowledge");
@@ -231,8 +250,10 @@ int main(int argc, char* argv[])
         finished.store(true, std::memory_order_release);
     });
 
-    do {
-        for (const auto& job : pipeline.snapshot()) {
+    do
+    {
+        for (const auto& job : pipeline.snapshot())
+        {
             std::cerr << job.name << ": " << static_cast<unsigned>(job.status) << '\n';
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{16});

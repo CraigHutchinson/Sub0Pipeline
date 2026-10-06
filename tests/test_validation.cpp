@@ -2,7 +2,7 @@
 //
 // DAG integrity checks: cycle detection, self-loops, valid topologies.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "doctest.h"
 #include <thread>
 
@@ -99,7 +99,7 @@ TEST_CASE("Validation: run() calls validate() implicitly")
     {
         void dispatch(std::string_view, std::function<void()>, std::function<void()>,
                       int, uint8_t, uint32_t) override {}
-        void wait_all() override {}
+        void waitAll() override {}
         [[nodiscard]] int concurrency() const noexcept override { return 1; }
     } exec;
 
@@ -113,7 +113,8 @@ TEST_CASE("Validation: scratch survives graph growth, cycles and concurrent quer
     Pipeline pipe;
     auto first = pipe.emplace([] {});
     auto previous = first;
-    for (int i = 0; i < 128; ++i) {
+    for (int i = 0; i < 128; ++i)
+    {
         auto next = pipe.emplace([] {}).succeed(previous);
         CHECK(pipe.validate().has_value());
         previous = next;
@@ -125,7 +126,8 @@ TEST_CASE("Validation: scratch survives graph growth, cycles and concurrent quer
         });
     readers.clear();
     first.succeed(previous);
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         auto result = pipe.validate();
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == PipelineError::kCyclicDependency);

@@ -21,22 +21,22 @@
 //
 // Usage:
 //   sub0pipeline::Pipeline pipe;
-//   auto a = pipe.emplace([] { return init_a(); }).name("A");
-//   auto b = pipe.emplace([] { return init_b(); }).name("B").timeout(8s);
-//   auto c = pipe.emplace([] { return init_c(); }).name("C").timeout(10s);
-//   auto d = pipe.emplace([] { return start_d(); }).name("D");
+//   auto a = pipe.emplace([] { return initA(); }).name("A");
+//   auto b = pipe.emplace([] { return initB(); }).name("B").timeout(8s);
+//   auto c = pipe.emplace([] { return initC(); }).name("C").timeout(10s);
+//   auto d = pipe.emplace([] { return startD(); }).name("D");
 //   d.succeed(b, c);   // D depends on both B and C
 //   // B and C have no mutual dependency — run in parallel
 //   pipe.run(executor, &observer);
 //
 #pragma once
 
-#include <sub0pipeline/config.hpp>
-#include <sub0pipeline/dependency_range.hpp>
-#include <sub0pipeline/error.hpp>
-#include <sub0pipeline/executors.hpp>
-#include <sub0pipeline/job.hpp>
-#include <sub0pipeline/job_group.hpp>
-#include <sub0pipeline/observer.hpp>
-#include <sub0pipeline/pipeline.hpp>
-#include <sub0pipeline/tick_loop.hpp>
+#include "sub0pipeline/config.hpp"
+#include "sub0pipeline/dependency_range.hpp"
+#include "sub0pipeline/error.hpp"
+#include "sub0pipeline/executors.hpp"
+#include "sub0pipeline/job.hpp"
+#include "sub0pipeline/job_group.hpp"
+#include "sub0pipeline/observer.hpp"
+#include "sub0pipeline/pipeline.hpp"
+#include "sub0pipeline/tick_loop.hpp"
