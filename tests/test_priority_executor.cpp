@@ -96,7 +96,8 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
     unsigned int            arrived = 0;
     std::atomic<unsigned int> jobsOnUnprimedThread{0};
 
-    for (unsigned int i = 0; i < kThreads; ++i) {
+    for (unsigned int i = 0; i < kThreads; ++i)
+    {
         exec.dispatch("job", [&] {
             {
                 std::lock_guard lk{seenMtx};
@@ -104,9 +105,12 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
                     jobsOnUnprimedThread.fetch_add(1, std::memory_order_relaxed);
             }
             std::unique_lock lk{barrierMtx};
-            if (++arrived == kThreads) {
+            if (++arrived == kThreads)
+            {
                 barrierCv.notify_all();
-            } else {
+            }
+            else
+            {
                 barrierCv.wait(lk, [&] { return arrived == kThreads; });
             }
         }, nullptr, -1, 5, 8192U);

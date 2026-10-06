@@ -43,14 +43,16 @@ public:
     {
         // Drain loop: successor jobs may be dispatched during execution, so keep
         // joining until all threads are exhausted and inFlight_ reaches zero.
-        while (true) {
+        while (true)
+        {
             std::vector<std::thread> batch;
             {
                 std::lock_guard lk{mtx_};
                 if (threads_.empty() && inFlight_.load(std::memory_order_relaxed) == 0) break;
                 batch = std::move(threads_);
             }
-            for (auto& t : batch) {
+            for (auto& t : batch)
+            {
                 if (t.joinable()) t.join();
             }
         }
@@ -96,7 +98,8 @@ TEST_CASE("Concurrent: wide fan-out stress N=50 with real threads")
     constexpr int      cN = 50;
 
     auto root = pipeline.emplace([&] { counter.fetch_add(1, std::memory_order_relaxed); }).name("root");
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         pipeline.emplace([&] { counter.fetch_add(1, std::memory_order_relaxed); })
             .name("task_" + std::to_string(i))
             .succeed(root);

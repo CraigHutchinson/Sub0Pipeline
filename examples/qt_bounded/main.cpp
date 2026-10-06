@@ -6,14 +6,16 @@
 #include <latch>
 
 using namespace sub0pipeline;
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     QCoreApplication app{argc, argv};
     QtExecutor executor{1};
     Pipeline pipe;
     std::atomic<int> calls{0};
     auto root = pipe.emplace([] {});
     auto sink = pipe.emplace([&] { ++calls; });
-    for (int i = 0; i < 32; ++i) {
+    for (int i = 0; i < 32; ++i)
+    {
         auto job = pipe.emplace([&] { ++calls; });
         job.succeed(root).precede(sink);
     }

@@ -27,7 +27,8 @@ using namespace sub0pipeline;
 
 static std::string_view statusName(JobStatus s) noexcept
 {
-    switch (s) {
+    switch (s)
+    {
         case JobStatus::kPending:  return "kPending";
         case JobStatus::kReady:    return "kReady";
         case JobStatus::kRunning:  return "kRunning";
@@ -41,7 +42,8 @@ static std::string_view statusName(JobStatus s) noexcept
 
 static std::string_view errorName(PipelineError e) noexcept
 {
-    switch (e) {
+    switch (e)
+    {
         case PipelineError::kTimeout:          return "kTimeout";
         case PipelineError::kJobFailed:        return "kJobFailed";
         case PipelineError::kCyclicDependency: return "kCyclicDependency";
@@ -76,7 +78,8 @@ int main()
         auto result = pipeline.run(exec);
 
         std::printf("  run() succeeded:  %s\n", result.has_value() ? "yes" : "no");
-        if (!result) {
+        if (!result)
+        {
             std::printf("  error code:       %s\n", errorName(result.error()).data());
         }
         std::printf("  status(A):        %s\n", statusName(pipeline.status(a)).data());
@@ -153,7 +156,8 @@ int main()
         auto result = pipeline.run(exec);
 
         std::printf("  run() succeeded:  %s\n", result.has_value() ? "yes" : "no");
-        if (!result) {
+        if (!result)
+        {
             std::printf("  error code:       %s\n", errorName(result.error()).data());
         }
         std::printf("  status(X):        %s\n", statusName(pipeline.status(x)).data());
@@ -192,7 +196,8 @@ int main()
         auto result = pipeline.run(exec);
 
         std::printf("  run() succeeded:  %s\n", result.has_value() ? "yes" : "no");
-        if (!result) {
+        if (!result)
+        {
             std::printf("  error code:       %s\n", errorName(result.error()).data());
         }
         std::printf("  status(good):     %s\n", statusName(pipeline.status(good)).data());

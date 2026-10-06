@@ -10,7 +10,8 @@
 #include <cstdint>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /// An observer-defined identifier for one observed execution or trigger.
 using RunId = uint64_t;

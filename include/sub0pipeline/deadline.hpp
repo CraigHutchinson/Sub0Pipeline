@@ -5,21 +5,25 @@
 #include <stop_token>
 #include <utility>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /// Caller-owned registration. Only the registered service may expire it.
 /// Expiry requests stop synchronously: call from task context, never an ISR.
-class Deadline final {
+class Deadline final
+{
 public:
     explicit Deadline(std::stop_source source) noexcept : source_{std::move(source)} {}
     Deadline(const Deadline&) = delete;
     Deadline& operator=(const Deadline&) = delete;
 
-    void expire() noexcept {
+    void expire() noexcept
+    {
         expired_.store(true, std::memory_order_release);
         source_.request_stop();
     }
-    [[nodiscard]] bool expired() const noexcept {
+    [[nodiscard]] bool expired() const noexcept
+    {
         return expired_.load(std::memory_order_acquire);
     }
 private:
@@ -35,7 +39,8 @@ private:
 /// non-throwing and task-context safe. Do not hold service locks while expiring:
 /// request_stop() can synchronously run consumer callbacks.
 /// A service can use fixed slots; registration itself requires no heap allocation.
-class IDeadlineService {
+class IDeadlineService
+{
 public:
     virtual ~IDeadlineService() = default;
     virtual bool arm(Deadline&, std::chrono::milliseconds) noexcept = 0;

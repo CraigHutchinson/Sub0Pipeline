@@ -24,7 +24,8 @@
 #include <utility>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 class IDeadlineService;
 
@@ -79,7 +80,8 @@ public:
      * return `std::unexpected(PipelineError::kCancelled)` when it fires:
      * @code
      *   pipe.emplace([](std::stop_token st) -> std::expected<void, PipelineError> {
-     *       while (!st.stop_requested()) {
+     *       while (!st.stop_requested())
+     *       {
      *           if (!fetch_chunk()) break;
      *       }
      *       if (st.stop_requested())
@@ -252,7 +254,8 @@ public:
      *
      * @code
      *   auto fn = [&]() -> std::expected<void, PipelineError> {
-     *       if (!connect()) {
+     *       if (!connect())
+     *       {
      *           Pipeline::set_current_job_error("TCP connect timed out after 30s");
      *           return std::unexpected(PipelineError::kJobFailed);
      *       }
@@ -275,7 +278,8 @@ public:
      * For single-string "current job" display prefer `IObserver::onJobStart` feeding
      * an atomic pointer -- zero allocation, zero polling.
      */
-    struct JobSnapshot {
+    struct JobSnapshot
+    {
         std::string_view name;        ///< Stable pointer into the pipeline's node; valid until pipeline is destroyed.
         JobStatus        status;      ///< Relaxed atomic load of the job's current status.
         std::string_view statusText;  ///< Display text set with Job::statusText(); empty if none.

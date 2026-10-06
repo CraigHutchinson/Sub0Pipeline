@@ -29,7 +29,8 @@
 #include <utility>
 #include <vector>
 
-namespace sub0pipeline::dsl {
+namespace sub0pipeline::dsl
+{
 
 // ── Forward declarations ─────────────────────────────────────────────────────
 
@@ -130,7 +131,8 @@ public:
 
 // ── Helper to concatenate tuples into a new JobSpecGroup ─────────────────────
 
-namespace detail {
+namespace detail
+{
 
 template<typename... Fs>
 JobSpecGroup<Fs...> make_spec_group(JobSpec<Fs>... specs)
@@ -244,7 +246,8 @@ struct std::tuple_element<I, sub0pipeline::dsl::JobTupleChain<Layers...>>
     using type = std::tuple_element_t<I, std::tuple<Layers...>>;
 };
 
-namespace sub0pipeline::dsl {
+namespace sub0pipeline::dsl
+{
 
 // ── get<> for JobTuple ───────────────────────────────────────────────────────
 

@@ -3,7 +3,8 @@
 #include "sub0pipeline/sub0pipeline.hpp"
 #include <thread>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /// Owns one run thread. Destruction requests stop and joins executor callbacks,
 /// deadline callbacks and orphan workers before returning. Declare this AFTER
@@ -13,7 +14,8 @@ namespace sub0pipeline {
 /// the executor. Consumer callbacks must not throw, as with threaded executors.
 /// No other run/trigger/mutation may overlap this scope. request_stop()/complete()
 /// are thread-safe; join() is serialized. Never race destruction with API calls.
-class RunScope final {
+class RunScope final
+{
 public:
     RunScope(Pipeline& pipeline, IExecutor& executor, IObserver* observer = nullptr)
         : runner_{[this, &pipeline, &executor, observer] {
@@ -28,10 +30,12 @@ public:
     RunScope& operator=(const RunScope&) = delete;
 
     bool request_stop() noexcept { return stop_.request_stop(); }
-    [[nodiscard]] bool complete() const noexcept {
+    [[nodiscard]] bool complete() const noexcept
+    {
         return complete_.load(std::memory_order_acquire);
     }
-    [[nodiscard]] std::expected<void, PipelineError> join() {
+    [[nodiscard]] std::expected<void, PipelineError> join()
+    {
         std::lock_guard lock{joinMutex_};
         if (runner_.joinable()) runner_.join();
         return result_;

@@ -11,12 +11,16 @@ using namespace std::chrono_literals;
 
 // Fixed slots and a manually advanced monotonic clock. Single-thread test
 // service: no wall-clock sleeps, allocations, timer threads or event loop.
-class ManualClock final : public IDeadlineService {
+class ManualClock final : public IDeadlineService
+{
 public:
-    bool arm(Deadline& deadline, std::chrono::milliseconds delay) noexcept override {
+    bool arm(Deadline& deadline, std::chrono::milliseconds delay) noexcept override
+    {
         ++arms;
-        for (auto& slot : slots) {
-            if (!slot.deadline) {
+        for (auto& slot : slots)
+        {
+            if (!slot.deadline)
+            {
                 slot = {&deadline, now + delay};
                 advance(0ms);
                 return true;
@@ -24,13 +28,17 @@ public:
         }
         return false;
     }
-    void cancel_and_wait(Deadline& deadline) noexcept override {
+    void cancel_and_wait(Deadline& deadline) noexcept override
+    {
         for (auto& slot : slots) if (slot.deadline == &deadline) slot = {};
     }
-    void advance(std::chrono::milliseconds delta) {
+    void advance(std::chrono::milliseconds delta)
+    {
         now += delta;
-        for (auto& slot : slots) {
-            if (slot.deadline && slot.at <= now) {
+        for (auto& slot : slots)
+        {
+            if (slot.deadline && slot.at <= now)
+            {
                 auto* deadline = std::exchange(slot.deadline, nullptr);
                 deadline->expire();
             }
@@ -43,7 +51,8 @@ private:
     std::chrono::milliseconds now{};
 };
 
-TEST_CASE("Deadline: exact boundary, status, successor suppression and clean retry") {
+TEST_CASE("Deadline: exact boundary, status, successor suppression and clean retry")
+{
     ManualClock clock;
     Pipeline pipe;
     pipe.set_deadline_service(&clock);
@@ -70,8 +79,10 @@ TEST_CASE("Deadline: exact boundary, status, successor suppression and clean ret
     CHECK(clock.arms == 2);
 }
 
-TEST_CASE("Deadline: immediate expiry suppresses plain and cooperative bodies") {
-    for (bool cooperative : {false, true}) {
+TEST_CASE("Deadline: immediate expiry suppresses plain and cooperative bodies")
+{
+    for (bool cooperative : {false, true})
+    {
         ManualClock clock;
         Pipeline pipe;
         pipe.set_deadline_service(&clock);
@@ -88,8 +99,10 @@ TEST_CASE("Deadline: immediate expiry suppresses plain and cooperative bodies") 
     }
 }
 
-TEST_CASE("Deadline: registration exhaustion fails closed and untimed work skips service") {
-    struct Full final : IDeadlineService {
+TEST_CASE("Deadline: registration exhaustion fails closed and untimed work skips service")
+{
+    struct Full final : IDeadlineService
+    {
         bool arm(Deadline&, std::chrono::milliseconds) noexcept override { return false; }
         void cancel_and_wait(Deadline&) noexcept override { CHECK(false); }
     } full;
@@ -105,7 +118,8 @@ TEST_CASE("Deadline: registration exhaustion fails closed and untimed work skips
     CHECK(ran == 1);
 }
 
-TEST_CASE("Deadline: external cancellation stays cancellation, on-demand uses same timer") {
+TEST_CASE("Deadline: external cancellation stays cancellation, on-demand uses same timer")
+{
     ManualClock clock;
     Pipeline pipe;
     pipe.set_deadline_service(&clock);
@@ -130,7 +144,8 @@ TEST_CASE("Deadline: external cancellation stays cancellation, on-demand uses sa
     CHECK(clock.arms == 2);
 }
 
-TEST_CASE("RunScope: destruction releases cooperative I/O before borrowed members") {
+TEST_CASE("RunScope: destruction releases cooperative I/O before borrowed members")
+{
     InlineExecutor executor;
     std::latch entered{1};
     int record = 42;
@@ -154,15 +169,18 @@ TEST_CASE("RunScope: destruction releases cooperative I/O before borrowed member
     CHECK(returned);
 }
 
-TEST_CASE("RunScope: completion includes non-cooperative timeout work") {
+TEST_CASE("RunScope: completion includes non-cooperative timeout work")
+{
     InlineExecutor executor;
     Pipeline pipe;
     std::latch timedOut{1}, release{1};
-    struct Observer final : IObserver {
+    struct Observer final : IObserver
+    {
         std::latch& timedOut;
         explicit Observer(std::latch& latch) : timedOut{latch} {}
         void onJobStart(RunId, JobId, std::string_view) override {}
-        void onJobFinish(RunId, JobId, std::string_view, JobStatus status, float) override {
+        void onJobFinish(RunId, JobId, std::string_view, JobStatus status, float) override
+        {
             if (status == JobStatus::kTimedOut) timedOut.count_down();
         }
     } observer{timedOut};
@@ -180,7 +198,8 @@ TEST_CASE("RunScope: completion includes non-cooperative timeout work") {
     CHECK_FALSE(pipe.has_pending_orphans());
 }
 
-TEST_CASE("On-demand: cancellation resets for retry and duplicate queueing is rejected") {
+TEST_CASE("On-demand: cancellation resets for retry and duplicate queueing is rejected")
+{
     Pipeline pipe, other;
     QueuedExecutor executor;
     int ran = 0;
@@ -199,22 +218,26 @@ TEST_CASE("On-demand: cancellation resets for retry and duplicate queueing is re
 }
 
 // Explicitly driven concurrent service: cancellation drains in-flight expiry.
-class ControlledClock final : public IDeadlineService {
+class ControlledClock final : public IDeadlineService
+{
 public:
     std::latch armed{1}, cancelling{1};
-    bool arm(Deadline& deadline, std::chrono::milliseconds) noexcept override {
+    bool arm(Deadline& deadline, std::chrono::milliseconds) noexcept override
+    {
         std::lock_guard lock{mutex};
         slot = &deadline;
         armed.count_down();
         return true;
     }
-    void cancel_and_wait(Deadline&) noexcept override {
+    void cancel_and_wait(Deadline&) noexcept override
+    {
         std::unique_lock lock{mutex};
         slot = nullptr;
         cancelling.count_down();
         idle.wait(lock, [&] { return active == 0; });
     }
-    void expire() {
+    void expire()
+    {
         Deadline* deadline;
         {
             std::lock_guard lock{mutex};
@@ -234,7 +257,8 @@ private:
     int active = 0;
 };
 
-TEST_CASE("Deadline: completion drains a concurrently executing stop callback") {
+TEST_CASE("Deadline: completion drains a concurrently executing stop callback")
+{
     ControlledClock clock;
     InlineExecutor executor;
     Pipeline pipe;
@@ -266,7 +290,8 @@ TEST_CASE("Deadline: completion drains a concurrently executing stop callback") 
     CHECK(scope.complete());
 }
 
-TEST_CASE("Deadline: plain blocked worker remains owned after injected expiry") {
+TEST_CASE("Deadline: plain blocked worker remains owned after injected expiry")
+{
     ControlledClock clock;
     Pipeline pipe;
     pipe.set_deadline_service(&clock);
@@ -287,7 +312,8 @@ TEST_CASE("Deadline: plain blocked worker remains owned after injected expiry") 
     CHECK_FALSE(pipe.has_pending_orphans());
 }
 
-TEST_CASE("Deadline: plain completion unregisters without waiting for expiry") {
+TEST_CASE("Deadline: plain completion unregisters without waiting for expiry")
+{
     ControlledClock clock;
     Pipeline pipe;
     pipe.set_deadline_service(&clock);

@@ -49,12 +49,14 @@ private:
 class IdentityObserver final : public IObserver
 {
 public:
-    struct Event {
+    struct Event
+    {
         RunId runId{};
         JobId jobId{};
         JobStatus status{JobStatus::kPending};
     };
-    struct Edge {
+    struct Edge
+    {
         RunId runId{};
         JobId from{};
         JobId to{};
@@ -111,7 +113,8 @@ TEST_CASE("Observer: successor iterators outlive temporary and copied range wrap
 
     auto iterator = pipeline.successors(0U).begin();
     auto end = pipeline.successors(0U).end();
-    for (JobId id = 1; id <= 6; ++id, ++iterator) {
+    for (JobId id = 1; id <= 6; ++id, ++iterator)
+    {
         REQUIRE(iterator != end);
         CHECK((*iterator).id == id);
         CHECK((*iterator).name == "child");
@@ -165,8 +168,10 @@ TEST_CASE("Observer: identity-aware events distinguish duplicate names and runs"
 
 TEST_CASE("Observer: parallel dependency events precede successor starts and join before return")
 {
-    struct ParallelObserver final : IObserver {
-        struct Event {
+    struct ParallelObserver final : IObserver
+    {
+        struct Event
+        {
             JobId id{};
             char kind{};
         };
@@ -213,7 +218,8 @@ TEST_CASE("Observer: parallel dependency events precede successor starts and joi
     REQUIRE(pipeline.run(executor, &observer).has_value());
     CHECK_FALSE(observer.wrongRun.load(std::memory_order_relaxed));
     REQUIRE(observer.events.size() == 12U);
-    for (JobId root = 0; root < 2; ++root) {
+    for (JobId root = 0; root < 2; ++root)
+    {
         const auto position = [&](JobId id, char kind) {
             return std::ranges::find_if(observer.events, [&](const auto& event) {
                 return event.id == id && event.kind == kind;
@@ -260,14 +266,16 @@ TEST_CASE("Observer: resolved edges include skipped successors")
 
 TEST_CASE("Observer: batch dependency events carry all successor identities")
 {
-    struct BatchObserver final : IObserver {
+    struct BatchObserver final : IObserver
+    {
         std::vector<JobId> sources;
         std::vector<DependencyRange::Target> targets;
 
         void onDependenciesResolved(RunId, JobId from, std::string_view,
                                     DependencyRange successors) override
         {
-            for (const auto target : successors) {
+            for (const auto target : successors)
+            {
                 sources.push_back(from);
                 targets.push_back(target);
             }
@@ -318,8 +326,10 @@ TEST_CASE("Observer: progress increases monotonically")
     (void)pipeline.run(exec, &obs);
 
     float lastProgress = -1.0f;
-    for (const auto& e : obs.entries()) {
-        if (!e.isStart) {
+    for (const auto& e : obs.entries())
+    {
+        if (!e.isStart)
+        {
             CHECK(e.progress > lastProgress);
             lastProgress = e.progress;
         }
@@ -341,7 +351,8 @@ TEST_CASE("Observer: kFailed status reported for failing job")
     (void)pipeline.run(exec, &obs);
 
     bool sawFailure = false;
-    for (const auto& e : obs.entries()) {
+    for (const auto& e : obs.entries())
+    {
         if (!e.isStart && e.status == JobStatus::kFailed) sawFailure = true;
     }
     CHECK(sawFailure);
@@ -368,13 +379,17 @@ TEST_CASE("Observer: start fired before finish for each job")
     (void)pipeline.run(exec, &obs);
 
     // Verify each finish entry is preceded by its matching start entry.
-    for (std::size_t i = 0U; i < obs.entries().size(); ++i) {
+    for (std::size_t i = 0U; i < obs.entries().size(); ++i)
+    {
         const auto& e = obs.entries()[i];
-        if (!e.isStart) {
+        if (!e.isStart)
+        {
             // Find the matching start
             bool foundStart = false;
-            for (std::size_t j = 0U; j < i; ++j) {
-                if (obs.entries()[j].isStart && obs.entries()[j].name == e.name) {
+            for (std::size_t j = 0U; j < i; ++j)
+            {
+                if (obs.entries()[j].isStart && obs.entries()[j].name == e.name)
+                {
                     foundStart = true;
                     break;
                 }
@@ -400,7 +415,8 @@ TEST_CASE("Observer: kSkipped status reported for downstream of required failure
     (void)pipeline.run(exec, &obs);
 
     bool sawSkipped = false;
-    for (const auto& e : obs.entries()) {
+    for (const auto& e : obs.entries())
+    {
         if (!e.isStart && e.name == "dependent" && e.status == JobStatus::kSkipped)
             sawSkipped = true;
     }

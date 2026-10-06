@@ -10,7 +10,8 @@
 #include <iterator>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 class Pipeline;
 
@@ -23,7 +24,8 @@ public:
     DependencyRange() noexcept = default;
 
     /// One outgoing edge's destination and borrowed display name.
-    struct Target {
+    struct Target
+    {
         JobId id{};
         std::string_view name{};
     };

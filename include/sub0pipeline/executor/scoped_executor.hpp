@@ -13,7 +13,8 @@
 #include <string_view>
 #include <utility>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 // ── ScopedExecutor ───────────────────────────────────────────────────────────
 

@@ -16,7 +16,8 @@
 
 using namespace sub0pipeline;
 
-namespace {
+namespace
+{
 
 // 1 root -> `leaves` leaves; returns how many jobs ran.
 template<typename Executor>
@@ -57,7 +58,8 @@ TEST_CASE("Executors: DesktopExecutor is usable as a local object and as a membe
         CHECK(runFanOut(executor, 3) == 4);   // reusable after wait_all()
     }
 
-    struct Owner {
+    struct Owner
+    {
         DesktopExecutor executor;
         Pipeline pipeline;
     } owner;
@@ -125,7 +127,8 @@ TEST_CASE("Executors: DefaultExecutor needs no arguments and runs a pipeline")
 
 TEST_CASE("Executors: an executor chosen at run time is held through IExecutor")
 {
-    for (const bool parallel : {false, true}) {
+    for (const bool parallel : {false, true})
+    {
         std::unique_ptr<IExecutor> executor;
         if (parallel) executor = std::make_unique<PriorityExecutor>(PriorityExecutor::Options{.threadCount = 2});
         else          executor = std::make_unique<SequentialExecutor>();

@@ -113,7 +113,8 @@ TEST_CASE("Validation: scratch survives graph growth, cycles and concurrent quer
     Pipeline pipe;
     auto first = pipe.emplace([] {});
     auto previous = first;
-    for (int i = 0; i < 128; ++i) {
+    for (int i = 0; i < 128; ++i)
+    {
         auto next = pipe.emplace([] {}).succeed(previous);
         CHECK(pipe.validate().has_value());
         previous = next;
@@ -125,7 +126,8 @@ TEST_CASE("Validation: scratch survives graph growth, cycles and concurrent quer
         });
     readers.clear();
     first.succeed(previous);
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         auto result = pipe.validate();
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == PipelineError::kCyclicDependency);

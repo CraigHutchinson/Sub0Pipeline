@@ -31,7 +31,8 @@ using namespace sub0pipeline;
 
 static std::string_view statusName(JobStatus s) noexcept
 {
-    switch (s) {
+    switch (s)
+    {
         case JobStatus::kPending:  return "kPending";
         case JobStatus::kReady:    return "kReady";
         case JobStatus::kRunning:  return "kRunning";

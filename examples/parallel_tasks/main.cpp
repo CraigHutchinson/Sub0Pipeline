@@ -32,7 +32,8 @@ int main()
     // Workers: independent, all succeed root.
     std::vector<Job> workers;
     workers.reserve(kWorkers);
-    for (int i = 0; i < kWorkers; ++i) {
+    for (int i = 0; i < kWorkers; ++i)
+    {
         workers.push_back(
             pipeline.emplace([i, &workersDone, kWorkDuration] {
                 std::this_thread::sleep_for(kWorkDuration);
@@ -58,12 +59,15 @@ int main()
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - t0);
 
-    if (result) {
+    if (result)
+    {
         std::printf("\nCompleted in %lld ms  "
                     "(sequential would be ~%lld ms)\n",
                     static_cast<long long>(elapsed.count()),
                     static_cast<long long>(kWorkers * kWorkDuration.count()));
-    } else {
+    }
+    else
+    {
         std::printf("Failed.\n");
         return 1;
     }

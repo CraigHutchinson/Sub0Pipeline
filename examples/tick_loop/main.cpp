@@ -44,7 +44,8 @@ int main()
     ready.succeed(init);
 
     auto bootResult = pipeline.run(exec);
-    if (!bootResult) {
+    if (!bootResult)
+    {
         std::printf("Boot failed — aborting.\n");
         return 1;
     }

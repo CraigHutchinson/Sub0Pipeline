@@ -3,13 +3,15 @@
 #include <atomic>
 
 using namespace sub0pipeline;
-static int exercise() {
+static int exercise()
+{
     ZephyrExecutor<2> executor;
     Pipeline pipe;
     std::atomic<int> calls{0};
     auto root = pipe.emplace([] {});
     auto ack = pipe.emplace([&] { ++calls; });
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         auto task = pipe.emplace([&] { ++calls; });
         task.succeed(root).precede(ack);
     }
@@ -50,8 +52,10 @@ static int exercise() {
     return 0;
 }
 
-int main() {
-    if (const int error = exercise()) {
+int main()
+{
+    if (const int error = exercise())
+    {
         printk("Sub0Pipeline Zephyr bounded: FAIL %d\n", error);
         return error;
     }

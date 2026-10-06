@@ -7,7 +7,8 @@
 #include <cstdint>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 class JobGroup;
 class Pipeline;
@@ -18,7 +19,8 @@ class Pipeline;
  */
 using JobId = uint32_t;
 
-namespace detail {
+namespace detail
+{
 /// The part of a Pipeline's heap state that Job handles point at. It does not
 /// move when the Pipeline object is moved; `owner` then names the new object.
 struct PipelineAnchor

@@ -11,17 +11,22 @@
 #include <malloc.h>
 #endif
 
-namespace audit {
+namespace audit
+{
 std::atomic<bool> enabled{false};
 std::atomic<std::size_t> calls{0}, bytes{0};
-void record(std::size_t size) noexcept {
-    if (enabled.load(std::memory_order_relaxed)) {
+void record(std::size_t size) noexcept
+{
+    if (enabled.load(std::memory_order_relaxed))
+    {
         calls.fetch_add(1, std::memory_order_relaxed);
         bytes.fetch_add(size, std::memory_order_relaxed);
     }
 }
-void* allocate(std::size_t size, std::size_t alignment = 0) {
-    for (;;) {
+void* allocate(std::size_t size, std::size_t alignment = 0)
+{
+    for (;;)
+    {
         void* p = nullptr;
         if (!alignment) p = std::malloc(size ? size : 1);
 #ifdef _WIN32
@@ -34,7 +39,8 @@ void* allocate(std::size_t size, std::size_t alignment = 0) {
         else throw std::bad_alloc{};
     }
 }
-void releaseAligned(void* p) noexcept {
+void releaseAligned(void* p) noexcept
+{
 #ifdef _WIN32
     _aligned_free(p);
 #else
@@ -42,9 +48,11 @@ void releaseAligned(void* p) noexcept {
 #endif
 }
 struct Counts { std::size_t calls, bytes; };
-template<class F> Counts measure(F&& fn) {
+template<class F> Counts measure(F&& fn)
+{
     calls = 0; bytes = 0;
-    struct Window {
+    struct Window
+    {
         Window() { enabled = true; }
         ~Window() { enabled = false; }
     } window;
@@ -69,7 +77,8 @@ void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { audit:
 using namespace sub0pipeline;
 using namespace std::chrono_literals;
 
-int main() {
+int main()
+{
     // Calibrate outside reported cases, including aligned allocation.
     auto calibration = audit::measure([] {
         auto* a = ::operator new(17);
@@ -85,7 +94,8 @@ int main() {
     };
     auto chain = [](Pipeline& pipe) {
         Job previous;
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 10; ++i)
+        {
             auto job = pipe.emplace([] {});
             if (previous) job.succeed(previous);
             previous = job;
@@ -113,7 +123,8 @@ int main() {
 
     // Single-thread, no-expiry fixture isolates registration overhead; this is
     // not a production timer service and does not model timer-driver allocations.
-    struct NoExpiry final : IDeadlineService {
+    struct NoExpiry final : IDeadlineService
+    {
         bool arm(Deadline&, std::chrono::milliseconds) noexcept override { return true; }
         void cancel_and_wait(Deadline&) noexcept override {}
     } deadline;

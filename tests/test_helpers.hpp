@@ -41,7 +41,8 @@ public:
     }
     void wait_all() override
     {
-        while (!queue_.empty()) {
+        while (!queue_.empty())
+        {
             auto fn = std::move(queue_.front());
             queue_.pop_front();
             fn();

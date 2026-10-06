@@ -37,9 +37,11 @@
 #include <utility>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
-namespace {
+namespace
+{
 // Jobs call Pipeline::set_current_job_error() on the failure branch only.
 // The string is read once (inside dispatchJob, after the job fn returns) and
 // immediately cleared.  On the success path the string is never touched --
@@ -49,7 +51,8 @@ thread_local std::string t_jobError;
 JobStatus statusOf(const std::expected<void, PipelineError>& result) noexcept
 {
     if (result) return JobStatus::kDone;
-    switch (result.error()) {
+    switch (result.error())
+    {
         case PipelineError::kCancelled: return JobStatus::kCancelled;
         case PipelineError::kTimeout: return JobStatus::kTimedOut;
         default: return JobStatus::kFailed;
@@ -122,8 +125,10 @@ struct PoolSuccessors
     void push_back(uint16_t v, std::vector<uint16_t>& pool)
     {
         const uint16_t n = count();
-        if (!isPool()) {
-            if (n < kInlineCap) {
+        if (!isPool())
+        {
+            if (n < kInlineCap)
+            {
                 inline_[n] = v;
                 size_ = static_cast<uint16_t>(n + 1U);
                 return;
@@ -140,12 +145,16 @@ struct PoolSuccessors
 
         std::size_t start = blockStart();
         const uint16_t capacity = blockCapacity();
-        if (n == capacity) {
+        if (n == capacity)
+        {
             const auto grown = static_cast<uint16_t>(capacity > kCountMask / 2U
                 ? kCountMask : capacity * 2U);
-            if (start + capacity == pool.size()) {
+            if (start + capacity == pool.size())
+            {
                 pool.resize(start + grown);   // last block: extend in place
-            } else {
+            }
+            else
+            {
                 const std::size_t moved = pool.size();
                 pool.resize(moved + grown);
                 for (uint16_t i = 0; i < n; ++i) pool[moved + i] = pool[start + i];
@@ -165,7 +174,8 @@ struct PoolSuccessors
     { return begin(pool) + count(); }
 
     // Range adapter for range-based for: `for (auto s : nd.successors_.range(pool))`
-    struct Range {
+    struct Range
+    {
         const uint16_t* b_; const uint16_t* e_;
         const uint16_t* begin() const noexcept { return b_; }
         const uint16_t* end()   const noexcept { return e_; }
@@ -305,7 +315,8 @@ struct Pipeline::Impl : detail::PipelineAnchor
     // A moved-from Pipeline has no Impl; mutating calls recreate it.
     static Impl& ensure(std::unique_ptr<Impl>& impl, Pipeline* owner)
     {
-        if (!impl) {
+        if (!impl)
+        {
             impl = std::make_unique<Impl>();
             impl->owner = owner;
         }
@@ -359,28 +370,33 @@ struct Pipeline::Impl : detail::PipelineAnchor
         Deadline deadline{node.stopSource_};
         if (!deadlines_->arm(deadline, node.timeout_))
             return std::unexpected(PipelineError::kDeadlineUnavailable);
-        struct Registration {
+        struct Registration
+        {
             IDeadlineService& service;
             Deadline& deadline;
             bool active = true;
-            void reset() noexcept {
+            void reset() noexcept
+            {
                 if (std::exchange(active, false)) service.cancel_and_wait(deadline);
             }
             ~Registration() { reset(); }
         } registration{*deadlines_, deadline};
         const auto token = node.stopSource_.get_token();
-        if (token.stop_requested()) {
+        if (token.stop_requested())
+        {
             registration.reset();
             return std::unexpected(deadline.expired() ? PipelineError::kTimeout
                                                      : PipelineError::kCancelled);
         }
-        if (node.isCancellable()) {
+        if (node.isCancellable())
+        {
             auto result = node.fn_(token);
             registration.reset();
             return deadline.expired() ? std::unexpected(PipelineError::kTimeout) : result;
         }
         // The worker may outlive dispatch, so its completion state is owned.
-        struct Completion {
+        struct Completion
+        {
             std::mutex mutex;
             std::condition_variable_any ready;
             bool done = false;
@@ -402,7 +418,8 @@ struct Pipeline::Impl : detail::PipelineAnchor
             done = completion->ready.wait(lock, token, [&] { return completion->done; });
         }
         registration.reset();
-        if (done) {
+        if (done)
+        {
             thread.join();
             auto value = result.get();
             return deadline.expired() ? std::unexpected(PipelineError::kTimeout) : value;
@@ -424,7 +441,8 @@ struct Pipeline::Impl : detail::PipelineAnchor
         if (node.stopSource_.stop_requested())
             return std::unexpected(PipelineError::kCancelled);
 
-        if (node.timeout_ == std::chrono::milliseconds::max()) {
+        if (node.timeout_ == std::chrono::milliseconds::max())
+        {
             // A plain job's wrapper discards its token, so skip the shared
             // state's reference count and hand it an empty one.
             return node.fn_(node.isCancellable() ? node.stopSource_.get_token()
@@ -450,7 +468,8 @@ struct Pipeline::Impl : detail::PipelineAnchor
     {
         if (deadlines_) return invokeWithDeadline(node);
 
-        if (node.isCancellable()) {
+        if (node.isCancellable())
+        {
             std::atomic<bool> expired{false};
             // Interrupt the deadline wait when the job finishes or is cancelled.
             std::jthread watchdog{[source = node.stopSource_, duration = node.timeout_, &expired]
@@ -465,7 +484,8 @@ struct Pipeline::Impl : detail::PipelineAnchor
                 const bool stopped = wake.wait_for(lock, finished, duration,
                               [&] { return source.stop_requested(); });
                 lock.unlock();
-                if (!stopped && !finished.stop_requested()) {
+                if (!stopped && !finished.stop_requested())
+                {
                     expired.store(true, std::memory_order_release);
                     source.request_stop();
                 }
@@ -482,7 +502,8 @@ struct Pipeline::Impl : detail::PipelineAnchor
         };
         auto result = task.get_future();
         std::jthread thread{std::move(task)};
-        if (result.wait_for(node.timeout_) != std::future_status::timeout) {
+        if (result.wait_for(node.timeout_) != std::future_status::timeout)
+        {
             thread.join();
             return result.get();
         }
@@ -532,7 +553,8 @@ Job& Job::priority(uint8_t p) noexcept
 
 Job& Job::optional(bool opt) noexcept
 {
-    if (pipeline() && valid()) {
+    if (pipeline() && valid())
+    {
         auto& nd = pipeline()->node(idx_);
         if (opt) nd.flags_ |= Pipeline::Node::kFlagOptional;
         else     nd.flags_ &= static_cast<uint8_t>(~Pipeline::Node::kFlagOptional);
@@ -548,7 +570,8 @@ Job& Job::statusText(const char* text) noexcept
 
 void Job::cancel() noexcept
 {
-    if (pipeline() && valid()) {
+    if (pipeline() && valid())
+    {
         // Copy under the reset lock; invoke user stop callbacks outside it.
         auto source = pipeline()->impl_->stopSource(pipeline()->node(idx_));
         source.request_stop();
@@ -694,20 +717,24 @@ auto Pipeline::validate() const -> std::expected<void, PipelineError>
     inDegree.assign(n, 0U);
     ready.clear();
     ready.reserve(n);
-    for (const auto& nd : impl_->nodes_) {
+    for (const auto& nd : impl_->nodes_)
+    {
         for (auto succ : nd.successors_.range(impl_->succPool_))
             ++inDegree[succ];
     }
 
-    for (uint32_t i = 0U; i < n; ++i) {
+    for (uint32_t i = 0U; i < n; ++i)
+    {
         if (inDegree[i] == 0U) ready.push_back(i);
     }
 
     uint32_t visited = 0U;
-    while (visited < ready.size()) {
+    while (visited < ready.size())
+    {
         const auto idx = ready[visited];
         ++visited;
-        for (auto succ : impl_->nodes_[idx].successors_.range(impl_->succPool_)) {
+        for (auto succ : impl_->nodes_[idx].successors_.range(impl_->succPool_))
+        {
             if (--inDegree[succ] == 0U) ready.push_back(succ);
         }
     }
@@ -738,7 +765,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     if (!impl_ || impl_->nodes_.empty()) return {};
     if (impl_->running_.test_and_set(std::memory_order_acquire))
         return std::unexpected(PipelineError::kBusy);
-    struct RunGuard {
+    struct RunGuard
+    {
         std::atomic_flag& running;
         ~RunGuard() { running.clear(std::memory_order_release); }
     } running{impl_->running_};
@@ -748,10 +776,12 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
     impl_->skipped_.clear();
 
-    if (!impl_->rootsCached_) {
+    if (!impl_->rootsCached_)
+    {
         if (auto result = validate(); !result) return result;
         impl_->roots_.clear();
-        for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i) {
+        for (uint32_t i = 0U; i < static_cast<uint32_t>(total); ++i)
+        {
             const auto& nd = impl_->nodes_[i];
             if (nd.predecessorCount_ == 0U && !nd.isOnDemand())
                 impl_->roots_.push_back(i);
@@ -761,7 +791,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
     {
         std::lock_guard lock{impl_->stopMtx_};
-        for (auto& node : impl_->nodes_) {
+        for (auto& node : impl_->nodes_)
+        {
             Impl::renewStopState(node);
             node.unmetDeps_.store(node.predecessorCount_, std::memory_order_relaxed);
             node.jobStatus_.store(node.predecessorCount_ == 0U && !node.isOnDemand()
@@ -800,9 +831,11 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         {
             auto& status = impl.nodes_[idx].jobStatus_;
             auto previous = status.load(std::memory_order_acquire);
-            while (previous == JobStatus::kPending || previous == JobStatus::kReady) {
+            while (previous == JobStatus::kPending || previous == JobStatus::kReady)
+            {
                 if (status.compare_exchange_weak(previous, JobStatus::kSkipped,
-                                                  std::memory_order_acq_rel)) {
+                                                  std::memory_order_acq_rel))
+                {
                     impl.skipped_.push_back(idx);
                     return;
                 }
@@ -818,7 +851,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
             enqueueSkip(startIdx);
             if (drainingSkips) return;
             drainingSkips = true;
-            while (skipRead < impl.skipped_.size()) {
+            while (skipRead < impl.skipped_.size())
+            {
                 const auto idx = impl.skipped_[skipRead++];
                 auto& nd = impl.nodes_[idx];
                 for (auto succ : nd.successors_.range(impl.succPool_)) enqueueSkip(succ);
@@ -828,7 +862,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 // user code under a traversal lock. Other workers may enqueue;
                 // this drainer remains an active executor callback until done.
                 lock.unlock();
-                if (observer) {
+                if (observer)
+                {
                     observer->onJobFinish(runId, idx, nd.nameStr_, JobStatus::kSkipped, progress);
                     notifyDependencies(*observer, pipeline, runId, idx, nd.nameStr_);
                 }
@@ -859,19 +894,22 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
             const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
             const auto progress = static_cast<float>(done) / static_cast<float>(total);
-            if (observer) {
+            if (observer)
+            {
                 observer->onJobFinish(runId, idx, nd.nameStr_, jobStatus, progress);
                 notifyDependencies(*observer, pipeline, runId, idx, nd.nameStr_);
             }
 
-            if (!result && (!nd.isOptional() || result.error() == PipelineError::kCancelled)) {
+            if (!result && (!nd.isOptional() || result.error() == PipelineError::kCancelled))
+            {
                 // Report failure detail through the dedicated hook -- zero cost when
                 // no observer is attached.
                 if (observer)
                     observer->onJobFailure(runId, idx, nd.nameStr_, result.error(), jobErrorCtx);
 
                 bool expected = false;
-                if (hasFatalFailure.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+                if (hasFatalFailure.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+                {
                     std::lock_guard lk{fatalMtx};
                     fatalError = result.error();
                     impl.failedJobName_ = nd.nameStr_;
@@ -880,14 +918,17 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 return;
             }
 
-            for (auto succIdx : nd.successors_.range(impl.succPool_)) {
+            for (auto succIdx : nd.successors_.range(impl.succPool_))
+            {
                 auto& succ = impl.nodes_[succIdx];
                 const auto remaining = succ.unmetDeps_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
-                if (remaining == 0U) {
+                if (remaining == 0U)
+                {
                     auto pending = JobStatus::kPending;
                     if (!succ.jobStatus_.compare_exchange_strong(pending, JobStatus::kReady,
                                                                 std::memory_order_acq_rel)) continue;
-                    if (inlineReady) {
+                    if (inlineReady)
+                    {
                         inlineReady->push_back(succIdx);
                         continue;
                     }
@@ -912,7 +953,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     // entry, and running cooperative jobs see it through their own token.
     // Node stop sources are immutable from run initialization until this
     // registration is destroyed, which waits for a callback still in progress.
-    struct ForwardStop {
+    struct ForwardStop
+    {
         Impl& impl;
         void operator()() const noexcept
         {
@@ -922,7 +964,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     std::optional<std::stop_callback<ForwardStop>> forwardStop;
     if (external.stop_possible()) forwardStop.emplace(external, ForwardStop{*impl_});
 
-    if (ctx.inlineReady) {
+    if (ctx.inlineReady)
+    {
         // The executor would only call each job on this thread, so call them
         // here from a worklist. A completing job appends its ready successors
         // instead of running them, which keeps stack depth independent of
@@ -932,8 +975,11 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         ready.assign(impl_->roots_.begin(), impl_->roots_.end());
         for (std::size_t next = 0; next < ready.size(); ++next)
             ctx.dispatchJob(ready[next]);
-    } else {
-        for (auto idx : impl_->roots_) {
+    }
+    else
+    {
+        for (auto idx : impl_->roots_)
+        {
             auto& nd = impl_->nodes_[idx];
             executor.dispatch(
                 nd.nameStr_,
@@ -945,7 +991,8 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
 
     executor.wait_all();
 
-    if (hasFatalFailure.load(std::memory_order_acquire)) {
+    if (hasFatalFailure.load(std::memory_order_acquire))
+    {
         std::lock_guard lk{fatalMtx};
         return std::unexpected(fatalError);
     }
@@ -1014,14 +1061,16 @@ std::vector<Pipeline::JobSnapshot> Pipeline::snapshot() const
     if (!impl_) return {};
     std::vector<JobSnapshot> out;
     out.reserve(impl_->nodes_.size());
-    for (const auto& nd : impl_->nodes_) {
+    for (const auto& nd : impl_->nodes_)
+    {
         out.push_back({nd.nameStr_, nd.jobStatus_.load(std::memory_order_relaxed),
                        nd.statusText_ ? std::string_view{nd.statusText_} : std::string_view{}});
     }
     return out;
 }
 
-namespace {
+namespace
+{
 struct InlineExecutor final : IExecutor
 {
     void dispatch(std::string_view, std::function<void()> fn,
@@ -1060,7 +1109,8 @@ void Pipeline::run_until(IExecutor& executor, std::stop_token stop,
                          IObserver* observer,
                          std::function<void(PipelineError)> onError)
 {
-    while (!stop.stop_requested()) {
+    while (!stop.stop_requested())
+    {
         auto result = run(executor, stop, observer);
         if (!result && onError)
             onError(result.error());
@@ -1131,11 +1181,13 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
             const auto status = statusOf(result);
             n.jobStatus_.store(status, std::memory_order_release);
             auto jobErrorCtx = std::move(t_jobError);
-            if (obs) {
+            if (obs)
+            {
                 obs->onJobFinish(runId, idx, n.nameStr_, status, 1.0f);
                 notifyDependencies(*obs, *pipeline, runId, idx, n.nameStr_);
                 if (!result && (!n.isOptional() ||
-                                result.error() == PipelineError::kCancelled)) {
+                                result.error() == PipelineError::kCancelled))
+                {
                     obs->onJobFailure(runId, idx, n.nameStr_, result.error(), jobErrorCtx);
                 }
             }
@@ -1154,7 +1206,8 @@ void Pipeline::dump_text(std::ostream& output) const
 {
     if (!impl_) return;
     output << "Pipeline DAG (" << impl_->nodes_.size() << " jobs):\n";
-    for (uint32_t i = 0U; i < static_cast<uint32_t>(impl_->nodes_.size()); ++i) {
+    for (uint32_t i = 0U; i < static_cast<uint32_t>(impl_->nodes_.size()); ++i)
+    {
         const auto& nd = impl_->nodes_[i];
         output << "  [" << i << "] " << nd.nameStr_ << " (predecessors: "
                << nd.predecessorCount_ << ") -> (";

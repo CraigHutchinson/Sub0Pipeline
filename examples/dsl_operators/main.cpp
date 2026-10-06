@@ -18,7 +18,8 @@ using namespace std::chrono_literals;
 using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;
 
-namespace {
+namespace
+{
 
 auto load_data() -> std::expected<void, PipelineError>
 {

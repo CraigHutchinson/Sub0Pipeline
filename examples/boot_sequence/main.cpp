@@ -13,7 +13,8 @@
 
 using namespace std::chrono_literals;
 
-namespace {
+namespace
+{
 
 // Simulated subsystem initialisers (sleep to mimic real work).
 auto nvs_init() -> std::expected<void, sub0pipeline::PipelineError>
@@ -71,12 +72,15 @@ int main()
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - t0);
 
-    if (result) {
+    if (result)
+    {
         std::printf("Boot complete in %lld ms  "
                     "(sequential would be ~%d ms)\n",
                     static_cast<long long>(elapsed.count()),
                     20 + 80 + 120);
-    } else {
+    }
+    else
+    {
         std::printf("Boot failed.\n");
         return 1;
     }

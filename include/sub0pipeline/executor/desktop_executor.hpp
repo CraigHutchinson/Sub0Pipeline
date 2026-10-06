@@ -14,7 +14,8 @@
 #include <thread>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
  * Starts one `std::thread` per dispatched job.

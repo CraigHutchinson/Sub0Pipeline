@@ -9,7 +9,8 @@
 #include <type_traits>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 // ── JobGroup ────────────────────────────────────────────────────────────────
 

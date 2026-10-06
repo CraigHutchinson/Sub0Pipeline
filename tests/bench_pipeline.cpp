@@ -27,7 +27,8 @@
 #include <sys/types.h>
 #endif
 
-namespace {
+namespace
+{
 
 void printSystemInfo()
 {
@@ -68,8 +69,10 @@ void printSystemInfo()
     {
         std::ifstream cpuinfo("/proc/cpuinfo");
         std::string   line;
-        while (std::getline(cpuinfo, line)) {
-            if (line.find("model name") != std::string::npos) {
+        while (std::getline(cpuinfo, line))
+        {
+            if (line.find("model name") != std::string::npos)
+            {
                 auto pos = line.find(':');
                 if (pos != std::string::npos)
                     printf("CPU:%s\n", line.substr(pos + 1).c_str());
@@ -120,7 +123,8 @@ using sub0pipeline::Pipeline;
 void buildChain(Pipeline& pipeline, int jobs)
 {
     Job previous;
-    for (int i = 0; i < jobs; ++i) {
+    for (int i = 0; i < jobs; ++i)
+    {
         auto job = pipeline.emplace([] {}).name("j" + std::to_string(i));
         if (previous.valid()) job.succeed(previous);
         previous = job;
@@ -138,9 +142,11 @@ void buildFanOut(Pipeline& pipeline, int leaves)
 void buildLayered(Pipeline& pipeline, int layers, int width, int fanIn)
 {
     std::vector<Job> above, row;
-    for (int layer = 0; layer < layers; ++layer) {
+    for (int layer = 0; layer < layers; ++layer)
+    {
         row.clear();
-        for (int i = 0; i < width; ++i) {
+        for (int i = 0; i < width; ++i)
+        {
             auto job = pipeline.emplace([] {});
             for (int k = 0; k < fanIn && !above.empty(); ++k)
                 job.succeed(above[static_cast<std::size_t>((i + k) % width)]);
@@ -163,7 +169,8 @@ void reserveIfSupported(P& pipeline, std::size_t jobs)
 // ── Case runner ──────────────────────────────────────────────────────────────
 
 /// How long one operation takes, which sets how it is sampled.
-enum class Cost {
+enum class Cost
+{
     kCheap,     ///< Sub-microsecond: 1,000 warmup, >= 100,000 iterations per epoch.
     kMedium,    ///< Tens of microseconds: 10 warmup, >= 1,000 iterations per epoch.
     kThreaded,  ///< Creates or wakes native threads: 2 warmup, >= 10 iterations per epoch.
@@ -187,7 +194,8 @@ public:
         collect();
         cost_ = cost;
         bench_.title(title);
-        switch (cost) {
+        switch (cost)
+        {
             case Cost::kCheap:    bench_.warmup(1'000).minEpochIterations(100'000); break;
             case Cost::kMedium:   bench_.warmup(10).minEpochIterations(1'000); break;
             case Cost::kThreaded: bench_.warmup(2).minEpochIterations(10); break;
@@ -204,7 +212,8 @@ public:
     void run(const char* name, Body&& body)
     {
         if (!selected(name)) return;
-        switch (mode) {
+        switch (mode)
+        {
             case Mode::kList:    std::printf("%s\n", name); break;
             case Mode::kBench:   bench_.run(name, body); break;
             case Mode::kProfile: loop(name, body); break;
@@ -226,7 +235,8 @@ private:
         const auto start = Clock::now();
         const auto deadline = start + std::chrono::duration<double>{profileSeconds};
         std::uint64_t iterations = 0;
-        do {
+        do
+        {
             for (int i = 0; i < batch; ++i) body();
             iterations += static_cast<std::uint64_t>(batch);
         } while (Clock::now() < deadline);
@@ -263,14 +273,16 @@ int main(int argc, char** argv)
     Runner runner;
     std::string output;
     bool features = false;
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i)
+    {
         const std::string_view argument{argv[i]};
         if (argument == "--features") features = true;
         else if (argument == "--list") runner.mode = Runner::Mode::kList;
         else if (argument == "--exact") runner.exact = true;
         else if (argument == "--json" && i + 1 < argc) output = argv[++i];
         else if (argument == "--case" && i + 1 < argc) runner.filter = argv[++i];
-        else if (argument == "--profile-seconds" && i + 1 < argc) {
+        else if (argument == "--profile-seconds" && i + 1 < argc)
+        {
             runner.mode = Runner::Mode::kProfile;
             runner.profileSeconds = std::atof(argv[++i]);
             if (runner.profileSeconds <= 0.0) return usage(argv[0]);
@@ -386,7 +398,8 @@ int main(int argc, char** argv)
         ankerl::nanobench::doNotOptimizeAway(&pipeline);
     });
 
-    if (kHasReserve<Pipeline>) {
+    if (kHasReserve<Pipeline>)
+    {
         runner.run("construct 1000-job layered DAG, reserved", []
         {
             Pipeline pipeline;
@@ -480,15 +493,18 @@ int main(int argc, char** argv)
         });
     }
 
-    if (features) {
-        struct Observer final : IObserver {
+    if (features)
+    {
+        struct Observer final : IObserver
+        {
             std::size_t calls = 0;
             void onJobStart(RunId, JobId, std::string_view) override { ++calls; }
             void onJobFinish(RunId, JobId, std::string_view, JobStatus, float) override { ++calls; }
         } observer;
         Pipeline pipeline;
         Job previous;
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 10; ++i)
+        {
             auto job = pipeline.emplace([] {});
             if (previous.valid()) job.succeed(previous);
             previous = job;
@@ -523,10 +539,12 @@ int main(int argc, char** argv)
 
     runner.collect();
 
-    if (!output.empty() && runner.mode == Runner::Mode::kBench) {
+    if (!output.empty() && runner.mode == Runner::Mode::kBench)
+    {
         std::ofstream file{output};
         ankerl::nanobench::render(ankerl::nanobench::templates::json(), runner.results, file);
-        if (!file) {
+        if (!file)
+        {
             std::fprintf(stderr, "Cannot write benchmark JSON: %s\n", output.c_str());
             return 1;
         }

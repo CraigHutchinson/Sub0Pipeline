@@ -23,9 +23,12 @@ int main()
     SequentialExecutor exec;
     auto result = pipeline.run(exec);
 
-    if (result) {
+    if (result)
+    {
         std::printf("Pipeline completed successfully.\n");
-    } else {
+    }
+    else
+    {
         std::printf("Pipeline failed.\n");
         return 1;
     }

@@ -5,7 +5,8 @@
 
 #include <cstdint>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 // ── Error types ──────────────────────────────────────────────────────────────
 

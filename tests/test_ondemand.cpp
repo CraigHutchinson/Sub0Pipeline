@@ -81,7 +81,8 @@ TEST_CASE("OnDemand: trigger() dispatches job via armed executor")
 
 TEST_CASE("OnDemand: observer receives failure details for a failed trigger")
 {
-    struct FailureObserver final : IObserver {
+    struct FailureObserver final : IObserver
+    {
         RunId runId{};
         JobId jobId{};
         PipelineError error{PipelineError::kTimeout};

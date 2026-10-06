@@ -7,7 +7,8 @@
 #include <functional>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 // ── Executor interface ────────────────────────────────────────────────────────
 

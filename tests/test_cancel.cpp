@@ -138,7 +138,8 @@ TEST_CASE("Cancel: a plain job cancelled during one run runs normally in the nex
     CHECK(secondRan == 0);
 
     cancelSecond = false;
-    for (int run = 1; run <= 3; ++run) {
+    for (int run = 1; run <= 3; ++run)
+    {
         CHECK(pipe.run(exec).has_value());
         CHECK(secondRan == run);
     }
@@ -233,7 +234,8 @@ TEST_CASE("Cancel: successor cancellation survives run initialization")
 
 TEST_CASE("Cancel: queued roots and successors observe external stop")
 {
-    for (bool successor : {false, true}) {
+    for (bool successor : {false, true})
+    {
         Pipeline pipe;
         QueuedExecutor executor;
         std::stop_source stop;
@@ -250,12 +252,14 @@ TEST_CASE("Cancel: queued roots and successors observe external stop")
 
 TEST_CASE("Cancel: every edge suppresses later device stages")
 {
-    for (int edge = 0; edge != 3; ++edge) {
+    for (int edge = 0; edge != 3; ++edge)
+    {
         Pipeline pipe;
         std::stop_source stop;
         int calls = 0;
         Job previous;
-        for (int stage = 0; stage != 4; ++stage) {
+        for (int stage = 0; stage != 4; ++stage)
+        {
             auto job = pipe.emplace([&, stage] {
                 ++calls;
                 if (stage == edge) stop.request_stop();
@@ -272,7 +276,8 @@ TEST_CASE("Cancel: every edge suppresses later device stages")
 
 TEST_CASE("Cancel: optional cancellation is fatal but ordinary optional failure is not")
 {
-    for (auto error : {PipelineError::kCancelled, PipelineError::kJobFailed}) {
+    for (auto error : {PipelineError::kCancelled, PipelineError::kJobFailed})
+    {
         Pipeline pipe;
         bool successorRan = false;
         auto first = pipe.emplace([=]() -> std::expected<void, PipelineError> {
@@ -387,13 +392,15 @@ TEST_CASE("Timeout: joining retains the pending signal until borrowed state is r
 
 TEST_CASE("Cancel: owner teardown joins before destroying borrowed members")
 {
-    struct Device {
+    struct Device
+    {
         std::latch entered{1};
         std::stop_source stop;
         int record = 42;
         Pipeline pipe;
         std::jthread runner;
-        Device() {
+        Device()
+        {
             (void)pipe.emplace([this](std::stop_token token) -> std::expected<void, PipelineError> {
                 std::mutex mutex;
                 std::condition_variable_any ready;
@@ -406,7 +413,8 @@ TEST_CASE("Cancel: owner teardown joins before destroying borrowed members")
             runner = std::jthread{[this] { (void)pipe.run_inline(stop.get_token()); }};
             entered.wait();
         }
-        ~Device() {
+        ~Device()
+        {
             stop.request_stop();
             runner.join();
             pipe.join_orphans();
@@ -463,7 +471,8 @@ TEST_CASE("Failure: concurrent shared descendants finish exactly once before ret
     std::latch observerEntered{1}, releaseObserver{1};
     std::atomic<int> skipped{0};
     std::atomic<bool> returned{false};
-    struct Observer final : IObserver {
+    struct Observer final : IObserver
+    {
         Pipeline& pipe;
         std::atomic<int>& skipped;
         std::latch& entered;
@@ -471,7 +480,8 @@ TEST_CASE("Failure: concurrent shared descendants finish exactly once before ret
         Observer(Pipeline& p, std::atomic<int>& n, std::latch& e, std::latch& r)
             : pipe{p}, skipped{n}, entered{e}, release{r} {}
         void onJobStart(RunId, JobId, std::string_view) override {}
-        void onJobFinish(RunId, JobId, std::string_view, JobStatus status, float) override {
+        void onJobFinish(RunId, JobId, std::string_view, JobStatus status, float) override
+        {
             if (status != JobStatus::kSkipped) return;
             CHECK(pipe.validate().has_value());
             if (skipped.fetch_add(1) == 0) { entered.count_down(); release.wait(); }
@@ -484,7 +494,8 @@ TEST_CASE("Failure: concurrent shared descendants finish exactly once before ret
     auto a = pipe.emplace(fail);
     auto b = pipe.emplace(fail);
     auto sink = pipe.emplace([] { CHECK(false); });
-    for (int i = 0; i < 64; ++i) {
+    for (int i = 0; i < 64; ++i)
+    {
         auto child = pipe.emplace([] { CHECK(false); });
         child.succeed(a).succeed(b).precede(sink);
     }

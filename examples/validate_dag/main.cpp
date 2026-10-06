@@ -29,7 +29,8 @@ using namespace sub0pipeline;
 
 static std::string_view errorName(PipelineError e) noexcept
 {
-    switch (e) {
+    switch (e)
+    {
         case PipelineError::kTimeout:          return "kTimeout";
         case PipelineError::kJobFailed:        return "kJobFailed";
         case PipelineError::kCyclicDependency: return "kCyclicDependency";
@@ -91,7 +92,8 @@ int main()
         // Explicit validation surfaces the cycle.
         auto valid = pipeline.validate();
         std::printf("  validate() passed: %s\n", valid.has_value() ? "yes" : "no");
-        if (!valid) {
+        if (!valid)
+        {
             std::printf("  error code:        %s\n", errorName(valid.error()).data());
         }
         std::printf("  error==kCyclic:    %s\n",
@@ -116,7 +118,8 @@ int main()
 
         auto valid = pipeline.validate();
         std::printf("  validate() passed: %s\n", valid.has_value() ? "yes" : "no");
-        if (!valid) {
+        if (!valid)
+        {
             std::printf("  error code:        %s\n", errorName(valid.error()).data());
         }
         std::printf("  error==kCyclic:    %s\n",

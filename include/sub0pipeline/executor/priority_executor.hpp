@@ -16,7 +16,8 @@
 #include <thread>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
  * Runs jobs on a fixed-size worker pool, starting queued jobs in priority order.

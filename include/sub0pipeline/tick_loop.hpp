@@ -8,7 +8,8 @@
 #include <stop_token>
 #include <vector>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /** Describes one recurring job for a TickLoop. */
 struct TickJob

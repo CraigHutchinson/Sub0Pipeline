@@ -29,7 +29,8 @@
 #  include "sub0pipeline/executor/sequential_executor.hpp"
 #endif
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
  * Names the bundled executor selected for the platform being built.

@@ -9,7 +9,8 @@
 #include <algorithm>
 #include <utility>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 PriorityExecutor::PriorityExecutor() : PriorityExecutor{Options{}} {}
 
@@ -19,7 +20,8 @@ PriorityExecutor::PriorityExecutor(Options options)
         ? options.threadCount
         : std::max(1U, std::thread::hardware_concurrency());
     workers_.reserve(threadCount);
-    for (unsigned int i = 0; i < threadCount; ++i) {
+    for (unsigned int i = 0; i < threadCount; ++i)
+    {
         workers_.emplace_back([this, onThreadStart = options.onThreadStart] {
             work(onThreadStart);
         });
@@ -72,7 +74,8 @@ int PriorityExecutor::concurrency() const noexcept
 void PriorityExecutor::work(const std::function<void()>& onThreadStart)
 {
     if (onThreadStart) onThreadStart();
-    for (;;) {
+    for (;;)
+    {
         QueuedJob job;
         {
             std::unique_lock lk{mtx_};
@@ -88,7 +91,8 @@ void PriorityExecutor::work(const std::function<void()>& onThreadStart)
         // Only the completion that empties the executor has a waiter to
         // wake. Taking doneMtx_ there orders the notify after the waiter's
         // predicate check, so it cannot be missed.
-        if (inFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U) {
+        if (inFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U)
+        {
             std::lock_guard done{doneMtx_};
             doneCv_.notify_all();
         }

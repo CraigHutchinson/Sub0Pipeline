@@ -10,7 +10,8 @@
 #include <functional>
 #include <string_view>
 
-namespace sub0pipeline {
+namespace sub0pipeline
+{
 
 /**
  * Runs every job on the calling thread.

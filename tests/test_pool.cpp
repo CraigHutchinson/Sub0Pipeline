@@ -97,7 +97,8 @@ TEST_CASE("PoolSuccessors: pool iteration matches push order")
     std::mutex mtx;
 
     auto root = pipe.emplace([]{}); // root with no action
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i)
+    {
         pipe.emplace([&results, &mtx, i]{
             std::lock_guard lk{mtx};
             results.push_back(i);
@@ -142,7 +143,8 @@ TEST_CASE("PoolSuccessors: interleaved wide fan-outs relocate without disturbing
     Pipeline pipe;
     auto first  = pipe.emplace([] {});
     auto second = pipe.emplace([] {});
-    for (int i = 0; i < cN; ++i) {
+    for (int i = 0; i < cN; ++i)
+    {
         first.precede(pipe.emplace([] {}));
         pipe.emplace([] {}).succeed(second);
     }
