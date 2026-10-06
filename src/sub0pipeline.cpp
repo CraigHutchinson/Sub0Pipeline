@@ -210,7 +210,7 @@ struct Pipeline::Node
     std::atomic<JobStatus>  jobStatus_{JobStatus::kPending};
     uint8_t                 flags_{0U};         ///< Packed bool flags -- see kFlag* constants.
     uint8_t                 priority_{5U};
-    uint8_t                 _pad0[1]{};         ///< Align the following integer fields.
+    uint8_t                 pad0_[1]{};         ///< Align the following integer fields.
     int                     coreAffinity_{-1};
     uint32_t                stackBytes_{8192U};
     uint32_t                predecessorCount_{0U}; ///< Immutable dependency count used during run initialization.
