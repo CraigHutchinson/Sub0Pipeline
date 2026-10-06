@@ -3,16 +3,16 @@
 // Observer callback tests: job start/finish events, progress monotonicity,
 // status values seen for success and failure.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "test_helpers.hpp"
-#include "doctest.h"
-
 #include <atomic>
+#include <doctest.h>
 #include <latch>
 #include <mutex>
 #include <ranges>
 #include <string>
 #include <vector>
+
+#include "sub0pipeline/sub0pipeline.hpp"
+#include "test_helpers.hpp"
 
 using namespace sub0pipeline;
 

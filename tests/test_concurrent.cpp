@@ -3,16 +3,16 @@
 // Thread-safety tests using real std::thread parallelism.
 // Validates that the Pipeline DAG engine is safe under concurrent dispatch.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "doctest.h"
-
 #include <atomic>
+#include <doctest.h>
 #include <functional>
 #include <latch>
 #include <mutex>
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 

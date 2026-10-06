@@ -5,13 +5,13 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
-#include "sub0pipeline/dsl.hpp"
-#include "doctest.h"
-#include "test_helpers.hpp"
-
 #include <algorithm>
+#include <doctest.h>
 #include <string>
 #include <vector>
+
+#include "sub0pipeline/dsl.hpp"
+#include "test_helpers.hpp"
 
 using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;

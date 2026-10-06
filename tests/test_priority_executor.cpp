@@ -5,16 +5,16 @@
 // factory, not a fake IExecutor -- these properties only exist in the real
 // thread-pool implementation.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "doctest.h"
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <doctest.h>
 #include <mutex>
 #include <set>
 #include <thread>
 #include <vector>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 using namespace std::chrono_literals;

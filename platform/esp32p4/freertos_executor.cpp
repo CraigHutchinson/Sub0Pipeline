@@ -4,21 +4,20 @@
 // Each dispatched job runs as a pinned FreeRTOS task with configurable
 // priority and core affinity. Tasks self-delete on completion.
 
-#include "sub0pipeline/executor/freertos_executor.hpp"
-
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 #include <functional>
 #include <new>
 #include <string_view>
 #include <utility>
 
-#include <esp_log.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
-#include <freertos/task.h>
+#include "sub0pipeline/executor/freertos_executor.hpp"
 
 static constexpr const char* cTag = "sub0pipeline";
 

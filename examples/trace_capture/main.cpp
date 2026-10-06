@@ -1,5 +1,3 @@
-#include "sub0pipeline/sub0pipeline.hpp"
-
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -9,6 +7,8 @@
 #include <span>
 #include <string_view>
 #include <thread>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 
 namespace

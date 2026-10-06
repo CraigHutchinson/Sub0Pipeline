@@ -2,9 +2,10 @@
 //
 // On-demand job tests (runInline and addOnDemand / arm / trigger).
 
+#include <doctest.h>
+
 #include "sub0pipeline/sub0pipeline.hpp"
 #include "test_helpers.hpp"
-#include "doctest.h"
 
 using namespace sub0pipeline;
 

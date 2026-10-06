@@ -2,16 +2,16 @@
 //
 // PoolSuccessors: pool/arena behaviour tests.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "test_helpers.hpp"
-#include "doctest.h"
-
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <doctest.h>
 #include <mutex>
 #include <stdexcept>
 #include <vector>
+
+#include "sub0pipeline/sub0pipeline.hpp"
+#include "test_helpers.hpp"
 
 using namespace sub0pipeline;
 

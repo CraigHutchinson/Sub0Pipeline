@@ -11,13 +11,14 @@
 //   display(60ms) → ui(30ms)
 //   mqtt + ui → app(10ms)
 
-#include "sub0pipeline/sub0pipeline.hpp"
 #include <chrono>
+#include <cstdio>
 #include <map>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <cstdio>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 using namespace std::chrono_literals;

@@ -3,18 +3,18 @@
 // Core DAG construction and execution ordering tests.
 // Uses a RecordingExecutor (sequential, inline) for deterministic results.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "test_helpers.hpp"
-#include "doctest.h"
-
 #include <algorithm>
 #include <cstdint>
+#include <doctest.h>
 #include <latch>
 #include <limits>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "sub0pipeline/sub0pipeline.hpp"
+#include "test_helpers.hpp"
 
 using namespace sub0pipeline;
 using namespace std::chrono_literals;

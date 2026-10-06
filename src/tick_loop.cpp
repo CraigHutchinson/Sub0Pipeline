@@ -12,14 +12,14 @@
 #undef _GLIBCXX_USE_POSIX_SEMAPHORE
 #endif
 
-#include "sub0pipeline/tick_loop.hpp"
-
 #include <chrono>
 #include <cstddef>
 #include <stop_token>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include "sub0pipeline/tick_loop.hpp"
 
 #if __has_include(<freertos/FreeRTOS.h>)
 #include <freertos/FreeRTOS.h>

@@ -17,9 +17,10 @@
 //   Emplace lambdas that return std::expected<void, PipelineError> directly.
 //   One succeeds, one fails; pipeline returns the failure.
 
-#include "sub0pipeline/sub0pipeline.hpp"
 #include <cstdio>
 #include <expected>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 

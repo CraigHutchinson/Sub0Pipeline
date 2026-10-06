@@ -6,11 +6,12 @@
 // Demonstrates real parallelism with DesktopExecutor and measures wall-clock
 // speedup versus sequential execution.
 
-#include "sub0pipeline/sub0pipeline.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <thread>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 using namespace std::chrono_literals;

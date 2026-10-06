@@ -3,8 +3,6 @@
 // ScopedExecutor — scopes waitAll() to its own dispatches for nested sub-DAG runs.
 #pragma once
 
-#include "sub0pipeline/executor/executor.hpp"
-
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -12,6 +10,8 @@
 #include <mutex>
 #include <string_view>
 #include <utility>
+
+#include "sub0pipeline/executor/executor.hpp"
 
 namespace sub0pipeline
 {

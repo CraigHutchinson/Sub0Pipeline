@@ -13,9 +13,6 @@
 #undef _GLIBCXX_USE_POSIX_SEMAPHORE
 #endif
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "sub0pipeline/deadline.hpp"
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -36,6 +33,9 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include "sub0pipeline/deadline.hpp"
+#include "sub0pipeline/sub0pipeline.hpp"
 
 namespace sub0pipeline
 {

@@ -4,15 +4,15 @@
 // no heap), configured through their own constructors, and used through the
 // IExecutor interface by Pipeline.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "doctest.h"
-
 #include <algorithm>
 #include <atomic>
+#include <doctest.h>
 #include <latch>
 #include <memory>
 #include <thread>
 #include <type_traits>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 

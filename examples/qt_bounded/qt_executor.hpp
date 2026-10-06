@@ -1,8 +1,9 @@
 #pragma once
-#include "sub0pipeline/sub0pipeline.hpp"
-#include <QThreadPool>
 #include <algorithm>
 #include <condition_variable>
+#include <QThreadPool>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 // No Qt queue: when all workers are busy, execute on the dispatching thread.
 // This avoids worker-side enqueue deadlocks. Jobs must be affinity-independent,

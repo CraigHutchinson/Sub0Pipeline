@@ -2,17 +2,17 @@
 //
 // Cancellation and timeout tests.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "test_helpers.hpp"
-#include "doctest.h"
-
+#include <barrier>
 #include <chrono>
 #include <condition_variable>
+#include <doctest.h>
 #include <future>
 #include <latch>
-#include <barrier>
 #include <mutex>
 #include <thread>
+
+#include "sub0pipeline/sub0pipeline.hpp"
+#include "test_helpers.hpp"
 
 using namespace sub0pipeline;
 using namespace std::chrono_literals;

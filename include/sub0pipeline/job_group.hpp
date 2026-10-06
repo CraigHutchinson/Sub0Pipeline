@@ -3,11 +3,11 @@
 // JobGroup — a set of parallel Job handles wired as one unit, and parallel().
 #pragma once
 
-#include "sub0pipeline/job.hpp"
-
 #include <concepts>
 #include <type_traits>
 #include <vector>
+
+#include "sub0pipeline/job.hpp"
 
 namespace sub0pipeline
 {

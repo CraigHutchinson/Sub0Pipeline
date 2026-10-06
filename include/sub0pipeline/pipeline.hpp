@@ -4,12 +4,6 @@
 // validation, tick loop and on-demand jobs.
 #pragma once
 
-#include "sub0pipeline/dependency_range.hpp"
-#include "sub0pipeline/error.hpp"
-#include "sub0pipeline/executor/executor.hpp"
-#include "sub0pipeline/job.hpp"
-#include "sub0pipeline/observer.hpp"
-
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +17,12 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "sub0pipeline/dependency_range.hpp"
+#include "sub0pipeline/error.hpp"
+#include "sub0pipeline/executor/executor.hpp"
+#include "sub0pipeline/job.hpp"
+#include "sub0pipeline/observer.hpp"
 
 namespace sub0pipeline
 {
