@@ -1,7 +1,4 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
-#include "nanobench.h"
-#include "sub0pipeline/sub0pipeline.hpp"
-
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -12,11 +9,14 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <nanobench.h>
 #include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 #ifdef _WIN32
 #include <windows.h>

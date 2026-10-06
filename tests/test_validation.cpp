@@ -2,9 +2,10 @@
 //
 // DAG integrity checks: cycle detection, self-loops, valid topologies.
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include "doctest.h"
+#include <doctest.h>
 #include <thread>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 

@@ -1,6 +1,7 @@
-#include "zephyr_executor.hpp"
-#include <zephyr/sys/printk.h>
 #include <atomic>
+#include <zephyr/sys/printk.h>
+
+#include "zephyr_executor.hpp"
 
 using namespace sub0pipeline;
 static int exercise()

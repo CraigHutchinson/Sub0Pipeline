@@ -18,8 +18,6 @@
 //        >> "commit"_job(commit);
 
 #pragma once
-#include "sub0pipeline/sub0pipeline.hpp"
-
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -28,6 +26,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 namespace sub0pipeline::dsl
 {

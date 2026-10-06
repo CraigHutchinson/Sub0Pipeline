@@ -5,12 +5,12 @@
 // FreeRTOS headers, so it can be included on any host.
 #pragma once
 
-#include "sub0pipeline/executor/executor.hpp"
-
 #include <atomic>
 #include <cstdint>
 #include <functional>
 #include <string_view>
+
+#include "sub0pipeline/executor/executor.hpp"
 
 namespace sub0pipeline
 {

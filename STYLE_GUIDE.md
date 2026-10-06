@@ -58,7 +58,12 @@ public:
 - The library's own headers use quotes and a library-rooted path:
   `#include "sub0pipeline/job.hpp"`. Never bare relative (`"job.hpp"`) and
   never angle brackets.
-- System and third-party headers use angle brackets.
+- System and third-party headers use angle brackets, including the vendored
+  test dependencies: `#include <doctest.h>`.
+- Order: system and third-party headers first, then the library's own. Each
+  group is alphabetical, with one blank line between the groups. A file's own
+  header is not listed first; the `Sub0Pipeline_HeaderCheck` target is what
+  proves each public header is self-contained.
 - Platform-specific includes are guarded: `#if __has_include(<esp_log.h>)`.
 - Header guards are `#pragma once`.
 
@@ -106,5 +111,5 @@ public:
 These are undecided there, so this guide does not fix them: the prefix on
 constants and enumerators (`c`, `k` today), the namespace scheme, the spacing
 inside `template<...>` (the code uses `template<typename F>`), the error
-handling style, include order, how test dependencies are supplied, and
+handling style, how test dependencies are supplied, and
 whether to add a formatter configuration.

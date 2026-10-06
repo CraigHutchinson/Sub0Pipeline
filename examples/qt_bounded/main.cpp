@@ -1,9 +1,10 @@
-#include "qt_executor.hpp"
-#include "sub0pipeline/run_scope.hpp"
-#include <QCoreApplication>
 #include <atomic>
 #include <condition_variable>
 #include <latch>
+#include <QCoreApplication>
+
+#include "qt_executor.hpp"
+#include "sub0pipeline/run_scope.hpp"
 
 using namespace sub0pipeline;
 int main(int argc, char** argv)

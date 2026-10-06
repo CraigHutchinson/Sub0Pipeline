@@ -8,11 +8,11 @@
 // Compare with examples/boot_sequence/main.cpp for the same pattern
 // expressed with the core API.
 
-#include "sub0pipeline/dsl.hpp"
-
 #include <chrono>
 #include <cstdio>
 #include <thread>
+
+#include "sub0pipeline/dsl.hpp"
 
 using namespace std::chrono_literals;
 using namespace sub0pipeline;

@@ -8,9 +8,10 @@
 // Typical use case: a boot pipeline runs to completion, then on-demand
 // jobs handle asynchronous events (network message, ISR, queue item).
 
-#include "sub0pipeline/sub0pipeline.hpp"
-#include <cstdio>
 #include <atomic>
+#include <cstdio>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 using namespace sub0pipeline;
 

@@ -1,7 +1,8 @@
 #pragma once
-#include "sub0pipeline/sub0pipeline.hpp"
-#include <zephyr/kernel.h>
 #include <array>
+#include <zephyr/kernel.h>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 // Fixed queue and one Zephyr worker. Saturation runs on the caller; therefore
 // jobs must be thread-affinity independent and tolerate inline recursion.

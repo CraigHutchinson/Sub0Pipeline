@@ -4,10 +4,10 @@
 // Higher-priority jobs (larger uint8_t value) start before lower-priority ones
 // that have not yet started executing.
 
-#include "sub0pipeline/executor/priority_executor.hpp"
-
 #include <algorithm>
 #include <utility>
+
+#include "sub0pipeline/executor/priority_executor.hpp"
 
 namespace sub0pipeline
 {

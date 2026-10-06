@@ -4,8 +4,6 @@
 // Link Sub0Pipeline::Desktop.
 #pragma once
 
-#include "sub0pipeline/executor/executor.hpp"
-
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -13,6 +11,8 @@
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include "sub0pipeline/executor/executor.hpp"
 
 namespace sub0pipeline
 {

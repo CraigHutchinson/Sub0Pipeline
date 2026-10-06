@@ -4,11 +4,11 @@
 // Header-only: nothing to link beyond the core library.
 #pragma once
 
-#include "sub0pipeline/executor/executor.hpp"
-
 #include <cstdint>
 #include <functional>
 #include <string_view>
+
+#include "sub0pipeline/executor/executor.hpp"
 
 namespace sub0pipeline
 {

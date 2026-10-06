@@ -1,10 +1,11 @@
-#include "doctest.h"
-#include "test_helpers.hpp"
-#include "sub0pipeline/deadline.hpp"
-#include "sub0pipeline/run_scope.hpp"
 #include <array>
 #include <condition_variable>
+#include <doctest.h>
 #include <latch>
+
+#include "sub0pipeline/deadline.hpp"
+#include "sub0pipeline/run_scope.hpp"
+#include "test_helpers.hpp"
 
 using namespace sub0pipeline;
 using namespace std::chrono_literals;

@@ -3,8 +3,9 @@
 // Minimal Sub0Pipeline example: three jobs in a linear chain.
 // Demonstrates emplace(), .name(), .succeed(), and run().
 
-#include "sub0pipeline/sub0pipeline.hpp"
 #include <cstdio>
+
+#include "sub0pipeline/sub0pipeline.hpp"
 
 
 int main()
