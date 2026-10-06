@@ -15,7 +15,7 @@
 //
 // This is the umbrella header: it includes the whole core API. Each part is also
 // available on its own (pipeline.hpp, job.hpp, job_group.hpp, observer.hpp,
-// dependency_range.hpp, tick_job.hpp, error.hpp, config.hpp, and one header per
+// dependency_range.hpp, tick_loop.hpp, error.hpp, config.hpp, and one header per
 // executor under executor/, gathered by executors.hpp). Optional layers stay opt-in: dsl.hpp,
 // deadline.hpp, run_scope.hpp.
 //
@@ -39,4 +39,4 @@
 #include <sub0pipeline/job_group.hpp>
 #include <sub0pipeline/observer.hpp>
 #include <sub0pipeline/pipeline.hpp>
-#include <sub0pipeline/tick_job.hpp>
+#include <sub0pipeline/tick_loop.hpp>

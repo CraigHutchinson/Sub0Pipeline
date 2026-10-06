@@ -24,7 +24,7 @@ TEST_CASE("PriorityExecutor: dispatches and completes a single job")
     PriorityExecutor exec{{.threadCount = 2}};
     std::atomic<bool> ran{false};
 
-    exec.dispatch("job", [&] { ran = true; }, nullptr, -1, 5);
+    exec.dispatch("job", [&] { ran = true; }, nullptr, -1, 5, 8192U);
     exec.wait_all();
 
     CHECK(ran.load());
@@ -47,7 +47,7 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
     exec.dispatch("hold", [&] {
         std::unique_lock lk{mtx};
         holdCv.wait(lk, [&] { return releaseHold; });
-    }, nullptr, -1, 1);
+    }, nullptr, -1, 1, 8192U);
 
     std::vector<std::string> order;
     std::mutex               orderMtx;
@@ -56,9 +56,9 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
         order.emplace_back(name);
     };
 
-    exec.dispatch("low_a", [&] { recordJob("low_a"); }, nullptr, -1, 1);
-    exec.dispatch("low_b", [&] { recordJob("low_b"); }, nullptr, -1, 1);
-    exec.dispatch("high", [&] { recordJob("high"); }, nullptr, -1, 10);
+    exec.dispatch("low_a", [&] { recordJob("low_a"); }, nullptr, -1, 1, 8192U);
+    exec.dispatch("low_b", [&] { recordJob("low_b"); }, nullptr, -1, 1, 8192U);
+    exec.dispatch("high", [&] { recordJob("high"); }, nullptr, -1, 10, 8192U);
 
     {
         std::lock_guard lk{mtx};
@@ -109,7 +109,7 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
             } else {
                 barrierCv.wait(lk, [&] { return arrived == kThreads; });
             }
-        }, nullptr, -1, 5);
+        }, nullptr, -1, 5, 8192U);
     }
     exec.wait_all();
 
@@ -123,7 +123,7 @@ TEST_CASE("PriorityExecutor: default (no onThreadStart) still dispatches correct
     std::atomic<int> completed{0};
 
     for (int i = 0; i < 10; ++i)
-        exec.dispatch("job", [&] { completed.fetch_add(1, std::memory_order_relaxed); }, nullptr, -1, 5);
+        exec.dispatch("job", [&] { completed.fetch_add(1, std::memory_order_relaxed); }, nullptr, -1, 5, 8192U);
     exec.wait_all();
 
     CHECK(completed.load() == 10);

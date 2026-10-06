@@ -31,6 +31,7 @@ endif()
 
 add_library(Sub0Pipeline STATIC
     src/sub0pipeline.cpp
+    src/tick_loop.cpp
 )
 add_library(Sub0Pipeline::Sub0Pipeline ALIAS Sub0Pipeline)
 

@@ -10,7 +10,7 @@ for consistency across Sub0Pipeline, Sub0Pub, and related libraries.
 | Element | Convention | Example |
 |---------|-----------|---------|
 | Namespaces | lowercase | `sub0pipeline`, `detail` |
-| Classes/Structs | PascalCase | `Pipeline`, `Job`, `IExecutor`, `TickJob` |
+| Classes/Structs | PascalCase | `Pipeline`, `Job`, `IExecutor`, `TickLoop` |
 | Template parameters | PascalCase with `_t` suffix for type params | `Data_t`, `Fn` |
 | Member variables | camelCase with `_` suffix | `inFlight_`, `completionSem_`, `nameStr_` |
 | Local variables | camelCase | `dispatchJob`, `hasFatalFailure` |

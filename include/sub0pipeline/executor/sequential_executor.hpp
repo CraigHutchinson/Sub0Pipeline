@@ -34,7 +34,7 @@ public:
         std::function<void()>         onComplete,
         int                           /*coreAffinity*/,
         uint8_t                       /*priority*/,
-        uint32_t                      /*stackBytes*/ = 4096U) override
+        uint32_t                      /*stackBytes*/) override
     {
         fn();
         if (onComplete) onComplete();

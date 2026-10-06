@@ -61,7 +61,7 @@ int main()
             std::printf("  [A] running\n");
         }).name("loader")
           .timeout(std::chrono::milliseconds{500})
-          .status("Loading…")
+          .statusText("Loading…")
           .core(0)
           .priority(10)
           .stack(8192);
@@ -71,7 +71,7 @@ int main()
         }).name("configure")
           .timeout(std::chrono::milliseconds{250})
           .optional(false)   // explicitly required (the default)
-          .status("Configuring…")
+          .statusText("Configuring…")
           .core(-1)          // any core
           .priority(5)
           .stack(4096);
@@ -90,6 +90,9 @@ int main()
         std::printf("  name(a):          %.*s\n",
                     static_cast<int>(pipeline.name(a).size()),
                     pipeline.name(a).data());
+        std::printf("  statusText(a):    %.*s\n",
+                    static_cast<int>(pipeline.statusText(a.id()).size()),
+                    pipeline.statusText(a.id()).data());
         std::printf("  run()==success:   %s\n", result.has_value() ? "pass" : "FAIL");
     }
     std::printf("\n");

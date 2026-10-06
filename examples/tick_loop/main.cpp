@@ -1,14 +1,14 @@
 // examples/tick_loop/main.cpp
 //
-// Demonstrates add_tick() and the run_loop() event loop.
+// Demonstrates TickLoop: recurring jobs after a start-up pipeline.
 //
 // Structure:
 //   1. Boot phase  — sequential 2-job pipeline (init → ready).
-//   2. Tick phase  — three recurring jobs registered with add_tick():
+//   2. Tick phase  — three recurring jobs added to a TickLoop:
 //        "heartbeat"   every 200ms  — prints tick count
 //        "sensor_poll" every 500ms  — prints sensor reading
 //        "watchdog"    every 100ms  — silent counter
-//   3. A std::jthread owns run_loop(stop_token); shutdown requests stop and
+//   3. A std::jthread owns TickLoop::run(stop_token); shutdown requests stop and
 //      joins the loop before the pipeline or tick state is destroyed.
 //
 // Expected tick counts over ~1 100 ms:
@@ -55,9 +55,9 @@ int main()
 
     std::atomic<int> heartbeatCount{0};
     std::atomic<int> watchdogCount{0};
+    TickLoop ticks;
 
-    pipeline.add_tick({
-        .name     = "heartbeat",
+    ticks.add({   // heartbeat
         .interval = 200ms,
         .fn       = [&heartbeatCount] {
             const int n = heartbeatCount.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -65,16 +65,14 @@ int main()
         }
     });
 
-    pipeline.add_tick({
-        .name     = "sensor_poll",
+    ticks.add({   // sensor_poll
         .interval = 500ms,
         .fn       = [] {
             std::printf("  [sensor_poll] reading sensor\n");
         }
     });
 
-    pipeline.add_tick({
-        .name     = "watchdog",
+    ticks.add({   // watchdog
         .interval = 100ms,
         .fn       = [&watchdogCount] {
             watchdogCount.fetch_add(1, std::memory_order_relaxed);
@@ -90,8 +88,8 @@ int main()
     // ── Tick loop (background thread) ─────────────────────────────────────────
     std::printf("=== Tick loop running for 1 100 ms ===\n");
 
-    std::jthread loop([&pipeline](std::stop_token stop) {
-        pipeline.run_loop(stop);
+    std::jthread loop([&ticks](std::stop_token stop) {
+        ticks.run(stop);
     });
 
     std::this_thread::sleep_for(1100ms);

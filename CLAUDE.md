@@ -23,7 +23,7 @@ Any commit that changes the public API surface in `include/sub0pipeline/`
 - `sub0pipeline::Job` — all builder methods
 - `sub0pipeline::IExecutor` / `sub0pipeline::IObserver` — virtual interfaces
 - `sub0pipeline::PipelineError` / `sub0pipeline::JobStatus` enumerators
-- `sub0pipeline::TickJob`
+- `sub0pipeline::TickLoop` / `sub0pipeline::TickJob`
 - Executor classes: `SequentialExecutor`, `DesktopExecutor`, `PriorityExecutor` (and its
   `Options`), `FreeRtosExecutor`, `ScopedExecutor`
 - `DefaultExecutor`, the compile-time alias for the platform's executor

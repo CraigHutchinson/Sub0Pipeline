@@ -12,6 +12,21 @@ namespace sub0pipeline {
 class JobGroup;
 class Pipeline;
 
+/** Stable node index within one Pipeline. Graphs accept at most 65,536 jobs,
+ * and one job at most 32,767 successors; exceeding either is a hard error.
+ * Append-only node indices remain valid until their owning Pipeline is destroyed.
+ */
+using JobId = uint32_t;
+
+namespace detail {
+/// The part of a Pipeline's heap state that Job handles point at. It does not
+/// move when the Pipeline object is moved; `owner` then names the new object.
+struct PipelineAnchor
+{
+    Pipeline* owner{nullptr}; // non-owning; maintained by Pipeline
+};
+} // namespace detail
+
 // ── Job handle ────────────────────────────────────────────────────────────────
 
 /**
@@ -41,20 +56,40 @@ public:
      */
     Job& timeout(std::chrono::milliseconds t) noexcept;
 
-    /** Pin the job to a specific CPU core (-1 = any). */
+    /**
+     * @brief Hint: pin the job to a CPU core (-1 = any, the default).
+     * @note Honored by FreeRtosExecutor. Ignored by the other bundled executors.
+     */
     Job& core(int c) noexcept;
 
-    /** Set the executor task stack size in bytes (default 8192). */
+    /**
+     * @brief Hint: set the executor task stack size in bytes (default 8192).
+     * @note Honored by FreeRtosExecutor. Ignored by the other bundled executors.
+     */
     Job& stack(uint32_t bytes) noexcept;
 
-    /** Set the executor task priority 1–24 (default 5). */
+    /**
+     * @brief Hint: set the executor task priority 1–24 (default 5).
+     * @note Honored by PriorityExecutor (larger starts first) and FreeRtosExecutor
+     *       (clamped to 1–24). Ignored by the other bundled executors.
+     */
     Job& priority(uint8_t p) noexcept;
 
     /** Ordinary failure does not block dependents; cancellation remains fatal. */
     Job& optional(bool opt = true) noexcept;
 
-    /** Set status text shown while this job runs (for observer display). */
-    Job& status(const char* text) noexcept;
+    /**
+     * @brief Set display text for this job, such as "Loading settings…".
+     *
+     * Meant for a progress display: read it back with
+     * Pipeline::statusText(JobId) from IObserver::onJobStart, or from a
+     * Pipeline::JobSnapshot. It is separate from name(), which identifies the
+     * job in logs and traces.
+     *
+     * @param text  Borrowed, not copied: it must outlive the Pipeline. Pass a
+     *              string literal or other static storage. nullptr clears it.
+     */
+    Job& statusText(const char* text) noexcept;
 
     /**
      * @brief Request cancellation of this job.
@@ -108,11 +143,27 @@ public:
     /** @return true if this handle refers to a valid job node. */
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return valid(); }
 
-    /** @return true if both handles refer to the same job node. */
-    [[nodiscard]] constexpr bool operator==(Job other) const noexcept { return idx_ == other.idx_; }
+    /** @return true if both handles refer to the same job of the same Pipeline. */
+    [[nodiscard]] constexpr bool operator==(Job other) const noexcept
+    {
+        return idx_ == other.idx_ && anchor_ == other.anchor_;
+    }
 
-    /** @return pointer to the owning Pipeline (nullptr if default-constructed). */
-    [[nodiscard]] constexpr Pipeline* pipeline() const noexcept { return pipeline_; }
+    /**
+     * @return This job's identifier within its Pipeline: the value observers
+     *         receive and Pipeline::name(JobId) / successors(JobId) accept.
+     * @note Meaningless for an invalid handle; check valid() first.
+     */
+    [[nodiscard]] constexpr JobId id() const noexcept { return idx_; }
+
+    /**
+     * @return The Pipeline this job belongs to, or nullptr for a
+     *         default-constructed handle. Follows the Pipeline if it is moved.
+     */
+    [[nodiscard]] constexpr Pipeline* pipeline() const noexcept
+    {
+        return anchor_ ? anchor_->owner : nullptr;
+    }
 
     /** Declare that this job runs AFTER every job in @p group. */
     Job& succeed(JobGroup const& group);
@@ -125,11 +176,11 @@ private:
 
     static constexpr uint32_t cInvalid = UINT32_MAX; ///< Sentinel for invalid handle.
 
-    uint32_t   idx_{cInvalid};     ///< Index into Pipeline::Impl::nodes_.
-    Pipeline*  pipeline_{nullptr}; ///< Back-pointer to owning pipeline.
+    uint32_t                idx_{cInvalid};   ///< Index into Pipeline::Impl::nodes_.
+    detail::PipelineAnchor* anchor_{nullptr}; ///< non-owning; the owning Pipeline's state
 
-    constexpr explicit Job(uint32_t idx, Pipeline* p) noexcept
-        : idx_{idx}, pipeline_{p} {}
+    constexpr explicit Job(uint32_t idx, detail::PipelineAnchor* anchor) noexcept
+        : idx_{idx}, anchor_{anchor} {}
 };
 
 // ── Job status ────────────────────────────────────────────────────────────────
@@ -146,11 +197,5 @@ enum class JobStatus : uint8_t
     kTimedOut,   ///< Exceeded the declared timeout.
     kCancelled,  ///< Cancelled externally via Job::cancel() or a stop token.
 };
-
-/** Stable node index within one Pipeline. Graphs accept at most 65,536 jobs,
- * and one job at most 32,767 successors; exceeding either is a hard error.
- * Append-only node indices remain valid until their owning Pipeline is destroyed.
- */
-using JobId = uint32_t;
 
 } // namespace sub0pipeline
