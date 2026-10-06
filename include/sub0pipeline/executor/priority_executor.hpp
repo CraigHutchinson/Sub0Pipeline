@@ -10,7 +10,6 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <queue>
 #include <string_view>
@@ -72,7 +71,7 @@ public:
         std::function<void()>         onComplete,
         int                           coreAffinity,
         uint8_t                       priority,
-        uint32_t                      stackBytes) override;
+        uint32_t                      stackBytes = 4096U) override;
 
     void wait_all() override;
 
@@ -101,15 +100,5 @@ private:
     std::mutex                      doneMtx_;
     std::condition_variable         doneCv_;
 };
-
-/**
- * @brief Heap-allocate a PriorityExecutor behind the IExecutor interface.
- *
- * @param threadCount    See PriorityExecutor::Options::threadCount.
- * @param onThreadStart  See PriorityExecutor::Options::onThreadStart.
- * @return An owning pointer.
- */
-std::unique_ptr<IExecutor> makePriorityExecutor(
-    unsigned int threadCount = 0, std::function<void()> onThreadStart = nullptr);
 
 } // namespace sub0pipeline

@@ -1,10 +1,11 @@
 // include/sub0pipeline/executors.hpp
 //
-// Every executor header: the IExecutor interface, ScopedExecutor, and the
-// factory for each bundled executor. Including a factory header costs nothing
-// until you call it; each one names the library to link.
+// Every executor header: the IExecutor interface, ScopedExecutor, each bundled
+// executor class, and DefaultExecutor, which names the one that suits the
+// platform. Each header states the library its executor needs.
 #pragma once
 
+#include <sub0pipeline/executor/default_executor.hpp>
 #include <sub0pipeline/executor/desktop_executor.hpp>
 #include <sub0pipeline/executor/executor.hpp>
 #include <sub0pipeline/executor/freertos_executor.hpp>

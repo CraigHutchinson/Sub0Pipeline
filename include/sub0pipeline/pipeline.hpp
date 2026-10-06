@@ -360,8 +360,8 @@ public:
      *
      * Typical usage:
      * @code
-     *   auto exec = makeDesktopExecutor();
-     *   pipeline.arm(*exec);
+     *   DefaultExecutor exec;
+     *   pipeline.arm(exec);
      *   // ... later from any thread:
      *   pipeline.trigger(job);
      * @endcode

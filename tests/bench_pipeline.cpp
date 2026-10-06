@@ -362,13 +362,13 @@ int main(int argc, char** argv)
     runner.group("Library inline executors", Cost::kCheap);
 
     {
-        auto sequential = makeSequentialExecutor();
+        SequentialExecutor sequential;
         Pipeline pipeline;
         buildChain(pipeline, 10);
         runner.run("run_inline: 10-job linear chain", [&] { (void)pipeline.run_inline(); });
         runner.run("sequential executor: 10-job linear chain", [&]
         {
-            (void)pipeline.run(*sequential);
+            (void)pipeline.run(sequential);
         });
     }
 
@@ -437,46 +437,46 @@ int main(int argc, char** argv)
     runner.group("Threaded executors (no-op jobs)", Cost::kThreaded);
 
     {
-        auto desktop = makeDesktopExecutor();
+        DesktopExecutor desktop;
         Pipeline pipeline;
         buildFanOut(pipeline, 9);
-        runner.run("desktop: 10-job fan-out", [&] { (void)pipeline.run(*desktop); });
+        runner.run("desktop: 10-job fan-out", [&] { (void)pipeline.run(desktop); });
     }
 
     {
-        auto pool = makePriorityExecutor(4);
+        PriorityExecutor pool{{.threadCount = 4}};
 
         Pipeline fanOut;
         buildFanOut(fanOut, 9);
-        runner.run("priority(4): 10-job fan-out", [&] { (void)fanOut.run(*pool); });
+        runner.run("priority(4): 10-job fan-out", [&] { (void)fanOut.run(pool); });
 
         Pipeline chain;
         buildChain(chain, 10);
-        runner.run("priority(4): 10-job linear chain", [&] { (void)chain.run(*pool); });
+        runner.run("priority(4): 10-job linear chain", [&] { (void)chain.run(pool); });
         runner.run("scoped over priority(4): 10-job linear chain", [&]
         {
-            ScopedExecutor scoped{*pool};
+            ScopedExecutor scoped{pool};
             (void)chain.run(scoped);
         });
 
         Pipeline wide;
         buildFanOut(wide, 299);
-        runner.run("priority(4): 300-job fan-out", [&] { (void)wide.run(*pool); });
+        runner.run("priority(4): 300-job fan-out", [&] { (void)wide.run(pool); });
 
         Pipeline layered;
         buildLayered(layered, 20, 50, 4);
         runner.run("priority(4): 1000-job layered DAG (20x50, fan-in 4)", [&]
         {
-            (void)layered.run(*pool);
+            (void)layered.run(pool);
         });
 
         Pipeline onDemand;
         auto job = onDemand.add_on_demand([]() -> std::expected<void, PipelineError> { return {}; });
-        onDemand.arm(*pool);
+        onDemand.arm(pool);
         runner.run("priority(4): on-demand trigger and wait", [&]
         {
             (void)onDemand.trigger(job);
-            pool->wait_all();
+            pool.wait_all();
         });
     }
 

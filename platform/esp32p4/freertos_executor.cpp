@@ -11,7 +11,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <new>
 #include <string_view>
 #include <utility>
@@ -140,11 +139,6 @@ int FreeRtosExecutor::concurrency() const noexcept
 #else
     return 2;  // ESP32-P4 dual-core RISC-V
 #endif
-}
-
-std::unique_ptr<IExecutor> makeFreeRtosExecutor()
-{
-    return std::make_unique<FreeRtosExecutor>();
 }
 
 } // namespace sub0pipeline

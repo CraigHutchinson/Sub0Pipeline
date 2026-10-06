@@ -195,13 +195,20 @@ in validation/failure allocations and its retained-memory tradeoff.
 ## Executors and use-case boundaries
 
 The bundled executors are ordinary classes: construct one as a local, a member
-or a static, configured through its constructor. Each `make...Executor()`
-factory returns the same type on the heap behind `IExecutor` for callers that
-choose an executor at run time.
+or a static, configured through its constructor. To choose at run time, hold
+one through `std::unique_ptr<IExecutor>`.
+
+`DefaultExecutor` is an alias for the bundled executor that suits the platform
+being built: `FreeRtosExecutor` where FreeRTOS headers are present, otherwise
+`PriorityExecutor` where the standard library has threads, otherwise
+`SequentialExecutor`. Code that constructs a `DefaultExecutor` and links
+`Sub0Pipeline::Default` moves between those platforms unchanged. Zephyr and Qt
+have reference adapters under `examples/` but are not yet selectable defaults.
 
 | Executor | Target / location | Behavior |
 |---|---|---|
-| `SequentialExecutor` | Header-only (`Sub0Pipeline::Headless` for its factory) | Runs jobs on the calling thread in the order they become ready; constant stack depth; deterministic untimed test scheduling |
+| `DefaultExecutor` | `Sub0Pipeline::Default` | Alias chosen at compile time, as described above |
+| `SequentialExecutor` | Header-only, core library | Runs jobs on the calling thread in the order they become ready; constant stack depth; deterministic untimed test scheduling |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Thread per job; joins dispatched work; ignores priority/affinity hints |
 | `PriorityExecutor` | `Sub0Pipeline::Priority` | Configurable worker count; higher priorities start first; already-running work is not preempted |
 | `ScopedExecutor` | Core header | Reuses a parent executor and waits only for locally dispatched jobs |
@@ -245,7 +252,8 @@ option itself defaults to OFF.
 ```cmake
 add_subdirectory(Sub0Pipeline)
 target_link_libraries(MyDevice PRIVATE Sub0Pipeline::Sub0Pipeline)
-# Add Sub0Pipeline::Headless, ::Desktop or ::Priority when using its factory.
+# Add Sub0Pipeline::Default for DefaultExecutor, or ::Desktop / ::Priority for
+# that executor. SequentialExecutor is header-only and needs nothing more.
 ```
 
 Installed builds also support `find_package(Sub0Pipeline REQUIRED)`.
@@ -282,7 +290,7 @@ also be included on its own:
 |---|---|
 | `pipeline.hpp` | `Pipeline` |
 | `job.hpp`, `job_group.hpp` | `Job`, `JobId`, `JobStatus`; `JobGroup`, `parallel` |
-| `executors.hpp` | Everything under `executor/`: `executor.hpp` (`IExecutor`), `scoped_executor.hpp`, and one header per bundled executor (`desktop_`, `sequential_`, `priority_`, `freertos_executor.hpp`) declaring its factory |
+| `executors.hpp` | Everything under `executor/`: `executor.hpp` (`IExecutor`), `scoped_executor.hpp`, one header per bundled executor class (`desktop_`, `sequential_`, `priority_`, `freertos_executor.hpp`) and `default_executor.hpp` |
 | `observer.hpp`, `dependency_range.hpp` | `IObserver`, `RunId`; `DependencyRange` |
 | `error.hpp`, `tick_job.hpp`, `config.hpp` | `PipelineError`; `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
 | `dsl.hpp`, `deadline.hpp`, `run_scope.hpp` | Opt-in layers, not part of the umbrella |

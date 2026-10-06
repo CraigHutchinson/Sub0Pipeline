@@ -19,8 +19,6 @@
 #include <thread>
 #include <cstdio>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
-
 using namespace sub0pipeline;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
@@ -194,12 +192,12 @@ int main()
     app.succeed(mqtt, ui);
 
     BootObserver observer;
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
 
     std::printf("Boot sequence starting...\n\n");
     const auto t0 = Clock::now();
 
-    auto result = boot.run(*exec, &observer);
+    auto result = boot.run(exec, &observer);
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         Clock::now() - t0);

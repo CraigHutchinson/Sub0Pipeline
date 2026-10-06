@@ -9,7 +9,6 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <string_view>
 #include <thread>
@@ -48,7 +47,7 @@ public:
         std::function<void()>         onComplete,
         int                           coreAffinity,
         uint8_t                       priority,
-        uint32_t                      stackBytes) override;
+        uint32_t                      stackBytes = 4096U) override;
 
     void wait_all() override;
 
@@ -61,11 +60,5 @@ private:
     std::vector<std::thread>  threads_;  ///< Started since the last wait_all() join.
     uint32_t                  inFlight_{0U};
 };
-
-/**
- * @brief Heap-allocate a DesktopExecutor behind the IExecutor interface.
- * @return An owning pointer; equivalent to `std::make_unique<DesktopExecutor>()`.
- */
-std::unique_ptr<IExecutor> makeDesktopExecutor();
 
 } // namespace sub0pipeline

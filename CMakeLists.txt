@@ -62,7 +62,17 @@ if(SUB0PIPELINE_PLATFORM_PRIORITY)
     add_subdirectory(platform/priority)
 endif()
 
-add_subdirectory(platform/headless)
+# DefaultExecutor: the bundled executor for this platform, plus what it links.
+# The header picks by platform; this target keeps the libraries in step with it.
+add_library(Sub0Pipeline_Default INTERFACE)
+add_library(Sub0Pipeline::Default ALIAS Sub0Pipeline_Default)
+target_link_libraries(Sub0Pipeline_Default INTERFACE Sub0Pipeline::Sub0Pipeline)
+if(SUB0PIPELINE_PLATFORM_PRIORITY)
+    target_link_libraries(Sub0Pipeline_Default INTERFACE Sub0Pipeline::Priority)
+else()
+    target_compile_definitions(Sub0Pipeline_Default INTERFACE
+        SUB0PIPELINE_DEFAULT_EXECUTOR_SEQUENTIAL=1)
+endif()
 
 # ── Install ───────────────────────────────────────────────────────────────────
 

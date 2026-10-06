@@ -21,9 +21,6 @@
 #include <cstdio>
 #include <expected>
 
-// Forward-declared in sequential_executor.cpp (Sub0Pipeline::Headless).
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
-
 using namespace sub0pipeline;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,7 +56,7 @@ static std::string_view errorName(PipelineError e) noexcept
 
 int main()
 {
-    auto exec = makeSequentialExecutor();
+    SequentialExecutor exec;
 
     // ── Demo 1: Required job failure propagates ───────────────────────────────
     std::printf("=== Demo 1: Required job failure propagates ===\n");
@@ -78,7 +75,7 @@ int main()
         b.succeed(a);
         c.succeed(b);
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  run() succeeded:  %s\n", result.has_value() ? "yes" : "no");
         if (!result) {
@@ -121,7 +118,7 @@ int main()
         b.succeed(a);
         c.succeed(b);
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  run() succeeded:  %s\n", result.has_value() ? "yes" : "no");
         std::printf("  C ran:            %s\n", cRan ? "yes" : "no");
@@ -155,7 +152,7 @@ int main()
             }
         ).name("Y");
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  run() succeeded:  %s\n", result.has_value() ? "yes" : "no");
         if (!result) {
@@ -194,7 +191,7 @@ int main()
         // bad does not depend on good — both are independent roots.
         (void)good;
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  run() succeeded:  %s\n", result.has_value() ? "yes" : "no");
         if (!result) {

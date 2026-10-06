@@ -10,7 +10,6 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <string_view>
 
 namespace sub0pipeline {
@@ -46,7 +45,7 @@ public:
         std::function<void()>         onComplete,
         int                           coreAffinity,
         uint8_t                       priority,
-        uint32_t                      stackBytes) override;
+        uint32_t                      stackBytes = 4096U) override;
 
     void wait_all() override;
 
@@ -57,11 +56,5 @@ private:
     void*                 completionSem_{nullptr}; ///< owning; a FreeRTOS SemaphoreHandle_t
     std::atomic<uint32_t> inFlight_{0U};
 };
-
-/**
- * @brief Heap-allocate a FreeRtosExecutor behind the IExecutor interface.
- * @return An owning pointer; equivalent to `std::make_unique<FreeRtosExecutor>()`.
- */
-std::unique_ptr<IExecutor> makeFreeRtosExecutor();
 
 } // namespace sub0pipeline

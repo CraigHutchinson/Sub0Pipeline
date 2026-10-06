@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <latch>
+#include <memory>
 #include <thread>
 #include <type_traits>
 
@@ -107,13 +108,28 @@ TEST_CASE("Executors: ScopedExecutor wraps a locally constructed pool")
     CHECK(inner.load() == 4);
 }
 
-TEST_CASE("Executors: the factories still return a working executor behind IExecutor")
+// DefaultExecutor is whichever bundled executor suits the platform being built.
+// On a host with standard threads and the priority pool enabled, that is the pool.
+static_assert(std::is_default_constructible_v<DefaultExecutor>);
+static_assert(std::is_base_of_v<IExecutor, DefaultExecutor>);
+#if defined(__STDCPP_THREADS__) && !SUB0PIPELINE_DEFAULT_EXECUTOR_SEQUENTIAL     && !__has_include(<freertos/FreeRTOS.h>)
+static_assert(std::is_same_v<DefaultExecutor, PriorityExecutor>);
+#endif
+
+TEST_CASE("Executors: DefaultExecutor needs no arguments and runs a pipeline")
 {
-    auto sequential = makeSequentialExecutor();
-    auto desktop    = makeDesktopExecutor();
-    auto pool       = makePriorityExecutor(2);
-    CHECK(runFanOut(*sequential, 4) == 5);
-    CHECK(runFanOut(*desktop, 4) == 5);
-    CHECK(runFanOut(*pool, 4) == 5);
-    CHECK(pool->concurrency() == 2);
+    DefaultExecutor executor;
+    CHECK(executor.concurrency() >= 1);
+    CHECK(runFanOut(executor, 8) == 9);
+}
+
+TEST_CASE("Executors: an executor chosen at run time is held through IExecutor")
+{
+    for (const bool parallel : {false, true}) {
+        std::unique_ptr<IExecutor> executor;
+        if (parallel) executor = std::make_unique<PriorityExecutor>(PriorityExecutor::Options{.threadCount = 2});
+        else          executor = std::make_unique<SequentialExecutor>();
+        CHECK(executor->concurrency() == (parallel ? 2 : 1));
+        CHECK(runFanOut(*executor, 4) == 5);
+    }
 }

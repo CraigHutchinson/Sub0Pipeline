@@ -208,9 +208,9 @@ TEST_CASE("Observer: parallel dependency events precede successor starts and joi
     auto second = pipeline.emplace(rootBody);
     pipeline.emplace([] {}).succeed(first);
     pipeline.emplace([] {}).succeed(second);
-    auto executor = makePriorityExecutor(2);
+    PriorityExecutor executor{{.threadCount = 2}};
 
-    REQUIRE(pipeline.run(*executor, &observer).has_value());
+    REQUIRE(pipeline.run(executor, &observer).has_value());
     CHECK_FALSE(observer.wrongRun.load(std::memory_order_relaxed));
     REQUIRE(observer.events.size() == 12U);
     for (JobId root = 0; root < 2; ++root) {

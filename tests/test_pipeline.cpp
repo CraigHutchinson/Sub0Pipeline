@@ -900,7 +900,7 @@ TEST_CASE("Tick loop: external stop waits for the active callback to finish")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Library inline executors: run_inline() and makeSequentialExecutor()
+// Library inline executors: run_inline() and SequentialExecutor
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // These used to call each job from inside its predecessor's completion, so
@@ -922,8 +922,8 @@ TEST_CASE("Inline executors: a 20000-job chain runs without recursing per link")
     CHECK(pipeline.run_inline().has_value());
     CHECK(ran == cJobs);
 
-    auto sequential = makeSequentialExecutor();
-    CHECK(pipeline.run(*sequential).has_value());
+    SequentialExecutor sequential;
+    CHECK(pipeline.run(sequential).has_value());
     CHECK(ran == 2 * cJobs);
 }
 
@@ -949,26 +949,26 @@ TEST_CASE("Inline executors: jobs run in the order they become ready")
     CHECK(order == expected);
 
     order.clear();
-    auto sequential = makeSequentialExecutor();
-    CHECK(pipeline.run(*sequential).has_value());
+    SequentialExecutor sequential;
+    CHECK(pipeline.run(sequential).has_value());
     CHECK(order == expected);
 }
 
 TEST_CASE("Inline executors: a job can run a nested pipeline on the same executor")
 {
-    auto sequential = makeSequentialExecutor();
+    SequentialExecutor sequential;
     Pipeline outer;
     std::vector<int> order;
     auto first = outer.emplace([&]() -> std::expected<void, PipelineError> {
         Pipeline inner;
         auto one = inner.emplace([&] { order.push_back(1); });
         inner.emplace([&] { order.push_back(2); }).succeed(one);
-        auto result = inner.run(*sequential);   // must finish before this job returns
+        auto result = inner.run(sequential);   // must finish before this job returns
         order.push_back(3);
         return result;
     });
     outer.emplace([&] { order.push_back(4); }).succeed(first);
 
-    CHECK(outer.run(*sequential).has_value());
+    CHECK(outer.run(sequential).has_value());
     CHECK(order == std::vector<int>{1, 2, 3, 4});
 }

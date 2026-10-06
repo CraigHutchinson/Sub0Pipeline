@@ -1,7 +1,7 @@
 // tests/test_priority_executor.cpp
 //
 // PriorityExecutor: real thread-pool behaviour tests (priority ordering,
-// per-thread onThreadStart hook). Uses the real makePriorityExecutor()
+// per-thread onThreadStart hook). Uses the real PriorityExecutor
 // factory, not a fake IExecutor -- these properties only exist in the real
 // thread-pool implementation.
 
@@ -21,14 +21,14 @@ using namespace std::chrono_literals;
 
 TEST_CASE("PriorityExecutor: dispatches and completes a single job")
 {
-    auto exec = makePriorityExecutor(2);
+    PriorityExecutor exec{{.threadCount = 2}};
     std::atomic<bool> ran{false};
 
-    exec->dispatch("job", [&] { ran = true; }, nullptr, -1, 5);
-    exec->wait_all();
+    exec.dispatch("job", [&] { ran = true; }, nullptr, -1, 5);
+    exec.wait_all();
 
     CHECK(ran.load());
-    CHECK(exec->concurrency() == 2);
+    CHECK(exec.concurrency() == 2);
 }
 
 TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs before lower-priority ones")
@@ -36,7 +36,7 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
     // Single worker thread: the first dispatched job occupies it immediately,
     // so every subsequent dispatch queues up and priority ordering among the
     // queued jobs becomes observable (and deterministic) once the pool frees up.
-    auto exec = makePriorityExecutor(1);
+    PriorityExecutor exec{{.threadCount = 1}};
 
     std::mutex              mtx;
     std::condition_variable holdCv;
@@ -44,7 +44,7 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
 
     // Occupies the single worker thread until the test explicitly releases it,
     // giving the test time to queue every other job below before any of them run.
-    exec->dispatch("hold", [&] {
+    exec.dispatch("hold", [&] {
         std::unique_lock lk{mtx};
         holdCv.wait(lk, [&] { return releaseHold; });
     }, nullptr, -1, 1);
@@ -56,16 +56,16 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
         order.emplace_back(name);
     };
 
-    exec->dispatch("low_a", [&] { recordJob("low_a"); }, nullptr, -1, 1);
-    exec->dispatch("low_b", [&] { recordJob("low_b"); }, nullptr, -1, 1);
-    exec->dispatch("high", [&] { recordJob("high"); }, nullptr, -1, 10);
+    exec.dispatch("low_a", [&] { recordJob("low_a"); }, nullptr, -1, 1);
+    exec.dispatch("low_b", [&] { recordJob("low_b"); }, nullptr, -1, 1);
+    exec.dispatch("high", [&] { recordJob("high"); }, nullptr, -1, 10);
 
     {
         std::lock_guard lk{mtx};
         releaseHold = true;
     }
     holdCv.notify_one();
-    exec->wait_all();
+    exec.wait_all();
 
     REQUIRE(order.size() == 3U);
     CHECK(order[0] == "high"); // highest priority among the three queued jobs
@@ -79,11 +79,11 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
     std::mutex                 seenMtx;
     std::set<std::thread::id>  primedThreads;
 
-    auto exec = makePriorityExecutor(kThreads, [&] {
+    PriorityExecutor exec{{.threadCount = kThreads, .onThreadStart = [&] {
         startCount.fetch_add(1, std::memory_order_relaxed);
         std::lock_guard lk{seenMtx};
         primedThreads.insert(std::this_thread::get_id());
-    });
+    }}};
 
     // A single fast dispatch batch does not reliably exercise every worker --
     // one thread can win the whole queue before the OS schedules the others
@@ -97,7 +97,7 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
     std::atomic<unsigned int> jobsOnUnprimedThread{0};
 
     for (unsigned int i = 0; i < kThreads; ++i) {
-        exec->dispatch("job", [&] {
+        exec.dispatch("job", [&] {
             {
                 std::lock_guard lk{seenMtx};
                 if (!primedThreads.contains(std::this_thread::get_id()))
@@ -111,7 +111,7 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
             }
         }, nullptr, -1, 5);
     }
-    exec->wait_all();
+    exec.wait_all();
 
     CHECK(startCount.load() == kThreads);
     CHECK(jobsOnUnprimedThread.load() == 0U);
@@ -119,12 +119,12 @@ TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before 
 
 TEST_CASE("PriorityExecutor: default (no onThreadStart) still dispatches correctly")
 {
-    auto exec = makePriorityExecutor(2);
+    PriorityExecutor exec{{.threadCount = 2}};
     std::atomic<int> completed{0};
 
     for (int i = 0; i < 10; ++i)
-        exec->dispatch("job", [&] { completed.fetch_add(1, std::memory_order_relaxed); }, nullptr, -1, 5);
-    exec->wait_all();
+        exec.dispatch("job", [&] { completed.fetch_add(1, std::memory_order_relaxed); }, nullptr, -1, 5);
+    exec.wait_all();
 
     CHECK(completed.load() == 10);
 }

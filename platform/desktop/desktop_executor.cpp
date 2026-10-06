@@ -56,9 +56,4 @@ int DesktopExecutor::concurrency() const noexcept
     return static_cast<int>(std::thread::hardware_concurrency());
 }
 
-std::unique_ptr<IExecutor> makeDesktopExecutor()
-{
-    return std::make_unique<DesktopExecutor>();
-}
-
 } // namespace sub0pipeline

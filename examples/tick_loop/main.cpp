@@ -22,8 +22,6 @@
 #include <cstdio>
 #include <thread>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
-
 using namespace sub0pipeline;
 using namespace std::chrono_literals;
 
@@ -33,7 +31,7 @@ int main()
     std::printf("=== Boot phase ===\n");
 
     Pipeline pipeline;
-    auto exec = makeSequentialExecutor();
+    SequentialExecutor exec;
 
     auto init  = pipeline.emplace([] {
         std::printf("  [init]  subsystems initialised\n");
@@ -45,7 +43,7 @@ int main()
 
     ready.succeed(init);
 
-    auto bootResult = pipeline.run(*exec);
+    auto bootResult = pipeline.run(exec);
     if (!bootResult) {
         std::printf("Boot failed — aborting.\n");
         return 1;

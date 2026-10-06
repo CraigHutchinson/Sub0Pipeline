@@ -1,14 +1,13 @@
 // include/sub0pipeline/executor/sequential_executor.hpp
 //
 // SequentialExecutor — runs jobs on the calling thread, no threads.
-// Header-only; Sub0Pipeline::Headless is needed only for makeSequentialExecutor().
+// Header-only: nothing to link beyond the core library.
 #pragma once
 
 #include <sub0pipeline/executor/executor.hpp>
 
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <string_view>
 
 namespace sub0pipeline {
@@ -35,7 +34,7 @@ public:
         std::function<void()>         onComplete,
         int                           /*coreAffinity*/,
         uint8_t                       /*priority*/,
-        uint32_t                      /*stackBytes*/) override
+        uint32_t                      /*stackBytes*/ = 4096U) override
     {
         fn();
         if (onComplete) onComplete();
@@ -50,11 +49,5 @@ public:
     /** @return true. */
     [[nodiscard]] bool runs_inline() const noexcept override { return true; }
 };
-
-/**
- * @brief Heap-allocate a SequentialExecutor behind the IExecutor interface.
- * @return An owning pointer; equivalent to `std::make_unique<SequentialExecutor>()`.
- */
-std::unique_ptr<IExecutor> makeSequentialExecutor();
 
 } // namespace sub0pipeline

@@ -26,8 +26,7 @@ Any commit that changes the public API surface in `include/sub0pipeline/`
 - `sub0pipeline::TickJob`
 - Executor classes: `SequentialExecutor`, `DesktopExecutor`, `PriorityExecutor` (and its
   `Options`), `FreeRtosExecutor`, `ScopedExecutor`
-- Factory functions: `makeDesktopExecutor()`, `makeSequentialExecutor()`, `makePriorityExecutor()`,
-  `makeFreeRtosExecutor()`
+- `DefaultExecutor`, the compile-time alias for the platform's executor
 
 ### Style
 Follow `STYLE_GUIDE.md` for all C++ code. Key points:
@@ -47,7 +46,8 @@ Follow `STYLE_GUIDE.md` for all C++ code. Key points:
 
 | Executor | Target | Build |
 |---|---|---|
-| `SequentialExecutor` | Tests, bare-metal | `Sub0Pipeline::Headless` |
+| `DefaultExecutor` | Whichever of the below suits the platform | `Sub0Pipeline::Default` |
+| `SequentialExecutor` | Tests, bare-metal | Header-only, core library |
 | `DesktopExecutor` | Desktop, CI | `Sub0Pipeline::Desktop` |
 | `PriorityExecutor` | Bounded pool, priority order | `Sub0Pipeline::Priority` |
 | `FreeRtosExecutor` | ESP32-P4 | ESP-IDF component only |

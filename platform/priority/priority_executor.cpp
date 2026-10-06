@@ -95,11 +95,4 @@ void PriorityExecutor::work(const std::function<void()>& onThreadStart)
     }
 }
 
-std::unique_ptr<IExecutor> makePriorityExecutor(unsigned int threadCount,
-                                                 std::function<void()> onThreadStart)
-{
-    return std::make_unique<PriorityExecutor>(
-        PriorityExecutor::Options{threadCount, std::move(onThreadStart)});
-}
-
 } // namespace sub0pipeline

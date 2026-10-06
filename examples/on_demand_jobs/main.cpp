@@ -12,22 +12,17 @@
 #include <cstdio>
 #include <atomic>
 
-namespace sub0pipeline {
-    std::unique_ptr<IExecutor> makeDesktopExecutor();
-    std::unique_ptr<IExecutor> makeSequentialExecutor();
-}
-
 using namespace sub0pipeline;
 
 int main()
 {
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
 
     // ── Boot pipeline -- runs to completion ───────────────────────────────────
     {
         Pipeline boot;
         boot.emplace([] { std::printf("  [boot] init complete\n"); }).name("init");
-        (void)boot.run(*exec);
+        (void)boot.run(exec);
     }
     std::printf("\n");
 
@@ -54,12 +49,12 @@ int main()
     ota.name("ota_update");
 
     // arm() stores the executor for trigger() calls.
-    events.arm(*exec);
+    events.arm(exec);
 
     // Verify on-demand jobs do NOT run during normal run() (no normal jobs here,
     // so the pipeline is empty from run()'s perspective).
-    (void)events.run(*exec);
-    exec->wait_all();
+    (void)events.run(exec);
+    exec.wait_all();
     std::printf("After run(): rebootCount=%d otaCount=%d (both should be 0)\n\n",
                 rebootCount.load(), otaCount.load());
 
@@ -75,7 +70,7 @@ int main()
     if (auto r = events.trigger(reboot); !r)
         std::printf("  trigger(reboot) #2 failed\n");
 
-    exec->wait_all();
+    exec.wait_all();
 
     std::printf("\nFinal counts: reboot=%d ota=%d\n",
                 rebootCount.load(), otaCount.load());

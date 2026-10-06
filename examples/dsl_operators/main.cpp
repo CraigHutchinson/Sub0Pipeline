@@ -14,8 +14,6 @@
 #include <cstdio>
 #include <thread>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
-
 using namespace std::chrono_literals;
 using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;
@@ -66,8 +64,8 @@ int main()
 
         load >> parse + validate >> commit;
 
-        auto exec = makeDesktopExecutor();
-        auto result = pipe.run(*exec);
+        DesktopExecutor exec;
+        auto result = pipe.run(exec);
         std::printf("  Result: %s\n\n", result ? "OK" : "FAILED");
     }
 
@@ -79,8 +77,8 @@ int main()
              >> "parse"_job(parse_input).timeout(500ms) + "validate"_job(validate_input).timeout(500ms)
              >> "commit"_job(commit_result);
 
-        auto exec = makeDesktopExecutor();
-        auto result = pipe.run(*exec);
+        DesktopExecutor exec;
+        auto result = pipe.run(exec);
         std::printf("  Result: %s\n\n", result ? "OK" : "FAILED");
     }
 
@@ -92,8 +90,8 @@ int main()
              >> job([] { std::printf("  step 2\n"); })
              >> job([] { std::printf("  step 3\n"); });
 
-        auto exec = makeDesktopExecutor();
-        auto result = pipe.run(*exec);
+        DesktopExecutor exec;
+        auto result = pipe.run(exec);
         std::printf("  Result: %s\n\n", result ? "OK" : "FAILED");
     }
 
@@ -108,8 +106,8 @@ int main()
               + "work_b"_job([] { std::printf("  [work_b]  done\n"); })
              >> sink;
 
-        auto exec = makeDesktopExecutor();
-        auto result = pipe.run(*exec);
+        DesktopExecutor exec;
+        auto result = pipe.run(exec);
         std::printf("  Result: %s\n\n", result ? "OK" : "FAILED");
     }
 

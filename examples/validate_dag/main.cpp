@@ -1,7 +1,7 @@
 // examples/validate_dag/main.cpp
 //
 // Demonstrates Pipeline::validate(), stream-based dump_text(), and cycle detection.
-// Uses makeSequentialExecutor() for deterministic output.
+// Uses SequentialExecutor for deterministic output.
 //
 // Demo 1 — Valid DAG passes validation:
 //   root → (A, B) → sink  (diamond shape, 4 nodes)
@@ -22,9 +22,6 @@
 #include <sub0pipeline/sub0pipeline.hpp>
 #include <cstdio>
 #include <iostream>
-
-// Forward-declared in sequential_executor.cpp (Sub0Pipeline::Headless).
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
 
 using namespace sub0pipeline;
 
@@ -47,7 +44,7 @@ static std::string_view errorName(PipelineError e) noexcept
 
 int main()
 {
-    auto exec = makeSequentialExecutor();
+    SequentialExecutor exec;
 
     // ── Demo 1: Valid DAG passes validation ───────────────────────────────────
     std::printf("=== Demo 1: Valid DAG passes validation ===\n");
@@ -73,7 +70,7 @@ int main()
         std::printf("  DAG structure (dump_text):\n");
         pipeline.dump_text(std::cout);
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
         std::printf("  pipeline.size():   %zu\n", pipeline.size());
         std::printf("  run()==success:    %s\n", result.has_value() ? "pass" : "FAIL");
     }
@@ -103,7 +100,7 @@ int main()
             (!valid && valid.error() == PipelineError::kCyclicDependency) ? "pass" : "FAIL");
 
         // run() also validates internally — it returns the same error.
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
         std::printf("  run() also caught: %s\n",
             (!result && result.error() == PipelineError::kCyclicDependency) ? "pass" : "FAIL");
     }
@@ -147,7 +144,7 @@ int main()
         // No explicit validate() here — run() performs it automatically before
         // dispatching any jobs. If the DAG were invalid, run() would return
         // kCyclicDependency without executing anything.
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  run()==success:    %s\n", result.has_value() ? "pass" : "FAIL");
         std::printf("  pipeline.size():   %zu\n", pipeline.size());
