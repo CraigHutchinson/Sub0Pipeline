@@ -30,7 +30,7 @@ struct PipelineAnchor
 // ── Job handle ────────────────────────────────────────────────────────────────
 
 /**
- * @brief Lightweight handle to a node in the Pipeline DAG.
+ * Refers to a node in the Pipeline DAG through a lightweight handle.
  *
  * Copyable and comparable. Inspired by Taskflow's tf::Task — a thin wrapper
  * around an internal node index plus a back-pointer to its owning Pipeline.
@@ -45,7 +45,7 @@ public:
     Job& name(std::string_view n);
 
     /**
-     * @brief Set the maximum execution time for this job.
+     * Set the maximum execution time for this job.
      *
      * If the job function does not return within `t`, the engine returns
      * `kTimeout` / `kTimedOut` and cascades skip to all successors.
@@ -57,19 +57,19 @@ public:
     Job& timeout(std::chrono::milliseconds t) noexcept;
 
     /**
-     * @brief Hint: pin the job to a CPU core (-1 = any, the default).
+     * Hints that the job should be pinned to a CPU core (-1 = any, the default).
      * @note Honored by FreeRtosExecutor. Ignored by the other bundled executors.
      */
     Job& core(int c) noexcept;
 
     /**
-     * @brief Hint: set the executor task stack size in bytes (default 8192).
+     * Hints the executor task stack size in bytes (default 8192).
      * @note Honored by FreeRtosExecutor. Ignored by the other bundled executors.
      */
     Job& stack(uint32_t bytes) noexcept;
 
     /**
-     * @brief Hint: set the executor task priority 1–24 (default 5).
+     * Hints the executor task priority, 1–24 (default 5).
      * @note Honored by PriorityExecutor (larger starts first) and FreeRtosExecutor
      *       (clamped to 1–24). Ignored by the other bundled executors.
      */
@@ -79,7 +79,7 @@ public:
     Job& optional(bool opt = true) noexcept;
 
     /**
-     * @brief Set display text for this job, such as "Loading settings…".
+     * Set display text for this job, such as "Loading settings…".
      *
      * Meant for a progress display: read it back with
      * Pipeline::statusText(JobId) from IObserver::onJobStart, or from a
@@ -92,7 +92,7 @@ public:
     Job& statusText(const char* text) noexcept;
 
     /**
-     * @brief Request cancellation of this job.
+     * Request cancellation of this job.
      *
      * Thread-safe. Fires the job's `std::stop_source`, setting its
      * `stop_token` to stopped. Cancellable job functions (those taking
@@ -104,7 +104,7 @@ public:
     void cancel() noexcept;
 
     /**
-     * @brief Declare that this job runs AFTER @p other completes.
+     * Declare that this job runs AFTER @p other completes.
      * @param other  The predecessor job.
      * @return *this for chaining.
      * @note May allocate (push_back on predecessor/successor vectors).
@@ -112,7 +112,7 @@ public:
     Job& succeed(Job other);
 
     /**
-     * @brief Declare that @p other runs AFTER this job completes.
+     * Declare that @p other runs AFTER this job completes.
      * @param other  The successor job.
      * @return *this for chaining.
      * @note May allocate (push_back on predecessor/successor vectors).

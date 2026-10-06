@@ -17,7 +17,7 @@
 namespace sub0pipeline {
 
 /**
- * @brief Executor that starts one `std::thread` per dispatched job.
+ * Starts one `std::thread` per dispatched job.
  *
  * Real parallelism with no pool to size, for desktop simulation and integration
  * tests. Thread creation costs tens of microseconds per job, so prefer

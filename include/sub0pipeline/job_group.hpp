@@ -14,7 +14,7 @@ namespace sub0pipeline {
 // ── JobGroup ────────────────────────────────────────────────────────────────
 
 /**
- * @brief A named group of parallel Job handles.
+ * Groups parallel Job handles that are wired as a unit.
  *
  * Provides .succeed() and .precede() that delegate to every member,
  * allowing a group to be wired as a single unit in dependency expressions.
@@ -70,7 +70,7 @@ private:
 };
 
 /**
- * @brief Create a group of parallel jobs.
+ * Create a group of parallel jobs.
  * @example auto io = parallel(display, network, audio);
  */
 template<typename... Jobs_t>

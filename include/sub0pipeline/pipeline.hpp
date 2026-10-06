@@ -31,7 +31,7 @@ class IDeadlineService;
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
 /**
- * @brief DAG-based job scheduler.
+ * Schedules jobs as a directed acyclic graph of dependencies.
  *
  * Owns all job nodes and their dependency edges. Jobs are emplaced during a
  * build phase, then executed in dependency order via run(). Independent jobs
@@ -60,7 +60,7 @@ public:
     // ── DAG construction ─────────────────────────────────────────────────
 
     /**
-     * @brief Add a job that returns std::expected<void, PipelineError>.
+     * Add a job that returns std::expected<void, PipelineError>.
      * @param fn  The job function.
      * @return    A Job handle for setting name, timeouts, and dependencies.
      * @note      The returned handle should not be discarded if dependencies
@@ -69,7 +69,7 @@ public:
     [[nodiscard]] Job emplace(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
-     * @brief Add a cancellable job whose function receives a `std::stop_token`.
+     * Add a cancellable job whose function receives a `std::stop_token`.
      *
      * The stop token is signalled when:
      *   - The job's `.timeout()` expires (cooperative stop request; the body must return).
@@ -92,7 +92,7 @@ public:
         std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
 
     /**
-     * @brief Add a void-returning callable (always succeeds).
+     * Add a void-returning callable (always succeeds).
      *
      * The callable is stored directly, without an intermediate std::function,
      * so a small one costs no extra allocation and one indirect call per run.
@@ -107,7 +107,7 @@ public:
     }
 
     /**
-     * @brief Add a callable returning std::expected<void, PipelineError>.
+     * Add a callable returning std::expected<void, PipelineError>.
      *
      * Stored directly, as above. A std::function object passed as such still
      * selects the std::function overload.
@@ -122,7 +122,7 @@ public:
     }
 
     /**
-     * @brief Reserve storage for at least @p jobCount jobs.
+     * Reserve storage for at least @p jobCount jobs.
      *
      * Optional. Avoids moving existing jobs as the graph grows; it does not
      * reserve the callables, names or wide successor lists that jobs own.
@@ -143,7 +143,7 @@ public:
     // ── Execution ────────────────────────────────────────────────────────
 
     /**
-     * @brief Execute all jobs in dependency order, parallelising independent jobs.
+     * Execute all jobs in dependency order, parallelising independent jobs.
      *
      * Validates the DAG, seeds root jobs, then dispatches successors as their
      * predecessors complete. Blocks until all jobs finish or a required job fails.
@@ -181,7 +181,7 @@ public:
         -> std::expected<void, PipelineError>;
 
     /**
-     * @brief Run the pipeline synchronously on the calling thread (no executor required).
+     * Run the pipeline synchronously on the calling thread (no executor required).
      *
      * Convenience overload that creates an inline sequential executor internally.
      * Untimed jobs execute in dependency order on the calling thread. Timeout
@@ -232,7 +232,7 @@ public:
     [[nodiscard]] auto successors(JobId id) const noexcept -> DependencyRange;
 
     /**
-     * @brief Name of the first non-optional job that failed in the most recent run().
+     * Returns the name of the first non-optional job that failed in the most recent run().
      *
      * Empty string if the last run() succeeded or has not been called yet.
      * Useful for error reporting without requiring an IObserver:
@@ -244,7 +244,7 @@ public:
     [[nodiscard]] std::string_view first_failure_name() const noexcept;
 
     /**
-     * @brief Set a diagnostic message for the job currently executing on this thread.
+     * Set a diagnostic message for the job currently executing on this thread.
      *
      * Call on the failure branch before returning `std::unexpected(...)`.  The
      * message is consumed by `dispatchJob` and forwarded to `IObserver::onJobFailure`.
@@ -263,7 +263,7 @@ public:
     static void set_current_job_error(std::string_view msg) noexcept;
 
     /**
-     * @brief Lightweight status snapshot of all jobs (for status bars and UI).
+     * Returns a lightweight status snapshot of all jobs, for status bars and UI.
      *
      * Each `JobSnapshot` is a {name, status} pair read via relaxed atomic load --
      * no locks, no synchronisation barrier.  Safe to call from any thread at any
@@ -284,7 +284,7 @@ public:
     [[nodiscard]] std::vector<JobSnapshot> snapshot() const;
 
     /**
-     * @brief Display text set for a job with Job::statusText().
+     * Returns the display text set for a job with Job::statusText().
      * @param id  A job identifier, as observers receive it.
      * @return The text, or an empty view if none was set or @p id is invalid.
      *         Borrowed from the caller that set it.
@@ -295,7 +295,7 @@ public:
     // ── Validation ───────────────────────────────────────────────────────
 
     /**
-     * @brief Validate the DAG before execution.
+     * Validate the DAG before execution.
      *
      * Uses Kahn's algorithm to detect cycles. Called automatically by run(),
      * but can be called explicitly during the build phase.
@@ -305,7 +305,7 @@ public:
     [[nodiscard]] auto validate() const -> std::expected<void, PipelineError>;
 
     /**
-     * @brief Re-run the pipeline repeatedly until the stop token is signalled.
+     * Re-run the pipeline repeatedly until the stop token is signalled.
      *
      * Each iteration calls run(executor) and discards the result. Useful for
      * perpetual update loops (game frame loop, streaming processor, background
@@ -332,7 +332,7 @@ public:
     // ── On-demand jobs ────────────────────────────────────────────────────
 
     /**
-     * @brief Arm the pipeline with an executor for on-demand dispatch.
+     * Arm the pipeline with an executor for on-demand dispatch.
      *
      * Must be called before trigger(). The executor and observer are stored
      * by pointer; the caller must keep them alive for the lifetime of any
@@ -349,8 +349,8 @@ public:
     void arm(IExecutor& executor, IObserver* observer = nullptr) noexcept;
 
     /**
-     * @brief Register a job that is excluded from normal run() execution
-     *        and dispatched only when trigger() is called.
+     * Register a job that is excluded from normal run() execution
+     * and dispatched only when trigger() is called.
      *
      * On-demand jobs are not included in the root set for run() -- they do
      * not execute during the normal DAG execution phase. Call arm() with an
@@ -359,7 +359,7 @@ public:
     [[nodiscard]] Job add_on_demand(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
-     * @brief Register a cancellable on-demand job (receives `std::stop_token`).
+     * Register a cancellable on-demand job (receives `std::stop_token`).
      *
      * Equivalent to `add_on_demand()` but the function is called with the job's
      * stop token, enabling cooperative cancellation via `Job::cancel()` or
@@ -373,7 +373,7 @@ public:
         std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
 
     /**
-     * @brief Dispatch an on-demand job via the armed executor.
+     * Dispatch an on-demand job via the armed executor.
      *
      * Requires arm(), a stable graph and a thread-safe executor for concurrent
      * submissions. Do not overlap run(), mutation or destruction. Returns kBusy
@@ -389,7 +389,7 @@ public:
     // ── Generic emplace (concept-based extension point) ─────────────────
 
     /**
-     * @brief Emplace a job described by a spec object with a .build() method.
+     * Emplace a job described by a spec object with a .build() method.
      *
      * Accepts any type satisfying: `spec.build(Pipeline&) -> Job`.
      * This is the extension point used by the DSL's JobSpec type.
@@ -402,7 +402,7 @@ public:
     }
 
     /**
-     * @brief Multi-emplace returning a tuple for structured bindings.
+     * Emplace several specs at once, returning a tuple for structured bindings.
      * @example auto [a, b, c] = pipe.emplace(specA, specB, specC);
      */
     template<typename... Specs>

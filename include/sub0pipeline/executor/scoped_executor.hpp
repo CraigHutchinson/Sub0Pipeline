@@ -18,8 +18,8 @@ namespace sub0pipeline {
 // ── ScopedExecutor ───────────────────────────────────────────────────────────
 
 /**
- * @brief Executor wrapper that scopes wait_all() to jobs dispatched through
- *        this instance, enabling sub-DAG execution from within a running job.
+ * Scopes wait_all() to the jobs dispatched through this instance, so a
+ * running job can execute a sub-DAG.
  *
  * The canonical deadlock scenario without ScopedExecutor:
  *   - Outer job T runs on DesktopExecutor (inFlight_ counts T).

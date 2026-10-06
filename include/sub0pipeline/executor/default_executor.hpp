@@ -32,7 +32,7 @@
 namespace sub0pipeline {
 
 /**
- * @brief The bundled executor selected for the platform being built.
+ * Names the bundled executor selected for the platform being built.
  *
  * An alias for FreeRtosExecutor, PriorityExecutor or SequentialExecutor; see
  * the top of this header for the rule. Every candidate is default-constructible

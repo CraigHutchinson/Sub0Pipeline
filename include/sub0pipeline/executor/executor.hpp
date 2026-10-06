@@ -12,7 +12,7 @@ namespace sub0pipeline {
 // ── Executor interface ────────────────────────────────────────────────────────
 
 /**
- * @brief Platform-injectable execution backend.
+ * Abstracts the execution backend so each platform can inject its own.
  *
  * Provides an abstraction layer so the same Pipeline DAG engine runs on
  * any platform: threaded, sequential/inline, or RTOS-based.
@@ -28,7 +28,7 @@ public:
     virtual ~IExecutor() = default;
 
     /**
-     * @brief Dispatch a job for asynchronous execution.
+     * Dispatch a job for asynchronous execution.
      * @param name         Human-readable label (for logging).
      * @param fn           The job function to execute.
      * @param onComplete   Callback fired when fn returns (required by contract).

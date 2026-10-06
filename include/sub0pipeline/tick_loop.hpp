@@ -10,7 +10,7 @@
 
 namespace sub0pipeline {
 
-/** @brief One recurring job for a TickLoop. */
+/** Describes one recurring job for a TickLoop. */
 struct TickJob
 {
     std::chrono::milliseconds interval;  ///< Minimum time between calls; 0 calls it on every pass.
@@ -18,7 +18,7 @@ struct TickJob
 };
 
 /**
- * @brief A steady-state loop that calls recurring jobs at their intervals.
+ * Calls recurring jobs at their intervals in a steady-state loop.
  *
  * Typical use is the phase after start-up: run a Pipeline once to bring the
  * system up, then hand the thread to a TickLoop for periodic work.
@@ -37,7 +37,7 @@ class TickLoop
 {
 public:
     /**
-     * @brief Add a recurring job.
+     * Add a recurring job.
      * @param tick  The job and its interval. Its first call happens on the
      *              first pass of run().
      * @note Not while run() is executing.
@@ -45,7 +45,7 @@ public:
     void add(TickJob tick);
 
     /**
-     * @brief Call each job whenever its interval has elapsed, until @p stop is requested.
+     * Call each job whenever its interval has elapsed, until @p stop is requested.
      *
      * A pass visits every job in the order added, then yields for one
      * millisecond (one RTOS tick on FreeRTOS). Stop is checked between passes:

@@ -149,7 +149,7 @@ auto tuple_to_spec_group(Tuple&& t, std::index_sequence<Is...>)
 // ── JobTuple<N> — fixed-size job group with structured binding support ───────
 
 /**
- * @brief A fixed-size group of Job handles supporting structured bindings.
+ * Holds a fixed-size group of Job handles and supports structured bindings.
  *
  * Produced by `Pipeline >> JobSpecGroup`. Subsequent `>>` operations wire
  * dependencies from the tuple's members but return `*this` (capture-preserving),
@@ -177,7 +177,7 @@ struct JobTuple
 // ── JobTupleChain<Layers...> — multi-layer capture ───────────────────────────
 
 /**
- * @brief Accumulates multiple JobTuple layers for layered structured bindings.
+ * Accumulates multiple JobTuple layers for layered structured bindings.
  *
  * Produced when `JobTuple >> JobSpecGroup` (a second parallel layer is added).
  * Each `>>` appends a layer and wires the previous layer → new layer.

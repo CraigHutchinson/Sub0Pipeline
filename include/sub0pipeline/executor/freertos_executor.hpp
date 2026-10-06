@@ -15,7 +15,7 @@
 namespace sub0pipeline {
 
 /**
- * @brief Executor that runs each job as its own FreeRTOS task.
+ * Runs each job as its own FreeRTOS task.
  *
  * Honours the job's core affinity (cores 0 and 1; anything else is unpinned),
  * priority (clamped to 1–24) and stack size. Each task deletes itself when its

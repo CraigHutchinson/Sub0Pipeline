@@ -13,7 +13,7 @@
 namespace sub0pipeline {
 
 /**
- * @brief Executor that runs every job on the calling thread.
+ * Runs every job on the calling thread.
  *
  * No threads and no state, so execution order is deterministic: ideal for unit
  * tests and for targets without `std::thread`. Because it reports

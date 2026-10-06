@@ -19,7 +19,7 @@
 namespace sub0pipeline {
 
 /**
- * @brief Fixed-size worker pool that starts queued jobs in priority order.
+ * Runs jobs on a fixed-size worker pool, starting queued jobs in priority order.
  *
  * A job with a larger `.priority()` value starts before lower-priority jobs
  * that are still queued. Running jobs are not preempted, and jobs of equal
