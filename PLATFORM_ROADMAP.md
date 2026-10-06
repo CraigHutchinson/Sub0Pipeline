@@ -10,7 +10,7 @@ consumers only link what they need.
 
 | Executor | Target | Status | Notes |
 |---|---|---|---|
-| `SequentialExecutor` | `Sub0Pipeline::Headless` | Done | Inline, no threads. Deterministic. Ideal for unit tests and bare-metal. |
+| `SequentialExecutor` | Header-only, core library | Done | Inline, no threads. Deterministic. Ideal for unit tests and bare-metal. |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Done | One `std::thread` per dispatched job. `hardware_concurrency()` slots. |
 | `PriorityExecutor` | `Sub0Pipeline::Priority` | Done | Bounded worker pool; queued jobs start in priority order; no preemption. |
 | `FreeRtosExecutor` | ESP-IDF component | Done | `xTaskCreatePinnedToCore` per job. Dual-core ESP32-P4. Semaphore drain. |
@@ -65,11 +65,18 @@ consumers only link what they need.
 
 ## Contributing a New Executor
 
-1. Create `platform/<name>/<name>_executor.cpp`
-2. Implement `IExecutor`: `dispatch()`, `wait_all()`, `concurrency()`
-3. Expose a factory: `std::unique_ptr<IExecutor> make_<name>_executor()`
-4. Add `platform/<name>/CMakeLists.txt` with a `Sub0Pipeline::<Name>` alias target
-5. Wire the CMake option `SUB0PIPELINE_PLATFORM_<NAME>` in the root `CMakeLists.txt`
-6. Add tests to `tests/test_concurrent.cpp` exercising the new executor
+1. Declare the class in `include/sub0pipeline/executor/<name>_executor.hpp`: a
+   `final` class deriving from `IExecutor`, default-constructible, configured
+   through its constructor (an `Options` struct once it has more than one
+   setting), and documented with ownership, lifetime and thread-safety. Keep
+   platform headers out of it so that it can be included on any host.
+2. Define it in `platform/<name>/<name>_executor.cpp`, implementing `dispatch()`,
+   `wait_all()` and `concurrency()`.
+3. Add `platform/<name>/CMakeLists.txt` with a `Sub0Pipeline::<Name>` alias target
+4. Wire the CMake option `SUB0PIPELINE_PLATFORM_<NAME>` in the root `CMakeLists.txt`
+5. Include the header from `executors.hpp`. If it should be a platform default,
+   add it to the selection in `executor/default_executor.hpp` and to the
+   `Sub0Pipeline::Default` target, which must always agree.
+6. Add tests to `tests/test_executors.cpp` exercising the new executor
 
 See `platform/desktop/desktop_executor.cpp` as a reference implementation.

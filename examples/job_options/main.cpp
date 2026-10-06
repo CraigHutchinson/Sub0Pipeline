@@ -1,7 +1,7 @@
 // examples/job_options/main.cpp
 //
 // Reference example: every Job builder method and the precede() direction.
-// Uses makeSequentialExecutor() for deterministic, reproducible output.
+// Uses SequentialExecutor for deterministic, reproducible output.
 //
 // Demo 1 — All builder methods:
 //   Shows .name(), .timeout(), .optional(), .status(), .core(),
@@ -25,8 +25,6 @@
 #include <cstdio>
 #include <expected>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
-
 using namespace sub0pipeline;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -49,7 +47,7 @@ static std::string_view statusName(JobStatus s) noexcept
 
 int main()
 {
-    auto exec = makeSequentialExecutor();
+    SequentialExecutor exec;
 
     // ── Demo 1: All builder methods ───────────────────────────────────────────
     std::printf("=== Demo 1: All builder methods ===\n");
@@ -86,7 +84,7 @@ int main()
         b.succeed(a);
         c.succeed(b);
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  pipeline.size():  %zu\n", pipeline.size());
         std::printf("  name(a):          %.*s\n",
@@ -122,7 +120,7 @@ int main()
             }).name("B");
 
             b.succeed(a);    // B runs after A
-            if (!pipeline.run(*exec)) { std::printf("    run() failed\n"); }
+            if (!pipeline.run(exec)) { std::printf("    run() failed\n"); }
         }
 
         std::printf("  -- Using precede() --\n");
@@ -141,7 +139,7 @@ int main()
             }).name("B");
 
             a.precede(b);    // A runs before B — same dependency, opposite phrasing
-            if (!pipeline.run(*exec)) { std::printf("    run() failed\n"); }
+            if (!pipeline.run(exec)) { std::printf("    run() failed\n"); }
         }
 
         std::printf("  succeed(): A before B: %s\n", aFirst ? "pass" : "FAIL");
@@ -177,7 +175,7 @@ int main()
         b.succeed(a);
         c.succeed(b);
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  run()==success:   %s\n", result.has_value() ? "pass" : "FAIL");
         std::printf("  C ran:            %s\n", cRan                                     ? "pass" : "FAIL");
@@ -210,7 +208,7 @@ int main()
         d.succeed(a);
         e.succeed(d);
 
-        auto result = pipeline.run(*exec);
+        auto result = pipeline.run(exec);
 
         std::printf("  run()==error:     %s\n", !result                                   ? "pass" : "FAIL");
         std::printf("  E ran:            %s\n", !eRan                                     ? "pass" : "FAIL");

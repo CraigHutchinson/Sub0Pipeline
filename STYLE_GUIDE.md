@@ -16,7 +16,7 @@ for consistency across Sub0Pipeline, Sub0Pub, and related libraries.
 | Local variables | camelCase | `dispatchJob`, `hasFatalFailure` |
 | Constants | `c` prefix + PascalCase | `cInvalid`, `cMaxWorkers` |
 | Macros/Defines | UPPER_SNAKE_CASE with `SUB0PIPELINE_` prefix | `SUB0PIPELINE_TRACE` |
-| Free functions | camelCase | `makeDesktopExecutor()`, `makeSequentialExecutor()` |
+| Free functions | camelCase | `parallel()` |
 | Type aliases | PascalCase | `JobFn`, `CompleteFn` |
 
 ## Formatting

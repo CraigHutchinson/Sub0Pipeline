@@ -15,13 +15,14 @@ add_executable(Sub0Pipeline_Tests
     test_observer.cpp
     test_concurrent.cpp
     test_priority_executor.cpp
+    test_executors.cpp
 )
 
 target_link_libraries(Sub0Pipeline_Tests
     PRIVATE
         Sub0Pipeline::Sub0Pipeline
+        Sub0Pipeline::Default
         Sub0Pipeline::Desktop
-        Sub0Pipeline::Headless
         Sub0Pipeline::Priority
 )
 
@@ -37,7 +38,7 @@ add_test(NAME Sub0Pipeline_Tests COMMAND Sub0Pipeline_Tests)
 
 add_executable(Sub0Pipeline_DslTests test_dsl.cpp)
 target_link_libraries(Sub0Pipeline_DslTests
-    PRIVATE Sub0Pipeline::Sub0Pipeline Sub0Pipeline::Headless
+    PRIVATE Sub0Pipeline::Sub0Pipeline
 )
 target_include_directories(Sub0Pipeline_DslTests
     PRIVATE "${VENDOR_DIR}"
@@ -81,7 +82,6 @@ if(SUB0PIPELINE_BUILD_BENCHMARKS)
         PRIVATE
             Sub0Pipeline::Sub0Pipeline
             Sub0Pipeline::Desktop
-            Sub0Pipeline::Headless
             Sub0Pipeline::Priority
     )
     target_include_directories(Sub0Pipeline_Bench

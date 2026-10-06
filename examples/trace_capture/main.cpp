@@ -10,7 +10,6 @@
 #include <string_view>
 #include <thread>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
 
 namespace {
 
@@ -220,12 +219,12 @@ int main(int argc, char* argv[])
         expectedEvents = 9U;
     }
 
-    auto executor = makeDesktopExecutor();
+    DesktopExecutor executor;
     TraceRecorder recorder;
     std::atomic<bool> finished{false};
     std::atomic<bool> expectedOutcome{false};
     std::jthread runner([&] {
-        const auto result = pipeline.run(*executor, &recorder);
+        const auto result = pipeline.run(executor, &recorder);
         expectedOutcome.store(scenario == "failure"
             ? !result && result.error() == PipelineError::kJobFailed
             : result.has_value(), std::memory_order_relaxed);

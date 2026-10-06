@@ -11,8 +11,6 @@
 #include <cstdio>
 #include <thread>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
-
 using namespace std::chrono_literals;
 
 namespace {
@@ -63,12 +61,12 @@ int main()
     network.succeed(nvs);
     app.succeed(display, network);
 
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
 
     std::printf("Boot sequence starting...\n");
     const auto t0 = std::chrono::steady_clock::now();
 
-    auto result = boot.run(*exec);
+    auto result = boot.run(exec);
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - t0);

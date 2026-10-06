@@ -6,8 +6,6 @@
 #include <sub0pipeline/sub0pipeline.hpp>
 #include <cstdio>
 
-// Forward-declared in sequential_executor.cpp (Sub0Pipeline::Headless).
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeSequentialExecutor(); }
 
 int main()
 {
@@ -22,8 +20,8 @@ int main()
     b.succeed(a);
     c.succeed(b);
 
-    auto exec   = makeSequentialExecutor();
-    auto result = pipeline.run(*exec);
+    SequentialExecutor exec;
+    auto result = pipeline.run(exec);
 
     if (result) {
         std::printf("Pipeline completed successfully.\n");

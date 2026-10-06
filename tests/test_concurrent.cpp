@@ -109,10 +109,7 @@ TEST_CASE("Concurrent: wide fan-out stress N=50 with real threads")
 
 TEST_CASE("Concurrent: DesktopExecutor smoke test — sequential pipeline succeeds")
 {
-    // Requires Sub0Pipeline_Desktop to be linked.
-    // Declared in desktop_executor.cpp.
-    std::unique_ptr<IExecutor> exec = makeDesktopExecutor();
-    REQUIRE(exec != nullptr);
+    DesktopExecutor exec;
 
     Pipeline pipeline;
     int counter = 0;
@@ -121,20 +118,20 @@ TEST_CASE("Concurrent: DesktopExecutor smoke test — sequential pipeline succee
     auto b = pipeline.emplace([&] { ++counter; }).name("B");
     b.succeed(a);
 
-    auto result = pipeline.run(*exec);
+    auto result = pipeline.run(exec);
     REQUIRE(result.has_value());
     CHECK(counter == 2);
 }
 
 TEST_CASE("Concurrent: DesktopExecutor wait_all waits for a job still blocked when it is called")
 {
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
     std::latch release{1};
     std::atomic<bool> finished{false};
 
-    exec->dispatch("blocked", [&] { release.wait(); finished = true; }, nullptr, -1, 5);
+    exec.dispatch("blocked", [&] { release.wait(); finished = true; }, nullptr, -1, 5);
     std::jthread releaser{[&] { release.count_down(); }};
-    exec->wait_all();
+    exec.wait_all();
 
     CHECK(finished.load());
 }
@@ -143,8 +140,8 @@ TEST_CASE("Concurrent: DesktopExecutor destruction joins work nobody waited for"
 {
     std::atomic<bool> finished{false};
     {
-        auto exec = makeDesktopExecutor();
-        exec->dispatch("unwaited", [&] { finished = true; }, nullptr, -1, 5);
+        DesktopExecutor exec;
+        exec.dispatch("unwaited", [&] { finished = true; }, nullptr, -1, 5);
     }
     CHECK(finished.load());
 }
@@ -155,7 +152,7 @@ TEST_CASE("Concurrent: DesktopExecutor destruction joins work nobody waited for"
 
 TEST_CASE("SubDAG: sequential -- job creates and runs an inner pipeline inline")
 {
-    auto exec = makeSequentialExecutor();
+    SequentialExecutor exec;
     Pipeline outer;
 
     int innerRuns = 0;
@@ -164,17 +161,17 @@ TEST_CASE("SubDAG: sequential -- job creates and runs an inner pipeline inline")
         Pipeline inner;
         inner.emplace([&]{ ++innerRuns; }).name("inner_a");
         inner.emplace([&]{ ++innerRuns; }).name("inner_b");
-        return inner.run(*exec);
+        return inner.run(exec);
     }).name("dynamic_step");
 
-    auto result = outer.run(*exec);
+    auto result = outer.run(exec);
     CHECK(result.has_value());
     CHECK(innerRuns == 2);
 }
 
 TEST_CASE("SubDAG: ScopedExecutor -- desktop job creates dynamic inner pipeline without deadlock")
 {
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
     Pipeline outer;
 
     std::atomic<int> innerRuns{0};
@@ -182,7 +179,7 @@ TEST_CASE("SubDAG: ScopedExecutor -- desktop job creates dynamic inner pipeline 
     {
         // ScopedExecutor shares the thread pool but scopes wait_all()
         // to only the inner jobs -- avoids the self-wait deadlock.
-        ScopedExecutor scoped{*exec};
+        ScopedExecutor scoped{exec};
         Pipeline inner;
         inner.emplace([&]{ innerRuns.fetch_add(1, std::memory_order_relaxed); }).name("fetch_0");
         inner.emplace([&]{ innerRuns.fetch_add(1, std::memory_order_relaxed); }).name("fetch_1");
@@ -190,14 +187,14 @@ TEST_CASE("SubDAG: ScopedExecutor -- desktop job creates dynamic inner pipeline 
         return inner.run(scoped);
     }).name("dynamic_step");
 
-    auto result = outer.run(*exec);
+    auto result = outer.run(exec);
     CHECK(result.has_value());
     CHECK(innerRuns.load() == 3);
 }
 
 TEST_CASE("SubDAG: ScopedExecutor -- dynamic job count determined at runtime")
 {
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
     Pipeline outer;
 
     const int dynamicCount = 7;  // determined "at runtime"
@@ -205,26 +202,26 @@ TEST_CASE("SubDAG: ScopedExecutor -- dynamic job count determined at runtime")
 
     outer.emplace([&]() -> std::expected<void, PipelineError>
     {
-        ScopedExecutor scoped{*exec};
+        ScopedExecutor scoped{exec};
         Pipeline inner;
         for (int i = 0; i < dynamicCount; ++i)
             (void)inner.emplace([&]{ innerRuns.fetch_add(1, std::memory_order_relaxed); });
         return inner.run(scoped);
     }).name("dynamic_fan_out");
 
-    auto result = outer.run(*exec);
+    auto result = outer.run(exec);
     CHECK(result.has_value());
     CHECK(innerRuns.load() == dynamicCount);
 }
 
 TEST_CASE("SubDAG: ScopedExecutor -- inner DAG failure propagates to outer job")
 {
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
     Pipeline outer;
 
     outer.emplace([&]() -> std::expected<void, PipelineError>
     {
-        ScopedExecutor scoped{*exec};
+        ScopedExecutor scoped{exec};
         Pipeline inner;
         inner.emplace([]() -> std::expected<void, PipelineError> {
             return std::unexpected(PipelineError::kJobFailed);
@@ -232,7 +229,7 @@ TEST_CASE("SubDAG: ScopedExecutor -- inner DAG failure propagates to outer job")
         return inner.run(scoped);
     }).name("outer_job");
 
-    auto result = outer.run(*exec);
+    auto result = outer.run(exec);
     CHECK_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kJobFailed);
 }

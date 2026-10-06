@@ -12,8 +12,6 @@
 #include <cstdio>
 #include <thread>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
-
 using namespace sub0pipeline;
 using namespace std::chrono_literals;
 
@@ -50,13 +48,13 @@ int main()
     }).name("sink");
     for (auto& w : workers) sink.succeed(w);
 
-    auto exec = makeDesktopExecutor();
+    DesktopExecutor exec;
 
     std::printf("\nParallel fan-out/fan-in (%d workers, each %lldms):\n",
                 kWorkers, static_cast<long long>(kWorkDuration.count()));
 
     const auto t0 = std::chrono::steady_clock::now();
-    auto result = pipeline.run(*exec);
+    auto result = pipeline.run(exec);
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - t0);
 

@@ -14,8 +14,6 @@
 #include <mutex>
 #include <thread>
 
-namespace sub0pipeline { std::unique_ptr<IExecutor> makeDesktopExecutor(); }
-
 using namespace sub0pipeline;
 using namespace std::chrono_literals;
 
@@ -195,7 +193,7 @@ TEST_CASE("Cancel: a token kept from one run does not observe the next run's can
 
 TEST_CASE("Timeout: cancellable job honours stop_token fired by DesktopExecutor watchdog")
 {
-    auto exec = sub0pipeline::makeDesktopExecutor();
+    DesktopExecutor exec;
     Pipeline pipe;
 
     // Job polls stop_token in a tight loop; watchdog fires it after 50ms.
@@ -209,7 +207,7 @@ TEST_CASE("Timeout: cancellable job honours stop_token fired by DesktopExecutor 
     });
     j.name("slow_fetch").timeout(50ms);
 
-    auto result = pipe.run(*exec);
+    auto result = pipe.run(exec);
     CHECK_FALSE(result.has_value());
     // Either kCancelled (cooperative exit via stop_token) or kTimeout (hard cutoff)
     CHECK((result.error() == PipelineError::kCancelled
@@ -460,7 +458,7 @@ TEST_CASE("Timeout: successful cooperative work does not wait for its deadline")
 TEST_CASE("Failure: concurrent shared descendants finish exactly once before return")
 {
     Pipeline pipe;
-    auto executor = makeDesktopExecutor();
+    DesktopExecutor executor;
     std::barrier failures{2};
     std::latch observerEntered{1}, releaseObserver{1};
     std::atomic<int> skipped{0};
@@ -491,7 +489,7 @@ TEST_CASE("Failure: concurrent shared descendants finish exactly once before ret
         child.succeed(a).succeed(b).precede(sink);
     }
     std::jthread runner{[&] {
-        CHECK_FALSE(pipe.run(*executor, &observer).has_value());
+        CHECK_FALSE(pipe.run(executor, &observer).has_value());
         returned = true;
     }};
     observerEntered.wait();
@@ -501,6 +499,6 @@ TEST_CASE("Failure: concurrent shared descendants finish exactly once before ret
     CHECK(skipped.load() == 65);
     CHECK(pipe.status(sink) == JobStatus::kSkipped);
     // A second failure run must reuse storage without keeping prior queue state.
-    CHECK_FALSE(pipe.run(*executor, &observer).has_value());
+    CHECK_FALSE(pipe.run(executor, &observer).has_value());
     CHECK(skipped.load() == 130);
 }
