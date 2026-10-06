@@ -57,7 +57,10 @@ public:
     /** Start a pool with default Options. */
     PriorityExecutor();
 
-    /** Start a pool configured by @p options. */
+    /**
+     * Start a pool configured by @p options.
+     * @param options  The worker count and per-thread setup.
+     */
     explicit PriorityExecutor(Options options);
 
     /** Waits for every dispatched job, then stops and joins the workers. */
@@ -76,7 +79,7 @@ public:
 
     void waitAll() override;
 
-    /** @return The number of worker threads. */
+    /** Returns the number of worker threads. */
     [[nodiscard]] int concurrency() const noexcept override;
 
 private:

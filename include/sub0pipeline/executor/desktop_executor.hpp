@@ -52,7 +52,7 @@ public:
 
     void waitAll() override;
 
-    /** @return `std::thread::hardware_concurrency()`. */
+    /** Returns `std::thread::hardware_concurrency()`. */
     [[nodiscard]] int concurrency() const noexcept override;
 
 private:

@@ -46,6 +46,11 @@ namespace sub0pipeline
 class ScopedExecutor final : public IExecutor
 {
 public:
+    /**
+     * Creates a scope over @p parent.
+     * @param parent  The executor that actually runs the jobs. Borrowed; it
+     *                must outlive this scope.
+     */
     explicit ScopedExecutor(IExecutor& parent) noexcept : parent_{parent} {}
     ~ScopedExecutor() override { waitAll(); }
 

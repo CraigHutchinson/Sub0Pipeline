@@ -41,11 +41,20 @@ public:
      * can use to group events. The default 0 is suitable when the observer
      * does not need run correlation.
      * Called on the run() caller's thread, or an executor worker for trigger().
+     *
+     * @return An identifier for the run, passed to the following callbacks.
      */
     virtual RunId onRunStart() { return 0; }
 
-    /** Called just before a job starts executing. Keep implementations fast. */
-    virtual void onJobStart(RunId, JobId, std::string_view) {}
+    /**
+     * Called just before a job starts executing. Keep implementations fast.
+     * @param runId    Observer-defined identifier for this run or trigger.
+     * @param jobId    Stable node index within the Pipeline.
+     * @param jobName  The job's name.
+     */
+    virtual void onJobStart([[maybe_unused]] RunId runId,
+                            [[maybe_unused]] JobId jobId,
+                            [[maybe_unused]] std::string_view jobName) {}
 
     /**
      * Called when a job completes, including skipped jobs with no start event.
@@ -86,6 +95,10 @@ public:
     /**
      * Called once per completed node that has successors, rather than once per
      * edge. The range is non-owning and valid only during this callback.
+     * @param runId       Observer-defined identifier for this run or trigger.
+     * @param from        Stable node index of the completed job.
+     * @param fromName    The completed job's name.
+     * @param successors  The completed job's successors.
      */
     virtual void onDependenciesResolved([[maybe_unused]] RunId runId,
                                         [[maybe_unused]] JobId from,

@@ -50,7 +50,7 @@ public:
 
     void waitAll() override;
 
-    /** @return The number of processor cores FreeRTOS schedules on. */
+    /** Returns the number of processor cores FreeRTOS schedules on. */
     [[nodiscard]] int concurrency() const noexcept override;
 
 private:

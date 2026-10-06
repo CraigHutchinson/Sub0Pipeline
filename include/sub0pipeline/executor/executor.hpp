@@ -48,12 +48,14 @@ public:
     /** Block until dispatched jobs and their completion callbacks have returned. */
     virtual void waitAll() = 0;
 
-    /** @return Number of parallel execution slots (cores / thread pool size). */
+    /**
+     * Reports how many jobs can run in parallel.
+     * @return Number of parallel execution slots (cores / thread pool size).
+     */
     [[nodiscard]] virtual int concurrency() const noexcept = 0;
 
     /**
-     * @return true if dispatch() runs the job to completion on the calling
-     *         thread before it returns.
+     * Reports whether dispatch() runs each job on the calling thread.
      *
      * Pipeline::run() then calls ready jobs itself, in the order they become
      * ready, and does not use dispatch(). Stack depth stays constant however
@@ -61,6 +63,9 @@ public:
      * dispatch() would nest one call per link. Core affinity, priority and
      * stack hints do not apply to such a run. Pipeline::trigger() still goes
      * through dispatch().
+     *
+     * @return true if dispatch() runs the job to completion on the calling
+     *         thread before it returns.
      */
     [[nodiscard]] virtual bool runsInline() const noexcept { return false; }
 };

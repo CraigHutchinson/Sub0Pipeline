@@ -21,8 +21,10 @@ using JobId = uint32_t;
 
 namespace detail
 {
-/// The part of a Pipeline's heap state that Job handles point at. It does not
-/// move when the Pipeline object is moved; `owner` then names the new object.
+/**
+ * The part of a Pipeline's heap state that Job handles point at. It does not
+ * move when the Pipeline object is moved; `owner` then names the new object.
+ */
 struct PipelineAnchor
 {
     Pipeline* owner{nullptr}; // non-owning; maintained by Pipeline
@@ -43,7 +45,12 @@ class Job
 public:
     constexpr Job() noexcept = default;
 
-    /** Set a human-readable name (used in tracing and observer callbacks). */
+    /**
+     * Set a human-readable name (used in tracing and observer callbacks).
+     * @param n  The name. Copied.
+     * @return *this for chaining.
+     * @note Has no effect on an invalid handle.
+     */
     Job& name(std::string_view n);
 
     /**
@@ -55,29 +62,42 @@ public:
      * also timeout at the syscall level (TCP connect, subprocess pipe).
      *
      * Default: `std::chrono::milliseconds::max()` (no timeout).
+     *
+     * @param t  The maximum execution time.
+     * @return *this for chaining.
      */
     Job& timeout(std::chrono::milliseconds t) noexcept;
 
     /**
      * Hints that the job should be pinned to a CPU core (-1 = any, the default).
+     * @param c  The core index, or -1 for any core.
+     * @return *this for chaining.
      * @note Honored by FreeRtosExecutor. Ignored by the other bundled executors.
      */
     Job& core(int c) noexcept;
 
     /**
      * Hints the executor task stack size in bytes (default 8192).
+     * @param bytes  The stack size in bytes.
+     * @return *this for chaining.
      * @note Honored by FreeRtosExecutor. Ignored by the other bundled executors.
      */
     Job& stack(uint32_t bytes) noexcept;
 
     /**
      * Hints the executor task priority, 1–24 (default 5).
+     * @param p  The priority; larger starts first on PriorityExecutor.
+     * @return *this for chaining.
      * @note Honored by PriorityExecutor (larger starts first) and FreeRtosExecutor
      *       (clamped to 1–24). Ignored by the other bundled executors.
      */
     Job& priority(uint8_t p) noexcept;
 
-    /** Ordinary failure does not block dependents; cancellation remains fatal. */
+    /**
+     * Makes ordinary failure not block dependents; cancellation remains fatal.
+     * @param opt  true to mark the job optional, false to make it required.
+     * @return *this for chaining.
+     */
     Job& optional(bool opt = true) noexcept;
 
     /**
@@ -90,6 +110,7 @@ public:
      *
      * @param text  Borrowed, not copied: it must outlive the Pipeline. Pass a
      *              string literal or other static storage. nullptr clears it.
+     * @return *this for chaining.
      */
     Job& statusText(const char* text) noexcept;
 
@@ -121,7 +142,13 @@ public:
      */
     Job& precede(Job other);
 
-    /** Variadic: this job runs after all listed jobs complete. */
+    /**
+     * Declares that this job runs after all listed jobs complete.
+     * @tparam Jobs  Further Job handles.
+     * @param first  The first predecessor.
+     * @param rest   The remaining predecessors.
+     * @return *this for chaining.
+     */
     template< typename... Jobs >
     Job& succeed(Job first, Jobs... rest)
     {
@@ -130,7 +157,13 @@ public:
         return *this;
     }
 
-    /** Variadic: all listed jobs run after this job completes. */
+    /**
+     * Declares that all listed jobs run after this job completes.
+     * @tparam Jobs  Further Job handles.
+     * @param first  The first successor.
+     * @param rest   The remaining successors.
+     * @return *this for chaining.
+     */
     template< typename... Jobs >
     Job& precede(Job first, Jobs... rest)
     {
@@ -139,38 +172,51 @@ public:
         return *this;
     }
 
-    /** @return true if this handle refers to a valid job node. */
+    /**
+     * Reports whether this handle refers to a job node.
+     * @return true if this handle refers to a valid job node.
+     */
     [[nodiscard]] constexpr bool valid() const noexcept { return idx_ != cInvalid; }
 
-    /** @return true if this handle refers to a valid job node. */
+    /** Reports whether this handle refers to a valid job node, as valid() does. */
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return valid(); }
 
-    /** @return true if both handles refer to the same job of the same Pipeline. */
+    /** Compares two handles for identity: same job of the same Pipeline. */
     [[nodiscard]] constexpr bool operator==(Job other) const noexcept
     {
         return idx_ == other.idx_ && anchor_ == other.anchor_;
     }
 
     /**
-     * @return This job's identifier within its Pipeline: the value observers
-     *         receive and Pipeline::name(JobId) / successors(JobId) accept.
+     * Returns this job's identifier within its Pipeline.
+     * @return The value observers receive and Pipeline::name(JobId) /
+     *         successors(JobId) accept.
      * @note Meaningless for an invalid handle; check valid() first.
      */
     [[nodiscard]] constexpr JobId id() const noexcept { return idx_; }
 
     /**
-     * @return The Pipeline this job belongs to, or nullptr for a
-     *         default-constructed handle. Follows the Pipeline if it is moved.
+     * Returns the Pipeline this job belongs to.
+     * @return The Pipeline, or nullptr for a default-constructed handle.
+     *         Follows the Pipeline if it is moved.
      */
     [[nodiscard]] constexpr Pipeline* pipeline() const noexcept
     {
         return anchor_ ? anchor_->owner : nullptr;
     }
 
-    /** Declare that this job runs AFTER every job in @p group. */
+    /**
+     * Declare that this job runs AFTER every job in @p group.
+     * @param group  The predecessor jobs.
+     * @return *this for chaining.
+     */
     Job& succeed(JobGroup const& group);
 
-    /** Declare that every job in @p group runs AFTER this job. */
+    /**
+     * Declare that every job in @p group runs AFTER this job.
+     * @param group  The successor jobs.
+     * @return *this for chaining.
+     */
     Job& precede(JobGroup const& group);
 
 private:

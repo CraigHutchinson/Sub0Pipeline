@@ -44,10 +44,10 @@ public:
     /** Nothing to wait for: every job has finished by the time dispatch() returns. */
     void waitAll() override {}
 
-    /** @return 1. */
+    /** Returns 1: jobs never run in parallel. */
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 
-    /** @return true. */
+    /** Returns true: dispatch() runs each job before it returns. */
     [[nodiscard]] bool runsInline() const noexcept override { return true; }
 };
 
