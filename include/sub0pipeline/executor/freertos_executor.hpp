@@ -25,7 +25,7 @@ namespace sub0pipeline
  *
  * Owns one counting semaphore, created in the constructor. Construct it
  * wherever suits the caller (stack, member, static); it is neither copyable
- * nor movable. Call wait_all() before destroying it: the destructor does not
+ * nor movable. Call waitAll() before destroying it: the destructor does not
  * wait for running tasks. Task context only; not for use from an ISR.
  */
 class FreeRtosExecutor final : public IExecutor
@@ -48,7 +48,7 @@ public:
         uint8_t                       priority,
         uint32_t                      stackBytes) override;
 
-    void wait_all() override;
+    void waitAll() override;
 
     /** @return The number of processor cores FreeRTOS schedules on. */
     [[nodiscard]] int concurrency() const noexcept override;

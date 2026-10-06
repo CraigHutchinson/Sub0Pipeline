@@ -227,7 +227,7 @@ int main(int argc, char* argv[])
         auto validate = pipeline.emplace(work).name("validate");
         auto commit = pipeline.emplace([]() -> std::expected<void, PipelineError> {
             std::this_thread::sleep_for(std::chrono::milliseconds{40});
-            Pipeline::set_current_job_error("simulated required commit failure");
+            Pipeline::setCurrentJobError("simulated required commit failure");
             return std::unexpected(PipelineError::kJobFailed);
         }).name("commit");
         auto acknowledge = pipeline.emplace(work).name("acknowledge");

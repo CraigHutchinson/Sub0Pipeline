@@ -39,7 +39,7 @@ public:
         });
     }
 
-    void wait_all() override
+    void waitAll() override
     {
         // Drain loop: successor jobs may be dispatched during execution, so keep
         // joining until all threads are exhausted and inFlight_ reaches zero.
@@ -126,7 +126,7 @@ TEST_CASE("Concurrent: DesktopExecutor smoke test — sequential pipeline succee
     CHECK(counter == 2);
 }
 
-TEST_CASE("Concurrent: DesktopExecutor wait_all waits for a job still blocked when it is called")
+TEST_CASE("Concurrent: DesktopExecutor waitAll waits for a job still blocked when it is called")
 {
     DesktopExecutor exec;
     std::latch release{1};
@@ -134,7 +134,7 @@ TEST_CASE("Concurrent: DesktopExecutor wait_all waits for a job still blocked wh
 
     exec.dispatch("blocked", [&] { release.wait(); finished = true; }, nullptr, -1, 5, 8192U);
     std::jthread releaser{[&] { release.count_down(); }};
-    exec.wait_all();
+    exec.waitAll();
 
     CHECK(finished.load());
 }
@@ -180,7 +180,7 @@ TEST_CASE("SubDAG: ScopedExecutor -- desktop job creates dynamic inner pipeline 
     std::atomic<int> innerRuns{0};
     outer.emplace([&]() -> std::expected<void, PipelineError>
     {
-        // ScopedExecutor shares the thread pool but scopes wait_all()
+        // ScopedExecutor shares the thread pool but scopes waitAll()
         // to only the inner jobs -- avoids the self-wait deadlock.
         ScopedExecutor scoped{exec};
         Pipeline inner;

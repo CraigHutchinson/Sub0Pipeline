@@ -314,7 +314,7 @@ TEST_CASE("Pipeline: wide fan-in N=50")
 // Diagnostics
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("Pipeline: dump_text writes the graph to a caller-selected stream")
+TEST_CASE("Pipeline: dumpText writes the graph to a caller-selected stream")
 {
     Pipeline pipeline;
     auto root = pipeline.emplace([] {}).name("root");
@@ -324,7 +324,7 @@ TEST_CASE("Pipeline: dump_text writes the graph to a caller-selected stream")
     right.succeed(root);
 
     std::ostringstream output;
-    pipeline.dump_text(output);
+    pipeline.dumpText(output);
 
     CHECK(output.str() ==
           "Pipeline DAG (3 jobs):\n"
@@ -1010,7 +1010,7 @@ TEST_CASE("Tick loop: external stop waits for the active callback to finish")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Library inline executors: run_inline() and SequentialExecutor
+// Library inline executors: runInline() and SequentialExecutor
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // These used to call each job from inside its predecessor's completion, so
@@ -1030,7 +1030,7 @@ TEST_CASE("Inline executors: a 20000-job chain runs without recursing per link")
         previous = job;
     }
 
-    CHECK(pipeline.run_inline().has_value());
+    CHECK(pipeline.runInline().has_value());
     CHECK(ran == cJobs);
 
     SequentialExecutor sequential;
@@ -1056,7 +1056,7 @@ TEST_CASE("Inline executors: jobs run in the order they become ready")
     e.succeed(b);
 
     const std::vector<char> expected{'a', 'b', 'c', 'e', 'd'};
-    CHECK(pipeline.run_inline().has_value());
+    CHECK(pipeline.runInline().has_value());
     CHECK(order == expected);
 
     order.clear();

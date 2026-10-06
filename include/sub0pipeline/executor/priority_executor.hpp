@@ -33,7 +33,7 @@ namespace sub0pipeline
  * Owns its worker threads, which start in the constructor. The destructor
  * waits for every dispatched job and then joins the workers. Construct it
  * wherever suits the caller (stack, member, static); it is neither copyable
- * nor movable. dispatch() is thread-safe. Do not call wait_all() from inside a
+ * nor movable. dispatch() is thread-safe. Do not call waitAll() from inside a
  * job running on this executor; use ScopedExecutor for nested runs.
  */
 class PriorityExecutor final : public IExecutor
@@ -74,7 +74,7 @@ public:
         uint8_t                       priority,
         uint32_t                      stackBytes) override;
 
-    void wait_all() override;
+    void waitAll() override;
 
     /** @return The number of worker threads. */
     [[nodiscard]] int concurrency() const noexcept override;

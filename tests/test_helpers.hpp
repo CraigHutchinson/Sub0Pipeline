@@ -23,11 +23,11 @@ public:
         fn();
         if (onComplete) onComplete();
     }
-    void wait_all() override {}
+    void waitAll() override {}
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 };
 
-/// Controllable FIFO: all dispatches are queued until wait_all().
+/// Controllable FIFO: all dispatches are queued until waitAll().
 class QueuedExecutor final : public IExecutor
 {
 public:
@@ -39,7 +39,7 @@ public:
             if (complete) complete();
         });
     }
-    void wait_all() override
+    void waitAll() override
     {
         while (!queue_.empty())
         {
@@ -70,7 +70,7 @@ public:
         if (onComplete) onComplete();
     }
 
-    void wait_all() override {}
+    void waitAll() override {}
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 
     [[nodiscard]] const std::vector<std::string>& order() const { return order_; }

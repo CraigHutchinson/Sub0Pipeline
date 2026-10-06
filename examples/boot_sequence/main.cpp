@@ -17,28 +17,28 @@ namespace
 {
 
 // Simulated subsystem initialisers (sleep to mimic real work).
-auto nvs_init() -> std::expected<void, sub0pipeline::PipelineError>
+auto nvsInit() -> std::expected<void, sub0pipeline::PipelineError>
 {
     std::this_thread::sleep_for(20ms);
     std::printf("  [nvs]     initialised\n");
     return {};
 }
 
-auto display_init() -> std::expected<void, sub0pipeline::PipelineError>
+auto displayInit() -> std::expected<void, sub0pipeline::PipelineError>
 {
     std::this_thread::sleep_for(80ms);
     std::printf("  [display] initialised\n");
     return {};
 }
 
-auto network_init() -> std::expected<void, sub0pipeline::PipelineError>
+auto networkInit() -> std::expected<void, sub0pipeline::PipelineError>
 {
     std::this_thread::sleep_for(120ms);
     std::printf("  [network] initialised\n");
     return {};
 }
 
-auto app_start() -> std::expected<void, sub0pipeline::PipelineError>
+auto appStart() -> std::expected<void, sub0pipeline::PipelineError>
 {
     std::printf("  [app]     started\n");
     return {};
@@ -52,10 +52,10 @@ int main()
 
     Pipeline boot;
 
-    auto nvs     = boot.emplace(nvs_init).name("nvs");
-    auto display = boot.emplace(display_init).name("display").timeout(500ms);
-    auto network = boot.emplace(network_init).name("network").timeout(500ms);
-    auto app     = boot.emplace(app_start).name("app");
+    auto nvs     = boot.emplace(nvsInit).name("nvs");
+    auto display = boot.emplace(displayInit).name("display").timeout(500ms);
+    auto network = boot.emplace(networkInit).name("network").timeout(500ms);
+    auto app     = boot.emplace(appStart).name("app");
 
     // display and network both depend on nvs but NOT on each other.
     display.succeed(nvs);

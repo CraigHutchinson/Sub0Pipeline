@@ -126,20 +126,20 @@ int main()
     struct NoExpiry final : IDeadlineService
     {
         bool arm(Deadline&, std::chrono::milliseconds) noexcept override { return true; }
-        void cancel_and_wait(Deadline&) noexcept override {}
+        void cancelAndWait(Deadline&) noexcept override {}
     } deadline;
     Pipeline cooperative;
     (void)cooperative.emplace([](std::stop_token) -> std::expected<void, PipelineError> { return {}; }).timeout(1h);
-    cooperative.set_deadline_service(&deadline);
+    cooperative.setDeadlineService(&deadline);
     check(cooperative.run(executor));
     report("injected_cooperative_deadline", 100, [&] { check(cooperative.run(executor)); });
-    cooperative.set_deadline_service(nullptr);
+    cooperative.setDeadlineService(nullptr);
     report("native_cooperative_deadline", 100, [&] { check(cooperative.run(executor)); });
     report("owned_run_scope_chain10", 100, [&] { RunScope scope{pipe, executor}; check(scope.join()); });
 
     Pipeline event;
-    auto job = event.add_on_demand([]() -> std::expected<void, PipelineError> { return {}; });
+    auto job = event.addOnDemand([]() -> std::expected<void, PipelineError> { return {}; });
     event.arm(executor);
-    report("on_demand_retry", 100, [&] { check(event.trigger(job)); executor.wait_all(); event.join_orphans(); });
+    report("on_demand_retry", 100, [&] { check(event.trigger(job)); executor.waitAll(); event.joinOrphans(); });
     return 0;
 }

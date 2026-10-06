@@ -42,7 +42,7 @@ namespace sub0pipeline
 
 namespace
 {
-// Jobs call Pipeline::set_current_job_error() on the failure branch only.
+// Jobs call Pipeline::setCurrentJobError() on the failure branch only.
 // The string is read once (inside dispatchJob, after the job fn returns) and
 // immediately cleared.  On the success path the string is never touched --
 // zero allocation, zero reads, branch-predictor-friendly empty check.
@@ -290,7 +290,7 @@ struct Pipeline::Impl : detail::PipelineAnchor
     IObserver*                armedObserver_{nullptr};
 
     // Written once (under fatalMtx) when the first non-optional job fails.
-    // Readable after run() returns via Pipeline::first_failure_name().
+    // Readable after run() returns via Pipeline::firstFailureName().
     std::string               failedJobName_;
 
     // Hot atomic: written by every completing job thread on every run.
@@ -304,7 +304,7 @@ struct Pipeline::Impl : detail::PipelineAnchor
     // signalled or force-terminated, so its std::thread can no longer be
     // silently detach()'d -- that is exactly the "safe to free borrowed
     // state" ambiguity from issue #1. It is retained here, still joinable,
-    // until join_orphans() reaps it. See Pipeline::join_orphans() docs.
+    // until joinOrphans() reaps it. See Pipeline::joinOrphans() docs.
     mutable std::mutex        orphanMtx_;
     std::vector<std::jthread> orphanThreads_;
     std::mutex               joinMtx_;
@@ -377,7 +377,7 @@ struct Pipeline::Impl : detail::PipelineAnchor
             bool active = true;
             void reset() noexcept
             {
-                if (std::exchange(active, false)) service.cancel_and_wait(deadline);
+                if (std::exchange(active, false)) service.cancelAndWait(deadline);
             }
             ~Registration() { reset(); }
         } registration{*deadlines_, deadline};
@@ -514,7 +514,7 @@ struct Pipeline::Impl : detail::PipelineAnchor
 
 };
 
-void Pipeline::set_deadline_service(IDeadlineService* service)
+void Pipeline::setDeadlineService(IDeadlineService* service)
 {
     Impl::ensure(impl_, this).deadlines_ = service;
 }
@@ -946,7 +946,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     DispatchContext ctx{*impl_, *this, executor, observer, runId,
                         static_cast<uint32_t>(total),
                         hasFatalFailure, fatalError, fatalMtx,
-                        executor.runs_inline() ? &impl_->inlineReady_ : nullptr};
+                        executor.runsInline() ? &impl_->inlineReady_ : nullptr};
 
     // Forward an external stop with one registration for the whole run, not
     // one per job. It reaches every node: jobs not yet started are refused at
@@ -989,7 +989,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         }
     }
 
-    executor.wait_all();
+    executor.waitAll();
 
     if (hasFatalFailure.load(std::memory_order_acquire))
     {
@@ -1036,13 +1036,13 @@ auto Pipeline::successors(JobId id) const noexcept -> DependencyRange
     return DependencyRange{this, range.begin(), impl_->nodes_[id].successors_.size()};
 }
 
-std::string_view Pipeline::first_failure_name() const noexcept
+std::string_view Pipeline::firstFailureName() const noexcept
 {
     if (!impl_) return {};
     return impl_->failedJobName_;
 }
 
-void Pipeline::set_current_job_error(std::string_view msg) noexcept
+void Pipeline::setCurrentJobError(std::string_view msg) noexcept
 {
     // Called from within a job function on the failure branch.
     // Allocates only here (failure path); the success path never calls this.
@@ -1076,36 +1076,36 @@ struct InlineExecutor final : IExecutor
     void dispatch(std::string_view, std::function<void()> fn,
                   std::function<void()> oc, int, uint8_t, uint32_t) override
     { fn(); if (oc) oc(); }
-    void wait_all() override {}
+    void waitAll() override {}
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
-    [[nodiscard]] bool runs_inline() const noexcept override { return true; }
+    [[nodiscard]] bool runsInline() const noexcept override { return true; }
 };
 } // namespace
 
-auto Pipeline::run_inline(IObserver* observer) -> std::expected<void, PipelineError>
+auto Pipeline::runInline(IObserver* observer) -> std::expected<void, PipelineError>
 {
     InlineExecutor exec;
     return run(exec, observer);
 }
 
-auto Pipeline::run_inline(std::stop_token external, IObserver* observer)
+auto Pipeline::runInline(std::stop_token external, IObserver* observer)
     -> std::expected<void, PipelineError>
 {
     InlineExecutor exec;
     return run(exec, std::move(external), observer);
 }
 
-bool Pipeline::join_orphans()
+bool Pipeline::joinOrphans()
 {
     return impl_ && impl_->joinOrphans();
 }
 
-bool Pipeline::has_pending_orphans() const noexcept
+bool Pipeline::hasPendingOrphans() const noexcept
 {
     return impl_ && impl_->pendingOrphans_.load(std::memory_order_acquire) != 0;
 }
 
-void Pipeline::run_until(IExecutor& executor, std::stop_token stop,
+void Pipeline::runUntil(IExecutor& executor, std::stop_token stop,
                          IObserver* observer,
                          std::function<void(PipelineError)> onError)
 {
@@ -1126,13 +1126,13 @@ void Pipeline::arm(IExecutor& executor, IObserver* observer) noexcept
     impl.armedObserver_ = observer;
 }
 
-Job Pipeline::add_on_demand(std::function<std::expected<void, PipelineError>()> fn)
+Job Pipeline::addOnDemand(std::function<std::expected<void, PipelineError>()> fn)
 {
     return Job{Impl::ensure(impl_, this).addNode(Impl::ignoringStop(std::move(fn)), "on_demand_",
                                            Node::kFlagOnDemand), impl_.get()};
 }
 
-Job Pipeline::add_on_demand(
+Job Pipeline::addOnDemand(
     std::function<std::expected<void, PipelineError>(std::stop_token)> fn)
 {
     return Job{Impl::ensure(impl_, this).addNode(std::move(fn), "on_demand_",
@@ -1151,7 +1151,7 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
     if (!nd.isOnDemand())
         return std::unexpected(PipelineError::kNotOnDemand);
 
-    if (impl_->running_.test(std::memory_order_acquire) || has_pending_orphans())
+    if (impl_->running_.test(std::memory_order_acquire) || hasPendingOrphans())
         return std::unexpected(PipelineError::kBusy);
     {
         std::lock_guard lock{impl_->stopMtx_};
@@ -1166,7 +1166,7 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
     IObserver*  obs  = impl_->armedObserver_;
 
     // Capture by index, not by nd reference: nodes_ may reallocate if another
-    // add_on_demand() is called before the dispatch lambda executes.
+    // addOnDemand() is called before the dispatch lambda executes.
     exec->dispatch(
         nd.nameStr_,
         [impl = impl_.get(), pipeline = this, idx = j.idx_, obs]
@@ -1202,7 +1202,7 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
 
 // ── Diagnostics ───────────────────────────────────────────────────────────────
 
-void Pipeline::dump_text(std::ostream& output) const
+void Pipeline::dumpText(std::ostream& output) const
 {
     if (!impl_) return;
     output << "Pipeline DAG (" << impl_->nodes_.size() << " jobs):\n";

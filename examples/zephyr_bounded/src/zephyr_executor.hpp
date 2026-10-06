@@ -22,7 +22,7 @@ public:
     }
     ~ZephyrExecutor() override
     {
-        wait_all();
+        waitAll();
         Task* stop = nullptr;
         k_msgq_put(&queue_, &stop, K_FOREVER);
         k_thread_join(&thread_, K_FOREVER);
@@ -49,7 +49,7 @@ public:
             finish(nullptr);
         }
     }
-    void wait_all() override
+    void waitAll() override
     {
         k_mutex_lock(&mutex_, K_FOREVER);
         while (pending_ != 0) k_condvar_wait(&ready_, &mutex_, K_FOREVER);

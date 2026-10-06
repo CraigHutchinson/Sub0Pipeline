@@ -82,7 +82,7 @@ public:
      *   pipe.emplace([](std::stop_token st) -> std::expected<void, PipelineError> {
      *       while (!st.stop_requested())
      *       {
-     *           if (!fetch_chunk()) break;
+     *           if (!fetchChunk()) break;
      *       }
      *       if (st.stop_requested())
      *           return std::unexpected(PipelineError::kCancelled);
@@ -140,7 +140,7 @@ public:
      * Cooperative timed bodies use no helper thread with an injected service;
      * plain timed bodies still need a native worker to enforce a cutoff.
      */
-    void set_deadline_service(IDeadlineService* service);
+    void setDeadlineService(IDeadlineService* service);
 
     // ── Execution ────────────────────────────────────────────────────────
 
@@ -172,10 +172,10 @@ public:
      * Consumers must make retries idempotent using durable operation identifiers.
      *
      * run() waits for executor callbacks, but timed-out non-cooperative jobs may
-     * remain: call join_orphans() before releasing borrowed state. Subsequent
+     * remain: call joinOrphans() before releasing borrowed state. Subsequent
      * runs join previous orphans before resetting state; concurrent runs return
      * kBusy. The executor, observer, Pipeline and borrowed state must remain
-     * alive until run() and join_orphans() have completed. Owner teardown must
+     * alive until run() and joinOrphans() have completed. Owner teardown must
      * request stop and join its run thread before destroying those members.
      */
     [[nodiscard]] auto run(IExecutor& executor, std::stop_token external,
@@ -187,36 +187,36 @@ public:
      *
      * Convenience overload that creates an inline sequential executor internally.
      * Untimed jobs execute in dependency order on the calling thread. Timeout
-     * enforcement may create helper threads; join_orphans() still applies.
+     * enforcement may create helper threads; joinOrphans() still applies.
      * Useful for request-scoped pipelines, tests, and embedded contexts where
      * creating an executor explicitly would be boilerplate.
      *
      * @code
      *   Pipeline pipe;
      *   pipe >> "parse"_job(parse) >> "validate"_job(validate) >> "commit"_job(commit);
-     *   auto result = pipe.run_inline();   // no executor needed
+     *   auto result = pipe.runInline();   // no executor needed
      * @endcode
      */
-    [[nodiscard]] auto run_inline(IObserver* observer = nullptr)
+    [[nodiscard]] auto runInline(IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
     /** Execute with external cancellation using the inline executor.
-     * Timed jobs may use helper threads; the run()/join_orphans() contract applies.
+     * Timed jobs may use helper threads; the run()/joinOrphans() contract applies.
      */
-    [[nodiscard]] auto run_inline(std::stop_token external, IObserver* observer = nullptr)
+    [[nodiscard]] auto runInline(std::stop_token external, IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
-    /** Join timed-out non-cooperative jobs after run() or executor.wait_all().
+    /** Join timed-out non-cooperative jobs after run() or executor.waitAll().
      * May block indefinitely if a job never returns. Concurrent joiners are
      * serialized. Do not call from a job, or start new work during teardown.
      * Returns whether this call reaped any threads.
      */
-    bool join_orphans();
+    bool joinOrphans();
 
     /** True while timed-out threads remain unreaped, including during a join.
      * Thread-safe query, not a substitute for joining or synchronizing producers.
      */
-    [[nodiscard]] bool has_pending_orphans() const noexcept;
+    [[nodiscard]] bool hasPendingOrphans() const noexcept;
 
     /** @return Current status of a job (kPending before run()). */
     [[nodiscard]] auto status(Job j) const noexcept -> JobStatus;
@@ -240,10 +240,10 @@ public:
      * Useful for error reporting without requiring an IObserver:
      * @code
      *   auto r = pipe.run(exec);
-     *   if (!r) fmt::print("Failed job: {}\n", pipe.first_failure_name());
+     *   if (!r) fmt::print("Failed job: {}\n", pipe.firstFailureName());
      * @endcode
      */
-    [[nodiscard]] std::string_view first_failure_name() const noexcept;
+    [[nodiscard]] std::string_view firstFailureName() const noexcept;
 
     /**
      * Set a diagnostic message for the job currently executing on this thread.
@@ -256,14 +256,14 @@ public:
      *   auto fn = [&]() -> std::expected<void, PipelineError> {
      *       if (!connect())
      *       {
-     *           Pipeline::set_current_job_error("TCP connect timed out after 30s");
+     *           Pipeline::setCurrentJobError("TCP connect timed out after 30s");
      *           return std::unexpected(PipelineError::kJobFailed);
      *       }
      *       return {};
      *   };
      * @endcode
      */
-    static void set_current_job_error(std::string_view msg) noexcept;
+    static void setCurrentJobError(std::string_view msg) noexcept;
 
     /**
      * Returns a lightweight status snapshot of all jobs, for status bars and UI.
@@ -319,7 +319,7 @@ public:
      * iterations in the job functions or by wrapping this call:
      * @code
      *   std::jthread worker([&](std::stop_token st) {
-     *       pipe.run_until(exec, st, observer,
+     *       pipe.runUntil(exec, st, observer,
      *           [&](PipelineError e) { reconnect(); });
      *   });
      * @endcode
@@ -329,7 +329,7 @@ public:
      *                  error. The callback may call stop.request_stop() on the
      *                  outer jthread to abort the loop on unrecoverable errors.
      */
-    void run_until(IExecutor& executor, std::stop_token stop,
+    void runUntil(IExecutor& executor, std::stop_token stop,
                    IObserver* observer = nullptr,
                    std::function<void(PipelineError)> onError = nullptr);
 
@@ -360,12 +360,12 @@ public:
      * not execute during the normal DAG execution phase. Call arm() with an
      * executor before calling trigger().
      */
-    [[nodiscard]] Job add_on_demand(std::function<std::expected<void, PipelineError>()> fn);
+    [[nodiscard]] Job addOnDemand(std::function<std::expected<void, PipelineError>()> fn);
 
     /**
      * Register a cancellable on-demand job (receives `std::stop_token`).
      *
-     * Equivalent to `add_on_demand()` but the function is called with the job's
+     * Equivalent to `addOnDemand()` but the function is called with the job's
      * stop token, enabling cooperative cancellation via `Job::cancel()` or
      * `.timeout()`. Sets `kFlagCancellable` so the watchdog path is used rather
      * than the hard packaged_task cutoff.
@@ -373,7 +373,7 @@ public:
      * Primary use case: a device transfer queue drainer that must exit cleanly when
      * a client session disconnects.
      */
-    [[nodiscard]] Job add_on_demand(
+    [[nodiscard]] Job addOnDemand(
         std::function<std::expected<void, PipelineError>(std::stop_token)> fn);
 
     /**
@@ -420,7 +420,7 @@ public:
     // ── Diagnostics ───────────────────────────────────────────────────────
 
     /** Write a human-readable dependency list to the caller-selected stream. */
-    void dump_text(std::ostream& output) const;
+    void dumpText(std::ostream& output) const;
 
 private:
     struct Node;

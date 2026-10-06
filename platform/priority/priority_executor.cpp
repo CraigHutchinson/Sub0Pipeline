@@ -30,7 +30,7 @@ PriorityExecutor::PriorityExecutor(Options options)
 
 PriorityExecutor::~PriorityExecutor()
 {
-    wait_all();
+    waitAll();
     {
         std::lock_guard lk{mtx_};
         stopping_ = true;
@@ -60,7 +60,7 @@ void PriorityExecutor::dispatch(
     if (wake) wake_.notify_one();
 }
 
-void PriorityExecutor::wait_all()
+void PriorityExecutor::waitAll()
 {
     std::unique_lock lk{doneMtx_};
     doneCv_.wait(lk, [this]{ return inFlight_.load(std::memory_order_acquire) == 0U; });

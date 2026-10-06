@@ -22,7 +22,7 @@ public:
             result_ = pipeline.run(executor, stop_.get_token(), observer);
             // A rejected concurrent run does not own the other run's workers.
             if (result_ || result_.error() != PipelineError::kBusy)
-                pipeline.join_orphans();
+                pipeline.joinOrphans();
             complete_.store(true, std::memory_order_release);
         }} {}
     ~RunScope() { request_stop(); (void)join(); }

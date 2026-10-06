@@ -25,10 +25,10 @@ namespace sub0pipeline
  * PriorityExecutor for throughput. Core affinity, priority and stack hints are
  * ignored.
  *
- * Owns its threads: wait_all() and the destructor join every job dispatched so
+ * Owns its threads: waitAll() and the destructor join every job dispatched so
  * far. Construct it wherever suits the caller (stack, member, static); it is
  * neither copyable nor movable. dispatch() is thread-safe. Do not call
- * wait_all() from inside a job running on this executor; use ScopedExecutor
+ * waitAll() from inside a job running on this executor; use ScopedExecutor
  * for nested runs.
  */
 class DesktopExecutor final : public IExecutor
@@ -50,7 +50,7 @@ public:
         uint8_t                       priority,
         uint32_t                      stackBytes) override;
 
-    void wait_all() override;
+    void waitAll() override;
 
     /** @return `std::thread::hardware_concurrency()`. */
     [[nodiscard]] int concurrency() const noexcept override;
@@ -58,7 +58,7 @@ public:
 private:
     std::mutex                mtx_;      ///< Guards threads_ and inFlight_.
     std::condition_variable   idle_;     ///< Signalled when inFlight_ reaches zero.
-    std::vector<std::thread>  threads_;  ///< Started since the last wait_all() join.
+    std::vector<std::thread>  threads_;  ///< Started since the last waitAll() join.
     uint32_t                  inFlight_{0U};
 };
 

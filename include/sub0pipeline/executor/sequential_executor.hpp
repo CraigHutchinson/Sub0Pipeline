@@ -18,7 +18,7 @@ namespace sub0pipeline
  *
  * No threads and no state, so execution order is deterministic: ideal for unit
  * tests and for targets without `std::thread`. Because it reports
- * runs_inline(), Pipeline::run() calls ready jobs from a loop in the order they
+ * runsInline(), Pipeline::run() calls ready jobs from a loop in the order they
  * become ready, and stack depth does not grow with the length of a dependency
  * chain. Core affinity, priority and stack hints are ignored.
  *
@@ -42,13 +42,13 @@ public:
     }
 
     /** Nothing to wait for: every job has finished by the time dispatch() returns. */
-    void wait_all() override {}
+    void waitAll() override {}
 
     /** @return 1. */
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 
     /** @return true. */
-    [[nodiscard]] bool runs_inline() const noexcept override { return true; }
+    [[nodiscard]] bool runsInline() const noexcept override { return true; }
 };
 
 } // namespace sub0pipeline

@@ -28,7 +28,7 @@ public:
         }
         return false;
     }
-    void cancel_and_wait(Deadline& deadline) noexcept override
+    void cancelAndWait(Deadline& deadline) noexcept override
     {
         for (auto& slot : slots) if (slot.deadline == &deadline) slot = {};
     }
@@ -55,7 +55,7 @@ TEST_CASE("Deadline: exact boundary, status, successor suppression and clean ret
 {
     ManualClock clock;
     Pipeline pipe;
-    pipe.set_deadline_service(&clock);
+    pipe.setDeadlineService(&clock);
     bool expire = true;
     int acks = 0;
     auto commit = pipe.emplace([&](std::stop_token token) -> std::expected<void, PipelineError> {
@@ -66,14 +66,14 @@ TEST_CASE("Deadline: exact boundary, status, successor suppression and clean ret
         return {}; // An ignored timeout must not become success.
     }).timeout(10ms);
     auto ack = pipe.emplace([&] { ++acks; }).succeed(commit);
-    auto result = pipe.run_inline();
+    auto result = pipe.runInline();
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kTimeout);
     CHECK(pipe.status(commit) == JobStatus::kTimedOut);
     CHECK(pipe.status(ack) == JobStatus::kSkipped);
     CHECK(acks == 0);
     expire = false;
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
     clock.advance(100ms); // Cancelled registrations must not touch destroyed stack state.
     CHECK(acks == 1);
     CHECK(clock.arms == 2);
@@ -85,17 +85,17 @@ TEST_CASE("Deadline: immediate expiry suppresses plain and cooperative bodies")
     {
         ManualClock clock;
         Pipeline pipe;
-        pipe.set_deadline_service(&clock);
+        pipe.setDeadlineService(&clock);
         bool ran = false;
         auto job = cooperative
             ? pipe.emplace([&](std::stop_token) -> std::expected<void, PipelineError> { ran = true; return {}; })
             : pipe.emplace([&] { ran = true; });
         job.timeout(0ms);
-        auto result = pipe.run_inline();
+        auto result = pipe.runInline();
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == PipelineError::kTimeout);
         CHECK_FALSE(ran);
-        CHECK_FALSE(pipe.has_pending_orphans());
+        CHECK_FALSE(pipe.hasPendingOrphans());
     }
 }
 
@@ -104,15 +104,15 @@ TEST_CASE("Deadline: registration exhaustion fails closed and untimed work skips
     struct Full final : IDeadlineService
     {
         bool arm(Deadline&, std::chrono::milliseconds) noexcept override { return false; }
-        void cancel_and_wait(Deadline&) noexcept override { CHECK(false); }
+        void cancelAndWait(Deadline&) noexcept override { CHECK(false); }
     } full;
     Pipeline pipe;
-    pipe.set_deadline_service(&full);
+    pipe.setDeadlineService(&full);
     int ran = 0;
     auto job = pipe.emplace([&] { ++ran; });
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
     job.timeout(10ms);
-    auto result = pipe.run_inline();
+    auto result = pipe.runInline();
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kDeadlineUnavailable);
     CHECK(ran == 1);
@@ -122,7 +122,7 @@ TEST_CASE("Deadline: external cancellation stays cancellation, on-demand uses sa
 {
     ManualClock clock;
     Pipeline pipe;
-    pipe.set_deadline_service(&clock);
+    pipe.setDeadlineService(&clock);
     QueuedExecutor executor;
     std::stop_source stop;
     auto job = pipe.emplace([&](std::stop_token token) -> std::expected<void, PipelineError> {
@@ -133,13 +133,13 @@ TEST_CASE("Deadline: external cancellation stays cancellation, on-demand uses sa
     auto result = pipe.run(executor, stop.get_token());
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kCancelled);
-    auto event = pipe.add_on_demand([&](std::stop_token) -> std::expected<void, PipelineError> {
+    auto event = pipe.addOnDemand([&](std::stop_token) -> std::expected<void, PipelineError> {
         clock.advance(10ms);
         return {};
     }).timeout(10ms);
     pipe.arm(executor);
     REQUIRE(pipe.trigger(event).has_value());
-    executor.wait_all();
+    executor.waitAll();
     CHECK(pipe.status(event) == JobStatus::kTimedOut);
     CHECK(clock.arms == 2);
 }
@@ -195,7 +195,7 @@ TEST_CASE("RunScope: completion includes non-cooperative timeout work")
     CHECK(result.error() == PipelineError::kTimeout);
     CHECK(scope.complete());
     CHECK(finished);
-    CHECK_FALSE(pipe.has_pending_orphans());
+    CHECK_FALSE(pipe.hasPendingOrphans());
 }
 
 TEST_CASE("On-demand: cancellation resets for retry and duplicate queueing is rejected")
@@ -203,17 +203,17 @@ TEST_CASE("On-demand: cancellation resets for retry and duplicate queueing is re
     Pipeline pipe, other;
     QueuedExecutor executor;
     int ran = 0;
-    auto event = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> { ++ran; return {}; });
-    auto foreign = other.add_on_demand([]() -> std::expected<void, PipelineError> { return {}; });
+    auto event = pipe.addOnDemand([&]() -> std::expected<void, PipelineError> { ++ran; return {}; });
+    auto foreign = other.addOnDemand([]() -> std::expected<void, PipelineError> { return {}; });
     pipe.arm(executor);
     CHECK(pipe.trigger(foreign).error() == PipelineError::kUnknownJob);
     REQUIRE(pipe.trigger(event).has_value());
     CHECK(pipe.trigger(event).error() == PipelineError::kBusy);
     event.cancel();
-    executor.wait_all();
+    executor.waitAll();
     CHECK(ran == 0);
     REQUIRE(pipe.trigger(event).has_value());
-    executor.wait_all();
+    executor.waitAll();
     CHECK(ran == 1);
 }
 
@@ -229,7 +229,7 @@ public:
         armed.count_down();
         return true;
     }
-    void cancel_and_wait(Deadline&) noexcept override
+    void cancelAndWait(Deadline&) noexcept override
     {
         std::unique_lock lock{mutex};
         slot = nullptr;
@@ -262,7 +262,7 @@ TEST_CASE("Deadline: completion drains a concurrently executing stop callback")
     ControlledClock clock;
     InlineExecutor executor;
     Pipeline pipe;
-    pipe.set_deadline_service(&clock);
+    pipe.setDeadlineService(&clock);
     std::latch entered{1}, callbackEntered{1}, releaseCallback{1}, bodyMayReturn{1};
     std::atomic<bool> touchedBorrowed{false};
     (void)pipe.emplace([&](std::stop_token token) -> std::expected<void, PipelineError> {
@@ -294,31 +294,31 @@ TEST_CASE("Deadline: plain blocked worker remains owned after injected expiry")
 {
     ControlledClock clock;
     Pipeline pipe;
-    pipe.set_deadline_service(&clock);
+    pipe.setDeadlineService(&clock);
     std::latch entered{1}, release{1};
     bool finished = false;
     (void)pipe.emplace([&] { entered.count_down(); release.wait(); finished = true; }).timeout(10ms);
     std::expected<void, PipelineError> result;
-    std::jthread runner{[&] { result = pipe.run_inline(); }};
+    std::jthread runner{[&] { result = pipe.runInline(); }};
     entered.wait();
     clock.expire();
     runner.join();
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kTimeout);
-    CHECK(pipe.has_pending_orphans());
+    CHECK(pipe.hasPendingOrphans());
     release.count_down();
-    pipe.join_orphans();
+    pipe.joinOrphans();
     CHECK(finished);
-    CHECK_FALSE(pipe.has_pending_orphans());
+    CHECK_FALSE(pipe.hasPendingOrphans());
 }
 
 TEST_CASE("Deadline: plain completion unregisters without waiting for expiry")
 {
     ControlledClock clock;
     Pipeline pipe;
-    pipe.set_deadline_service(&clock);
+    pipe.setDeadlineService(&clock);
     (void)pipe.emplace([] {}).timeout(1h);
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
     clock.expire(); // no access to the destroyed registration
-    CHECK_FALSE(pipe.has_pending_orphans());
+    CHECK_FALSE(pipe.hasPendingOrphans());
 }

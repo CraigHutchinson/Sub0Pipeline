@@ -12,7 +12,7 @@ namespace sub0pipeline
 {
 
 // A std::thread must not die joinable.
-DesktopExecutor::~DesktopExecutor() { wait_all(); }
+DesktopExecutor::~DesktopExecutor() { waitAll(); }
 
 void DesktopExecutor::dispatch(
     std::string_view              /*name*/,
@@ -37,7 +37,7 @@ void DesktopExecutor::dispatch(
     ++inFlight_;
 }
 
-void DesktopExecutor::wait_all()
+void DesktopExecutor::waitAll()
 {
     std::unique_lock lk{mtx_};
     // Jobs may dispatch successors, and joining releases the lock, so

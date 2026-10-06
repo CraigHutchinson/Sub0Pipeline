@@ -18,7 +18,7 @@ enum class PipelineError : uint8_t
     kCyclicDependency,  ///< The DAG contains a cycle.
     kUnknownJob,        ///< Operation on an invalid Job handle.
     kNotArmed,          ///< trigger() called before arm() -- no executor stored.
-    kNotOnDemand,       ///< trigger() called on a job not registered via add_on_demand().
+    kNotOnDemand,       ///< trigger() called on a job not registered via addOnDemand().
     kCancelled,         ///< Job was cancelled externally via Job::cancel() or a stop token.
     kBusy,              ///< Another run or invocation is already active.
     kDeadlineUnavailable, ///< Injected deadline service has no free registration.

@@ -13,7 +13,7 @@
 //   #include "sub0pipeline/dsl.hpp"
 //   using namespace sub0pipeline::dsl;
 //   Pipeline pipe;
-//   pipe >> "load"_job(load_data)
+//   pipe >> "load"_job(loadData)
 //        >> "parse"_job(parse).timeout(500ms) + "validate"_job(validate)
 //        >> "commit"_job(commit);
 
@@ -114,7 +114,7 @@ public:
         : specs_{std::move(specs)...} {}
 
     /// Emplace all specs into the pipeline, return a JobGroup.
-    JobGroup build_all(Pipeline& p) const
+    JobGroup buildAll(Pipeline& p) const
     {
         return std::apply(
             [&p](const auto&... specs) {
@@ -135,15 +135,15 @@ namespace detail
 {
 
 template<typename... Fs>
-JobSpecGroup<Fs...> make_spec_group(JobSpec<Fs>... specs)
+JobSpecGroup<Fs...> makeSpecGroup(JobSpec<Fs>... specs)
 {
     return JobSpecGroup<Fs...>{std::move(specs)...};
 }
 
 template<typename Tuple, std::size_t... Is>
-auto tuple_to_spec_group(Tuple&& t, std::index_sequence<Is...>)
+auto tupleToSpecGroup(Tuple&& t, std::index_sequence<Is...>)
 {
-    return make_spec_group(std::get<Is>(std::forward<Tuple>(t))...);
+    return makeSpecGroup(std::get<Is>(std::forward<Tuple>(t))...);
 }
 
 } // namespace detail
@@ -370,7 +370,7 @@ auto operator>>(Pipeline& pipe, JobSpecGroup<Fs...> const& rhs)
 template<typename... Fs>
 JobGroup operator>>(Job lhs, JobSpecGroup<Fs...> const& rhs)
 {
-    auto group = rhs.build_all(*lhs.pipeline());
+    auto group = rhs.buildAll(*lhs.pipeline());
     for (auto j : group.jobs()) lhs.precede(j);
     return group;
 }
@@ -379,7 +379,7 @@ JobGroup operator>>(Job lhs, JobSpecGroup<Fs...> const& rhs)
 template<typename... Fs>
 JobGroup operator>>(JobGroup const& lhs, JobSpecGroup<Fs...> const& rhs)
 {
-    auto rhsGroup = rhs.build_all(*lhs.jobs().front().pipeline());
+    auto rhsGroup = rhs.buildAll(*lhs.jobs().front().pipeline());
     for (auto l : lhs.jobs())
         for (auto r : rhsGroup.jobs())
             l.precede(r);
@@ -479,7 +479,7 @@ auto operator+(JobSpecGroup<Fs...> const& lhs, JobSpec<F> rhs)
 {
     return std::apply(
         [&rhs](const auto&... existing) {
-            return detail::make_spec_group(existing..., std::move(rhs));
+            return detail::makeSpecGroup(existing..., std::move(rhs));
         },
         lhs.tuple());
 }

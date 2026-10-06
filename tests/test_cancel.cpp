@@ -225,7 +225,7 @@ TEST_CASE("Cancel: successor cancellation survives run initialization")
     auto commit = pipe.emplace([&] { committed = true; ack.cancel(); });
     ack = pipe.emplace([&] { ackRan = true; });
     ack.succeed(commit);
-    auto result = pipe.run_inline();
+    auto result = pipe.runInline();
     CHECK(committed);
     CHECK_FALSE(ackRan);
     REQUIRE_FALSE(result.has_value());
@@ -267,7 +267,7 @@ TEST_CASE("Cancel: every edge suppresses later device stages")
             if (previous.valid()) job.succeed(previous);
             previous = job;
         }
-        auto result = pipe.run_inline(stop.get_token());
+        auto result = pipe.runInline(stop.get_token());
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == PipelineError::kCancelled);
         CHECK(calls == edge + 1);
@@ -284,7 +284,7 @@ TEST_CASE("Cancel: optional cancellation is fatal but ordinary optional failure 
             return std::unexpected(error);
         }).optional();
         auto next = pipe.emplace([&] { successorRan = true; }).succeed(first);
-        auto result = pipe.run_inline();
+        auto result = pipe.runInline();
         CHECK(result.has_value() == (error == PipelineError::kJobFailed));
         CHECK(successorRan == (error == PipelineError::kJobFailed));
         CHECK(pipe.status(next) == (successorRan ? JobStatus::kDone : JobStatus::kSkipped));
@@ -305,7 +305,7 @@ TEST_CASE("Cancel: external request releases an in-flight cooperative wait")
         return std::unexpected(PipelineError::kCancelled);
     });
     std::expected<void, PipelineError> result;
-    std::jthread runner{[&] { result = pipe.run_inline(stop.get_token()); }};
+    std::jthread runner{[&] { result = pipe.runInline(stop.get_token()); }};
     entered.wait();
     stop.request_stop();
     runner.join();
@@ -322,7 +322,7 @@ TEST_CASE("Cancel: failed commit never acknowledges")
         return std::unexpected(PipelineError::kJobFailed);
     });
     auto ack = pipe.emplace([&] { ackRan = true; }).succeed(commit);
-    CHECK_FALSE(pipe.run_inline().has_value());
+    CHECK_FALSE(pipe.runInline().has_value());
     CHECK_FALSE(ackRan);
     CHECK(pipe.status(ack) == JobStatus::kSkipped);
 }
@@ -336,7 +336,7 @@ TEST_CASE("Cancel: an external stop during a run does not block a later on-deman
     std::stop_source external;
     int demanded = 0;
     (void)pipe.emplace([&] { external.request_stop(); });
-    auto job = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+    auto job = pipe.addOnDemand([&]() -> std::expected<void, PipelineError> {
         ++demanded;
         return {};
     });
@@ -354,14 +354,14 @@ TEST_CASE("Cancel: queued on-demand execution uses the same cancellation gate")
     Pipeline pipe;
     QueuedExecutor executor;
     bool ran = false;
-    auto job = pipe.add_on_demand([&]() -> std::expected<void, PipelineError> {
+    auto job = pipe.addOnDemand([&]() -> std::expected<void, PipelineError> {
         ran = true;
         return {};
     });
     pipe.arm(executor);
     REQUIRE(pipe.trigger(job).has_value());
     job.cancel();
-    executor.wait_all();
+    executor.waitAll();
     CHECK_FALSE(ran);
     CHECK(pipe.status(job) == JobStatus::kCancelled);
 }
@@ -374,20 +374,20 @@ TEST_CASE("Timeout: joining retains the pending signal until borrowed state is r
     auto job = pipe.emplace([&] {
         release.wait();
         // A joiner must not clear the pending signal before this access ends.
-        CHECK(pipe.has_pending_orphans());
+        CHECK(pipe.hasPendingOrphans());
         finished = true;
     }).timeout(0ms);
-    auto result = pipe.run_inline();
+    auto result = pipe.runInline();
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == PipelineError::kTimeout);
-    CHECK(pipe.has_pending_orphans());
+    CHECK(pipe.hasPendingOrphans());
     CHECK_FALSE(finished.load());
-    std::jthread joiner{[&] { CHECK(pipe.join_orphans()); }};
+    std::jthread joiner{[&] { CHECK(pipe.joinOrphans()); }};
     release.count_down();
     joiner.join();
     CHECK(finished.load());
-    CHECK_FALSE(pipe.has_pending_orphans());
-    CHECK_FALSE(pipe.join_orphans());
+    CHECK_FALSE(pipe.hasPendingOrphans());
+    CHECK_FALSE(pipe.joinOrphans());
 }
 
 TEST_CASE("Cancel: owner teardown joins before destroying borrowed members")
@@ -410,14 +410,14 @@ TEST_CASE("Cancel: owner teardown joins before destroying borrowed members")
                 CHECK(record == 42);
                 return std::unexpected(PipelineError::kCancelled);
             });
-            runner = std::jthread{[this] { (void)pipe.run_inline(stop.get_token()); }};
+            runner = std::jthread{[this] { (void)pipe.runInline(stop.get_token()); }};
             entered.wait();
         }
         ~Device()
         {
             stop.request_stop();
             runner.join();
-            pipe.join_orphans();
+            pipe.joinOrphans();
         }
     };
     auto device = std::make_unique<Device>();
@@ -428,11 +428,11 @@ TEST_CASE("Run: reentrant execution is rejected")
 {
     Pipeline pipe;
     (void)pipe.emplace([&] {
-        auto nested = pipe.run_inline();
+        auto nested = pipe.runInline();
         REQUIRE_FALSE(nested.has_value());
         CHECK(nested.error() == PipelineError::kBusy);
     });
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
 }
 
 TEST_CASE("Cancel: fan-in stays skipped and a fresh run can retry")
@@ -460,7 +460,7 @@ TEST_CASE("Timeout: successful cooperative work does not wait for its deadline")
     (void)pipe.emplace([](std::stop_token) -> std::expected<void, PipelineError> {
         return {};
     }).timeout(24h);
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
 }
 
 TEST_CASE("Failure: concurrent shared descendants finish exactly once before return")

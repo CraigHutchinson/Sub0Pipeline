@@ -71,7 +71,7 @@ consumers only link what they need.
    setting), and documented with ownership, lifetime and thread-safety. Keep
    platform headers out of it so that it can be included on any host.
 2. Define it in `platform/<name>/<name>_executor.cpp`, implementing `dispatch()`,
-   `wait_all()` and `concurrency()`.
+   `waitAll()` and `concurrency()`.
 3. Add `platform/<name>/CMakeLists.txt` with a `Sub0Pipeline::<Name>` alias target
 4. Wire the CMake option `SUB0PIPELINE_PLATFORM_<NAME>` in the root `CMakeLists.txt`
 5. Include the header from `executors.hpp`. If it should be a platform default,

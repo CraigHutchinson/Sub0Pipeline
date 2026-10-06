@@ -21,7 +21,7 @@ namespace sub0pipeline
  * Contract:
  *   - dispatch() MUST increment its in-flight counter before returning.
  *   - dispatch() MUST eventually call onComplete() from the dispatched context.
- *   - wait_all() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
+ *   - waitAll() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
  */
 class IExecutor
 {
@@ -46,7 +46,7 @@ public:
         uint32_t                      stackBytes) = 0;
 
     /** Block until dispatched jobs and their completion callbacks have returned. */
-    virtual void wait_all() = 0;
+    virtual void waitAll() = 0;
 
     /** @return Number of parallel execution slots (cores / thread pool size). */
     [[nodiscard]] virtual int concurrency() const noexcept = 0;
@@ -62,7 +62,7 @@ public:
      * stack hints do not apply to such a run. Pipeline::trigger() still goes
      * through dispatch().
      */
-    [[nodiscard]] virtual bool runs_inline() const noexcept { return false; }
+    [[nodiscard]] virtual bool runsInline() const noexcept { return false; }
 };
 
 } // namespace sub0pipeline

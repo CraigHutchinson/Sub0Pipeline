@@ -128,7 +128,7 @@ void FreeRtosExecutor::dispatch(
     }
 }
 
-void FreeRtosExecutor::wait_all()
+void FreeRtosExecutor::waitAll()
 {
     // Drain: block until all in-flight tasks have completed.
     while (inFlight_.load(std::memory_order_acquire) > 0U)

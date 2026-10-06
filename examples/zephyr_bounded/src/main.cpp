@@ -31,12 +31,12 @@ static int exercise()
     bool acknowledged = false;
     (void)cancelled.emplace([&] { acknowledged = true; }).succeed(read);
     auto result = cancelled.run(executor, stop.get_token());
-    cancelled.join_orphans();
+    cancelled.joinOrphans();
     if (result || result.error() != PipelineError::kCancelled || acknowledged) return 2;
     Pipeline io;
     k_sem entered;
     k_sem_init(&entered, 0, 1);
-    auto event = io.add_on_demand([&](std::stop_token token) -> std::expected<void, PipelineError> {
+    auto event = io.addOnDemand([&](std::stop_token token) -> std::expected<void, PipelineError> {
         std::stop_callback wake{token, [&] { k_sem_give(&ready); }};
         k_sem_give(&entered);
         k_sem_take(&ready, K_FOREVER);
@@ -46,8 +46,8 @@ static int exercise()
     if (!io.trigger(event)) return 3;
     k_sem_take(&entered, K_FOREVER);
     event.cancel();
-    executor.wait_all();
-    io.join_orphans();
+    executor.waitAll();
+    io.joinOrphans();
     if (io.status(event) != JobStatus::kCancelled) return 4;
     return 0;
 }

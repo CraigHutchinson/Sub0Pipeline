@@ -1,11 +1,11 @@
 // examples/validate_dag/main.cpp
 //
-// Demonstrates Pipeline::validate(), stream-based dump_text(), and cycle detection.
+// Demonstrates Pipeline::validate(), stream-based dumpText(), and cycle detection.
 // Uses SequentialExecutor for deterministic output.
 //
 // Demo 1 — Valid DAG passes validation:
 //   root → (A, B) → sink  (diamond shape, 4 nodes)
-//   Explicit validate(), dump_text(std::cout), then run().
+//   Explicit validate(), dumpText(std::cout), then run().
 //
 // Demo 2 — Cycle is caught before execution:
 //   X → Y → Z → X   (3-node cycle)
@@ -66,8 +66,8 @@ int main()
         std::printf("  validate()==pass:  %s\n", valid.has_value() ? "pass" : "FAIL");
 
         // Print the DAG structure for inspection.
-        std::printf("  DAG structure (dump_text):\n");
-        pipeline.dump_text(std::cout);
+        std::printf("  DAG structure (dumpText):\n");
+        pipeline.dumpText(std::cout);
 
         auto result = pipeline.run(exec);
         std::printf("  pipeline.size():   %zu\n", pipeline.size());

@@ -99,7 +99,7 @@ TEST_CASE("Validation: run() calls validate() implicitly")
     {
         void dispatch(std::string_view, std::function<void()>, std::function<void()>,
                       int, uint8_t, uint32_t) override {}
-        void wait_all() override {}
+        void waitAll() override {}
         [[nodiscard]] int concurrency() const noexcept override { return 1; }
     } exec;
 

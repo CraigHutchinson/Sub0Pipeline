@@ -111,7 +111,7 @@ public:
         fn();
         if (oc) oc();
     }
-    void wait_all() override {}
+    void waitAll() override {}
     [[nodiscard]] int concurrency() const noexcept override { return 1; }
 };
 
@@ -369,7 +369,7 @@ int main(int argc, char** argv)
 
     // ── Library inline executors ─────────────────────────────────────────────
     // The cases above use this file's own executor. These use the two the
-    // library ships, which is what run_inline() and bare-metal callers get.
+    // library ships, which is what runInline() and bare-metal callers get.
 
     runner.group("Library inline executors", Cost::kCheap);
 
@@ -377,7 +377,7 @@ int main(int argc, char** argv)
         SequentialExecutor sequential;
         Pipeline pipeline;
         buildChain(pipeline, 10);
-        runner.run("run_inline: 10-job linear chain", [&] { (void)pipeline.run_inline(); });
+        runner.run("run_inline: 10-job linear chain", [&] { (void)pipeline.runInline(); });
         runner.run("sequential executor: 10-job linear chain", [&]
         {
             (void)pipeline.run(sequential);
@@ -432,7 +432,7 @@ int main(int argc, char** argv)
         Pipeline pipeline;
         buildLayered(pipeline, 20, 50, 4);
         runner.run("1000-job layered DAG (20x50, fan-in 4)", [&] { (void)pipeline.run(exec); });
-        runner.run("run_inline: 1000-job layered DAG", [&] { (void)pipeline.run_inline(); });
+        runner.run("run_inline: 1000-job layered DAG", [&] { (void)pipeline.runInline(); });
         runner.run("validate 1000-job layered DAG", [&]
         {
             ankerl::nanobench::doNotOptimizeAway(pipeline.validate());
@@ -484,12 +484,12 @@ int main(int argc, char** argv)
         });
 
         Pipeline onDemand;
-        auto job = onDemand.add_on_demand([]() -> std::expected<void, PipelineError> { return {}; });
+        auto job = onDemand.addOnDemand([]() -> std::expected<void, PipelineError> { return {}; });
         onDemand.arm(pool);
         runner.run("priority(4): on-demand trigger and wait", [&]
         {
             (void)onDemand.trigger(job);
-            pool.wait_all();
+            pool.waitAll();
         });
     }
 
@@ -533,7 +533,7 @@ int main(int argc, char** argv)
         (void)plain.emplace([] {}).timeout(std::chrono::milliseconds{10});
         runner.run("plain timeout configured plus join", [&] {
             (void)plain.run(exec);
-            plain.join_orphans();
+            plain.joinOrphans();
         });
     }
 

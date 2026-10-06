@@ -46,7 +46,7 @@ TEST_CASE("Executors: SequentialExecutor is usable as a plain local object")
 {
     SequentialExecutor executor;
     CHECK(executor.concurrency() == 1);
-    CHECK(executor.runs_inline());
+    CHECK(executor.runsInline());
     CHECK(runFanOut(executor, 8) == 9);
 }
 
@@ -55,7 +55,7 @@ TEST_CASE("Executors: DesktopExecutor is usable as a local object and as a membe
     {
         DesktopExecutor executor;
         CHECK(runFanOut(executor, 8) == 9);
-        CHECK(runFanOut(executor, 3) == 4);   // reusable after wait_all()
+        CHECK(runFanOut(executor, 3) == 4);   // reusable after waitAll()
     }
 
     struct Owner

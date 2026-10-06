@@ -1,6 +1,6 @@
 // examples/on_demand_jobs/main.cpp
 //
-// Demonstrates add_on_demand() + arm() + trigger():
+// Demonstrates addOnDemand() + arm() + trigger():
 // - On-demand jobs are excluded from the normal run() execution phase.
 // - arm() stores an executor for later trigger() calls.
 // - trigger() dispatches the job immediately via the armed executor.
@@ -32,7 +32,7 @@ int main()
     std::atomic<int> rebootCount{0};
     std::atomic<int> otaCount{0};
 
-    auto reboot = events.add_on_demand([&]() -> std::expected<void, PipelineError>
+    auto reboot = events.addOnDemand([&]() -> std::expected<void, PipelineError>
     {
         std::printf("  [event] reboot requested (count=%d)\n",
                     rebootCount.fetch_add(1, std::memory_order_relaxed) + 1);
@@ -40,7 +40,7 @@ int main()
     });
     reboot.name("reboot");
 
-    auto ota = events.add_on_demand([&]() -> std::expected<void, PipelineError>
+    auto ota = events.addOnDemand([&]() -> std::expected<void, PipelineError>
     {
         std::printf("  [event] OTA update triggered (count=%d)\n",
                     otaCount.fetch_add(1, std::memory_order_relaxed) + 1);
@@ -54,7 +54,7 @@ int main()
     // Verify on-demand jobs do NOT run during normal run() (no normal jobs here,
     // so the pipeline is empty from run()'s perspective).
     (void)events.run(exec);
-    exec.wait_all();
+    exec.waitAll();
     std::printf("After run(): rebootCount=%d otaCount=%d (both should be 0)\n\n",
                 rebootCount.load(), otaCount.load());
 
@@ -70,7 +70,7 @@ int main()
     if (auto r = events.trigger(reboot); !r)
         std::printf("  trigger(reboot) #2 failed\n");
 
-    exec.wait_all();
+    exec.waitAll();
 
     std::printf("\nFinal counts: reboot=%d ota=%d\n",
                 rebootCount.load(), otaCount.load());

@@ -73,7 +73,7 @@ public:
      * @param jobName  Name of the failed job.
      * @param error    The PipelineError code.
      * @param message  Diagnostic string set by the job via
-     *                 Pipeline::set_current_job_error() -- empty if the job
+     *                 Pipeline::setCurrentJobError() -- empty if the job
      *                 did not provide context. The view is valid only during
      *                 this callback; supplying diagnostic text may allocate.
      */

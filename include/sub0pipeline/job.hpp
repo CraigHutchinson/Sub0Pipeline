@@ -51,7 +51,7 @@ public:
      *
      * If the job function does not return within `t`, the engine returns
      * `kTimeout` / `kTimedOut` and cascades skip to all successors.
-     * The timed-out job remains owned until join_orphans(); functions must
+     * The timed-out job remains owned until joinOrphans(); functions must
      * also timeout at the syscall level (TCP connect, subprocess pipe).
      *
      * Default: `std::chrono::milliseconds::max()` (no timeout).

@@ -131,7 +131,7 @@ TEST_CASE("PoolSuccessors: a 5000-job fan-out builds, keeps push order and runs 
     JobId expected = 1;
     for (const auto target : successors) CHECK(target.id == expected++);
 
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
     CHECK(ran.load() == cN + 1);
 }
 
@@ -159,7 +159,7 @@ TEST_CASE("PoolSuccessors: interleaved wide fan-outs relocate without disturbing
     for (const auto target : fromSecond) { CHECK(target.id == expected); expected += 2; }
 
     CHECK(pipe.validate().has_value());
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
 }
 
 #if SUB0PIPELINE_EXCEPTIONS
@@ -178,7 +178,7 @@ TEST_CASE("PoolSuccessors: one job accepts 32767 successors and rejects the next
     CHECK(pipe.successors(JobId{0}).size() == static_cast<std::size_t>(cLimit));
 
     // The rejected edge left nothing behind: the job is an ordinary root.
-    CHECK(pipe.run_inline().has_value());
+    CHECK(pipe.runInline().has_value());
     CHECK(extraRan.load());
 }
 #endif

@@ -21,10 +21,10 @@
 //
 // Usage:
 //   sub0pipeline::Pipeline pipe;
-//   auto a = pipe.emplace([] { return init_a(); }).name("A");
-//   auto b = pipe.emplace([] { return init_b(); }).name("B").timeout(8s);
-//   auto c = pipe.emplace([] { return init_c(); }).name("C").timeout(10s);
-//   auto d = pipe.emplace([] { return start_d(); }).name("D");
+//   auto a = pipe.emplace([] { return initA(); }).name("A");
+//   auto b = pipe.emplace([] { return initB(); }).name("B").timeout(8s);
+//   auto c = pipe.emplace([] { return initC(); }).name("C").timeout(10s);
+//   auto d = pipe.emplace([] { return startD(); }).name("D");
 //   d.succeed(b, c);   // D depends on both B and C
 //   // B and C have no mutual dependency — run in parallel
 //   pipe.run(executor, &observer);

@@ -143,37 +143,37 @@ private:
 namespace
 {
 
-auto nvs_init() -> std::expected<void, PipelineError>
+auto nvsInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(20ms);
     return {};
 }
 
-auto wifi_init() -> std::expected<void, PipelineError>
+auto wifiInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(80ms);
     return {};
 }
 
-auto display_init() -> std::expected<void, PipelineError>
+auto displayInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(60ms);
     return {};
 }
 
-auto mqtt_init() -> std::expected<void, PipelineError>
+auto mqttInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(40ms);
     return {};
 }
 
-auto ui_init() -> std::expected<void, PipelineError>
+auto uiInit() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(30ms);
     return {};
 }
 
-auto app_start() -> std::expected<void, PipelineError>
+auto appStart() -> std::expected<void, PipelineError>
 {
     std::this_thread::sleep_for(10ms);
     return {};
@@ -187,12 +187,12 @@ int main()
 {
     Pipeline boot;
 
-    auto nvs     = boot.emplace(nvs_init).name("nvs");
-    auto wifi    = boot.emplace(wifi_init).name("wifi").timeout(500ms);
-    auto display = boot.emplace(display_init).name("display").timeout(500ms);
-    auto mqtt    = boot.emplace(mqtt_init).name("mqtt").timeout(500ms);
-    auto ui      = boot.emplace(ui_init).name("ui");
-    auto app     = boot.emplace(app_start).name("app");
+    auto nvs     = boot.emplace(nvsInit).name("nvs");
+    auto wifi    = boot.emplace(wifiInit).name("wifi").timeout(500ms);
+    auto display = boot.emplace(displayInit).name("display").timeout(500ms);
+    auto mqtt    = boot.emplace(mqttInit).name("mqtt").timeout(500ms);
+    auto ui      = boot.emplace(uiInit).name("ui");
+    auto app     = boot.emplace(appStart).name("app");
 
     wifi.succeed(nvs);
     display.succeed(nvs);
