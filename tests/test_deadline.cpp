@@ -1,7 +1,7 @@
 #include "doctest.h"
 #include "test_helpers.hpp"
-#include <sub0pipeline/deadline.hpp>
-#include <sub0pipeline/run_scope.hpp>
+#include "sub0pipeline/deadline.hpp"
+#include "sub0pipeline/run_scope.hpp"
 #include <array>
 #include <condition_variable>
 #include <latch>

@@ -5,7 +5,7 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
-#include <sub0pipeline/dsl.hpp>
+#include "sub0pipeline/dsl.hpp"
 #include "doctest.h"
 #include "test_helpers.hpp"
 

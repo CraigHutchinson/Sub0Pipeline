@@ -1,6 +1,6 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include "nanobench.h"
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 
 #include <chrono>
 #include <cstddef>

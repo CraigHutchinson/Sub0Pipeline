@@ -4,7 +4,7 @@
 // Shared test helpers -- InlineExecutor and RecordingExecutor used across
 // multiple test translation units.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 
 #include <string>
 #include <deque>

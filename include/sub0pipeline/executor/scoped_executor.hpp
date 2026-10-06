@@ -3,7 +3,7 @@
 // ScopedExecutor — scopes wait_all() to its own dispatches for nested sub-DAG runs.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <atomic>
 #include <condition_variable>

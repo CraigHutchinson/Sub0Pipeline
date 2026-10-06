@@ -2,7 +2,7 @@
 //
 // On-demand job tests (run_inline and add_on_demand / arm / trigger).
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "test_helpers.hpp"
 #include "doctest.h"
 

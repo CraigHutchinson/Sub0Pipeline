@@ -4,7 +4,7 @@
 // Header-only: nothing to link beyond the core library.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <cstdint>
 #include <functional>

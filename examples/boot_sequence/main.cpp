@@ -6,7 +6,7 @@
 // 'display' and 'network' have no dependency on each other, so the
 // DesktopExecutor runs them in parallel via std::thread.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <chrono>
 #include <cstdio>
 #include <thread>

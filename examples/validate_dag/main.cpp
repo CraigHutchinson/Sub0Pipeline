@@ -19,7 +19,7 @@
 //   Re-uses the valid diamond DAG from Demo 1.
 //   No explicit validate() call — run() handles it automatically.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <cstdio>
 #include <iostream>
 

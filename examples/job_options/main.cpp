@@ -21,7 +21,7 @@
 // Demo 4 — Job validity and comparison:
 //   Job::valid(), operator bool(), operator==.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <cstdio>
 #include <expected>
 

@@ -8,7 +8,7 @@
 // Compare with examples/boot_sequence/main.cpp for the same pattern
 // expressed with the core API.
 
-#include <sub0pipeline/dsl.hpp>
+#include "sub0pipeline/dsl.hpp"
 
 #include <chrono>
 #include <cstdio>

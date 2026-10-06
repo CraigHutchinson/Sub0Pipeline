@@ -1,6 +1,6 @@
 #pragma once
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <thread>
 
 namespace sub0pipeline {

@@ -1,7 +1,7 @@
 // Standalone opt-in audit. Never link these replacement operators into consumers.
-#include <sub0pipeline/sub0pipeline.hpp>
-#include <sub0pipeline/deadline.hpp>
-#include <sub0pipeline/run_scope.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
+#include "sub0pipeline/deadline.hpp"
+#include "sub0pipeline/run_scope.hpp"
 #include "test_helpers.hpp"
 #include <atomic>
 #include <cstdio>

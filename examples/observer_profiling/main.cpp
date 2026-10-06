@@ -11,7 +11,7 @@
 //   display(60ms) → ui(30ms)
 //   mqtt + ui → app(10ms)
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <chrono>
 #include <map>
 #include <mutex>

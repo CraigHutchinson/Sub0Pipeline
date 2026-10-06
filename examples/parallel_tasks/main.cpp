@@ -6,7 +6,7 @@
 // Demonstrates real parallelism with DesktopExecutor and measures wall-clock
 // speedup versus sequential execution.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstdio>

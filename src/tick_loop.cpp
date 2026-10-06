@@ -12,7 +12,7 @@
 #undef _GLIBCXX_USE_POSIX_SEMAPHORE
 #endif
 
-#include <sub0pipeline/tick_loop.hpp>
+#include "sub0pipeline/tick_loop.hpp"
 
 #include <chrono>
 #include <cstddef>

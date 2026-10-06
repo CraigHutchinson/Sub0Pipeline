@@ -10,7 +10,7 @@
 // activates operators, the UDL, and helper types.
 //
 // Usage:
-//   #include <sub0pipeline/dsl.hpp>
+//   #include "sub0pipeline/dsl.hpp"
 //   using namespace sub0pipeline::dsl;
 //   Pipeline pipe;
 //   pipe >> "load"_job(load_data)
@@ -18,7 +18,7 @@
 //        >> "commit"_job(commit);
 
 #pragma once
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 
 #include <array>
 #include <chrono>

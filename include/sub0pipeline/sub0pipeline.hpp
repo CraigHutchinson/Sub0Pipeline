@@ -31,12 +31,12 @@
 //
 #pragma once
 
-#include <sub0pipeline/config.hpp>
-#include <sub0pipeline/dependency_range.hpp>
-#include <sub0pipeline/error.hpp>
-#include <sub0pipeline/executors.hpp>
-#include <sub0pipeline/job.hpp>
-#include <sub0pipeline/job_group.hpp>
-#include <sub0pipeline/observer.hpp>
-#include <sub0pipeline/pipeline.hpp>
-#include <sub0pipeline/tick_loop.hpp>
+#include "sub0pipeline/config.hpp"
+#include "sub0pipeline/dependency_range.hpp"
+#include "sub0pipeline/error.hpp"
+#include "sub0pipeline/executors.hpp"
+#include "sub0pipeline/job.hpp"
+#include "sub0pipeline/job_group.hpp"
+#include "sub0pipeline/observer.hpp"
+#include "sub0pipeline/pipeline.hpp"
+#include "sub0pipeline/tick_loop.hpp"

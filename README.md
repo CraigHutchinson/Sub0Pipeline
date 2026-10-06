@@ -74,7 +74,7 @@ fixed-capacity execution remain separate work. See
 ## Quick start
 
 ```cpp
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 using namespace sub0pipeline;
 
 Pipeline pipe;
@@ -102,7 +102,7 @@ pipe.join_orphans();
 ### Optional DSL
 
 ```cpp
-#include <sub0pipeline/dsl.hpp>
+#include "sub0pipeline/dsl.hpp"
 using namespace sub0pipeline;
 using namespace sub0pipeline::dsl;
 
@@ -283,7 +283,7 @@ exhaustion recoverable.
 | Events / ticks | `add_on_demand`, `arm`, `trigger`; `TickLoop::add`, `TickLoop::run(stop_token)` |
 | Job configuration | `name`, `statusText`, `timeout`, `optional`, `priority`, `core`, `stack` |
 
-`<sub0pipeline/sub0pipeline.hpp>` includes the whole core API. Each part can
+`"sub0pipeline/sub0pipeline.hpp"` includes the whole core API. Each part can
 also be included on its own:
 
 | Header | Provides |
@@ -318,8 +318,8 @@ and [observer header](include/sub0pipeline/observer.hpp).
 ## Injected deadlines and owned runs
 
 ```cpp
-#include <sub0pipeline/deadline.hpp>
-#include <sub0pipeline/run_scope.hpp>
+#include "sub0pipeline/deadline.hpp"
+#include "sub0pipeline/run_scope.hpp"
 
 // service, executor, graph and borrowed state must outlive the run scope.
 pipeline.set_deadline_service(&service); // IDeadlineService, configured while idle

@@ -1,5 +1,5 @@
 #include "qt_executor.hpp"
-#include <sub0pipeline/run_scope.hpp>
+#include "sub0pipeline/run_scope.hpp"
 #include <QCoreApplication>
 #include <atomic>
 #include <condition_variable>

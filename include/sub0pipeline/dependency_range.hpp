@@ -3,7 +3,7 @@
 // DependencyRange — non-owning view of a node's successors.
 #pragma once
 
-#include <sub0pipeline/job.hpp>
+#include "sub0pipeline/job.hpp"
 
 #include <cstddef>
 #include <cstdint>

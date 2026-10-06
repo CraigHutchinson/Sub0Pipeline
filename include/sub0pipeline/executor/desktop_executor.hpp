@@ -4,7 +4,7 @@
 // Link Sub0Pipeline::Desktop.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <condition_variable>
 #include <cstdint>

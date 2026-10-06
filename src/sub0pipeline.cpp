@@ -13,8 +13,8 @@
 #undef _GLIBCXX_USE_POSIX_SEMAPHORE
 #endif
 
-#include <sub0pipeline/sub0pipeline.hpp>
-#include <sub0pipeline/deadline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
+#include "sub0pipeline/deadline.hpp"
 
 #include <atomic>
 #include <chrono>

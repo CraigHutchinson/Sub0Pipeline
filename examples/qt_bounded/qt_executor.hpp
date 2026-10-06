@@ -1,5 +1,5 @@
 #pragma once
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include <QThreadPool>
 #include <algorithm>
 #include <condition_variable>

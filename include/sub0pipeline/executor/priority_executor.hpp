@@ -4,7 +4,7 @@
 // Link Sub0Pipeline::Priority.
 #pragma once
 
-#include <sub0pipeline/executor/executor.hpp>
+#include "sub0pipeline/executor/executor.hpp"
 
 #include <atomic>
 #include <condition_variable>

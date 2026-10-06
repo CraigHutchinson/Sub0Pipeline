@@ -3,9 +3,9 @@
 // IObserver — opt-in run/job/dependency event hooks, and the RunId that groups them.
 #pragma once
 
-#include <sub0pipeline/dependency_range.hpp>
-#include <sub0pipeline/error.hpp>
-#include <sub0pipeline/job.hpp>
+#include "sub0pipeline/dependency_range.hpp"
+#include "sub0pipeline/error.hpp"
+#include "sub0pipeline/job.hpp"
 
 #include <cstdint>
 #include <string_view>

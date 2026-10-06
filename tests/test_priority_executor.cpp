@@ -5,7 +5,7 @@
 // factory, not a fake IExecutor -- these properties only exist in the real
 // thread-pool implementation.
 
-#include <sub0pipeline/sub0pipeline.hpp>
+#include "sub0pipeline/sub0pipeline.hpp"
 #include "doctest.h"
 
 #include <atomic>
