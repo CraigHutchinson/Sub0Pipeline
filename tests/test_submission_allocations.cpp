@@ -171,7 +171,7 @@ TEST_CASE("Submission allocation: bounded queued storage is reused without ordin
     }
 }
 
-TEST_CASE("Submission allocation: scoped completion construction fails before accounting")
+TEST_CASE("Submission allocation: scoped dispatch preparation fails before accounting")
 {
     AllocationRejectingExecutor parent{"unused"};
     ScopedExecutor scoped{parent};

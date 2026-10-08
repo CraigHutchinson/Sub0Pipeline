@@ -196,7 +196,7 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |
 | Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
 | Priority worker pool | Construct `PriorityExecutor` with `Options::threadCount` and optional `queueCapacity` | Fixed worker count; zero capacity keeps the dynamic queue; positive capacity reserves queued storage at startup and rejects overflow; callable and platform allocations remain |
-| Scoped executor | Construct `ScopedExecutor` over a parent | Local completion accounting; wrapper storage can allocate before submission; rejected submissions roll back the local count |
+| Scoped executor | Construct `ScopedExecutor` over a parent | Local completion accounting; shared packet and wrappers can allocate before submission; rejected submissions roll back the count; original targets are destroyed before local completion |
 | Desktop execution | Construct `DesktopExecutor` | One native thread per dispatched job |
 | Snapshots / text diagnostics | Call the API | Snapshot allocation or formatting/I/O; not automatic |
 | DSL | Include `dsl.hpp` | Compile-time composition; ordinary graph-construction costs still apply |

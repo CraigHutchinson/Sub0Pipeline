@@ -308,7 +308,8 @@ public:
     [[nodiscard]] auto successors(JobId id) const noexcept -> DependencyRange;
 
     /**
-     * Returns the name of the first non-optional job that failed in the most recent run().
+     * Returns the job name associated with the first fatal error in the latest run().
+     * Cancellation and executor rejection are fatal even for optional jobs.
      *
      * Empty string if the last run() succeeded or has not been called yet.
      * Useful for error reporting without requiring an IObserver:

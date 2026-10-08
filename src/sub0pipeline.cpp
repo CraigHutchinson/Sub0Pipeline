@@ -290,7 +290,7 @@ struct Pipeline::Impl : detail::PipelineAnchor
     IExecutor*                armedExecutor_{nullptr};
     IObserver*                armedObserver_{nullptr};
 
-    // Written once (under fatalMtx) when the first non-optional job fails.
+    // Written once under fatalMtx for the first fatal body/cancellation/submission error.
     // Readable after run() returns via Pipeline::firstFailureName().
     std::string               failedJobName_;
 

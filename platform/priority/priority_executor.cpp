@@ -125,6 +125,9 @@ void PriorityExecutor::work(const std::function<void()>& onThreadStart)
         }
         job.fn();
         if (job.onComplete) job.onComplete();
+        // Completion may borrow state owned only by the body target.
+        job.onComplete = {};
+        job.fn = {};
         // Only the completion that empties the executor has a waiter to
         // wake. Taking doneMtx_ there orders the notify after the waiter's
         // predicate check, so it cannot be missed.

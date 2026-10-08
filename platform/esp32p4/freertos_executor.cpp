@@ -97,10 +97,10 @@ void FreeRtosExecutor::dispatch(
         inFlight_.fetch_add(1U, std::memory_order_relaxed);
         fnCopy();
         if (onCompleteCopy) onCompleteCopy();
-        fn = {};
         onComplete = {};
-        fnCopy = {};
         onCompleteCopy = {};
+        fn = {};
+        fnCopy = {};
         xSemaphoreGive(semaphore(completionSem_));
         inFlight_.fetch_sub(1U, std::memory_order_release);
         return;

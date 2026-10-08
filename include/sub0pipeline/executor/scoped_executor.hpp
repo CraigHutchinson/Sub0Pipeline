@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string_view>
 #include <utility>
@@ -45,7 +46,10 @@ namespace sub0pipeline
  *
  * A parent submission exception rejects both callbacks and is rethrown after
  * local accounting is restored. Accepted bodies and callbacks must not throw.
- * Completion-wrapper storage can allocate before the parent sees a submission.
+ * Packet and wrapper storage can allocate before the parent sees a submission.
+ * Body-owned state remains alive through completion; both original targets are
+ * destroyed before this scope publishes completion, even if the parent retains
+ * the wrapper functions.
  */
 class ScopedExecutor final : public IExecutor
 {
@@ -66,9 +70,12 @@ public:
         uint8_t               priority,
         uint32_t              stackBytes) override
     {
-        std::function<void()> completion = [this, oc = std::move(onComplete)]() mutable
+        auto state = std::make_shared<DispatchState>(DispatchState{std::move(fn), std::move(onComplete)});
+        std::function<void()> body = [state] { state->fn_(); };
+        std::function<void()> completion = [this, state]
         {
-            if (oc) oc();
+            if (state->onComplete_) state->onComplete_();
+            state->clearTargets();
             finishDispatch();
         };
         localInFlight_.fetch_add(1U, std::memory_order_relaxed);
@@ -76,12 +83,13 @@ public:
         try
         {
 #endif
-            parent_.dispatch(name, std::move(fn), std::move(completion),
+            parent_.dispatch(name, std::move(body), std::move(completion),
                              coreAffinity, priority, stackBytes);
 #if defined(__cpp_exceptions) || defined(_CPPUNWIND)
         }
         catch (...)
         {
+            state->clearTargets();
             finishDispatch();
             throw;
         }
@@ -108,6 +116,18 @@ public:
     }
 
 private:
+    struct DispatchState
+    {
+        std::function<void()> fn_;
+        std::function<void()> onComplete_;
+
+        void clearTargets() noexcept
+        {
+            onComplete_ = {};
+            fn_ = {};
+        }
+    };
+
     void finishDispatch()
     {
         // Publish completion and notify before the waiter can destroy us.

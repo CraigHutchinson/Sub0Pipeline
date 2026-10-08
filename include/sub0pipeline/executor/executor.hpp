@@ -26,7 +26,9 @@ namespace sub0pipeline
  *     or invoked. Exceptions while constructing its arguments also reject.
  *   - waitAll() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
  *     It MUST NOT throw while accepted callbacks can still execute.
- *   - Job bodies and completion callbacks MUST NOT throw across the executor.
+ *     Accepted body/completion targets are destroyed before publishing completion;
+ *     body-owned state remains alive until the completion target is destroyed.
+ *   - Job bodies, completion callbacks and callable destructors MUST NOT throw.
  */
 class IExecutor
 {

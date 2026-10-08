@@ -46,7 +46,7 @@ public:
         {
             fn();
             if (complete) complete();
-            fn = {}; complete = {};
+            complete = {}; fn = {};
             finish(nullptr);
         }
     }
@@ -69,7 +69,7 @@ private:
             if (!task) return;
             task->fn();
             if (task->complete) task->complete();
-            task->fn = {}; task->complete = {};
+            task->complete = {}; task->fn = {};
             finish(task);
         }
     }

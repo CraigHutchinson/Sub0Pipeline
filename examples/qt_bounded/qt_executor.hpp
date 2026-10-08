@@ -30,7 +30,7 @@ public:
             fn();
             if (complete) complete();
             // Destroy borrowed callable captures before publishing completion.
-            fn = {}; complete = {};
+            complete = {}; fn = {};
             std::lock_guard lock{mutex_};
             --pending_;
             ready_.notify_all();

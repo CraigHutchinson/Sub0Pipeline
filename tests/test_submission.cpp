@@ -112,6 +112,78 @@ struct ThrowingStartCopy
     }
     StartCopyState& state_;
 };
+
+struct DestructionGate
+{
+    std::latch entered_{1};
+    std::latch release_{1};
+    std::atomic<bool> finished_{false};
+};
+
+/** Owns state whose reclamation must precede the executor's join publication. */
+struct GatedPayload
+{
+    explicit GatedPayload(DestructionGate& gate) noexcept : gate_{gate} {}
+    ~GatedPayload()
+    {
+        gate_.entered_.count_down();
+        gate_.release_.wait();
+        gate_.finished_ = true;
+    }
+
+    DestructionGate& gate_;
+    int value_{17};
+};
+
+/** A completion target can borrow body-owned state until its own destruction. */
+struct BorrowingCompletion
+{
+    std::weak_ptr<int> body_;
+    std::atomic<bool>& violation_;
+    std::atomic<int>& calls_;
+
+    ~BorrowingCompletion()
+    {
+        if (body_.expired())
+        {
+            violation_ = true;
+        }
+    }
+
+    void operator()() const noexcept { ++calls_; }
+};
+
+/** Retains parent wrapper storage until its own join, independently of a scope. */
+class RetainingExecutor final : public IExecutor
+{
+public:
+    void dispatch(std::string_view, std::function<void()> fn,
+                  std::function<void()> onComplete, int, uint8_t, uint32_t) override
+    {
+        fn_ = std::move(fn);
+        onComplete_ = std::move(onComplete);
+    }
+
+    void runAccepted()
+    {
+        fn_();
+        if (onComplete_)
+        {
+            onComplete_();
+        }
+    }
+
+    void waitAll() override
+    {
+        onComplete_ = {};
+        fn_ = {};
+    }
+
+    [[nodiscard]] int concurrency() const noexcept override { return 1; }
+
+    std::function<void()> fn_;
+    std::function<void()> onComplete_;
+};
 }
 
 TEST_CASE("Submission: bounded pool rejects a full queue and remains reusable")
@@ -155,6 +227,150 @@ TEST_CASE("Submission: bounded pool retains queued priority ordering")
     executor.waitAll();
     CHECK(high == 1);
     CHECK(low == 2);
+}
+
+TEST_CASE("Submission: pool join includes accepted target destruction")
+{
+    DestructionGate gate;
+    PriorityExecutor executor{{.threadCount = 1, .queueCapacity = 1}};
+    std::latch bodyEntered{1}, releaseBody{1}, waiterEntered{1};
+    auto payload = std::make_shared<GatedPayload>(gate);
+    const std::weak_ptr<GatedPayload> bodyRetained = payload;
+    auto completionPayload = std::make_shared<int>(23);
+    const std::weak_ptr<int> completionRetained = completionPayload;
+    const auto* borrowed = payload.get();
+    std::atomic<bool> completionRead{false}, returned{false}, reclaimedAtJoin{false};
+    executor.dispatch("owned", [payload, &bodyEntered, &releaseBody]
+    {
+        bodyEntered.count_down();
+        releaseBody.wait();
+    }, [borrowed, completionPayload, &completionRead]
+    {
+        completionRead = borrowed->value_ == 17 && *completionPayload == 23;
+    }, -1, 5, 0);
+    bodyEntered.wait();
+    payload.reset();
+    completionPayload.reset();
+    std::jthread waiter{[&]
+    {
+        waiterEntered.count_down();
+        executor.waitAll();
+        reclaimedAtJoin = gate.finished_.load() && completionRetained.expired();
+        returned = true;
+    }};
+    waiterEntered.wait();
+    releaseBody.count_down();
+    gate.entered_.wait();
+    CHECK_FALSE(returned.load());
+    CHECK(completionRetained.expired());
+    gate.release_.count_down();
+    waiter.join();
+    CHECK(completionRead.load());
+    CHECK(reclaimedAtJoin.load());
+    CHECK(bodyRetained.expired());
+}
+
+TEST_CASE("Submission: scoped join destroys targets without joining unrelated parent work")
+{
+    DestructionGate gate;
+    PriorityExecutor parent{{.threadCount = 2, .queueCapacity = 2}};
+    std::latch unrelatedEntered{1}, releaseUnrelated{1};
+    std::atomic<bool> unrelatedFinished{false};
+    parent.dispatch("unrelated", [&]
+    {
+        unrelatedEntered.count_down();
+        releaseUnrelated.wait();
+        unrelatedFinished = true;
+    }, {}, -1, 5, 0);
+    unrelatedEntered.wait();
+    auto scope = std::make_unique<ScopedExecutor>(parent);
+    std::latch bodyEntered{1}, releaseBody{1}, waiterEntered{1};
+    auto payload = std::make_shared<GatedPayload>(gate);
+    const std::weak_ptr<GatedPayload> retained = payload;
+    const auto* borrowed = payload.get();
+    std::atomic<bool> completionRead{false}, returned{false}, reclaimedAtJoin{false};
+    scope->dispatch("owned", [payload, &bodyEntered, &releaseBody]
+    {
+        bodyEntered.count_down();
+        releaseBody.wait();
+    }, [borrowed, &completionRead] { completionRead = borrowed->value_ == 17; }, -1, 5, 0);
+    bodyEntered.wait();
+    payload.reset();
+    std::jthread waiter{[&]
+    {
+        waiterEntered.count_down();
+        scope->waitAll();
+        reclaimedAtJoin = gate.finished_.load();
+        returned = true;
+    }};
+    waiterEntered.wait();
+    releaseBody.count_down();
+    gate.entered_.wait();
+    CHECK_FALSE(returned.load());
+    gate.release_.count_down();
+    waiter.join();
+    CHECK(completionRead.load());
+    CHECK(reclaimedAtJoin.load());
+    CHECK(retained.expired());
+    CHECK_FALSE(unrelatedFinished.load());
+    scope.reset();
+    releaseUnrelated.count_down();
+    parent.waitAll();
+    CHECK(unrelatedFinished.load());
+}
+
+TEST_CASE("Submission: completed scope releases original targets while parent retains wrappers")
+{
+    RetainingExecutor parent;
+    auto scope = std::make_unique<ScopedExecutor>(parent);
+    auto payload = std::make_shared<int>(17);
+    const std::weak_ptr<int> bodyRetained = payload;
+    auto completionPayload = std::make_shared<int>(23);
+    const std::weak_ptr<int> completionRetained = completionPayload;
+    const auto* borrowed = payload.get();
+    bool completionRead = false;
+    scope->dispatch("owned", [payload] {}, [borrowed, completionPayload, &completionRead]
+    {
+        completionRead = *borrowed == 17 && *completionPayload == 23;
+    }, -1, 5, 0);
+    payload.reset();
+    completionPayload.reset();
+    parent.runAccepted();
+    scope->waitAll();
+    CHECK(completionRead);
+    CHECK(bodyRetained.expired());
+    CHECK(completionRetained.expired());
+    CHECK(static_cast<bool>(parent.fn_));
+    CHECK(static_cast<bool>(parent.onComplete_));
+    scope.reset();
+    parent.waitAll();
+}
+
+TEST_CASE("Submission: completion target destruction retains body-owned state")
+{
+    const auto receive = [](IExecutor& executor)
+    {
+        std::atomic<bool> violation{false};
+        std::atomic<int> calls{0};
+        auto payload = std::make_shared<int>(17);
+        const std::weak_ptr<int> retained = payload;
+        std::function<void()> body = [payload] {};
+        std::function<void()> completion = BorrowingCompletion{retained, violation, calls};
+        payload.reset();
+        executor.dispatch("borrowed", std::move(body), std::move(completion), -1, 5, 0);
+        executor.waitAll();
+        CHECK(calls.load() == 1);
+        CHECK_FALSE(violation.load());
+        CHECK(retained.expired());
+    };
+    SequentialExecutor inlineExecutor;
+    receive(inlineExecutor);
+    DesktopExecutor desktopExecutor;
+    receive(desktopExecutor);
+    PriorityExecutor pool{{.threadCount = 1, .queueCapacity = 1}};
+    receive(pool);
+    ScopedExecutor scope{pool};
+    receive(scope);
 }
 
 TEST_CASE("Submission: pool validates count representations before launching workers")

@@ -23,10 +23,12 @@ void DesktopExecutor::dispatch(
     uint32_t                      /*stackBytes*/)
 {
     std::lock_guard lk{mtx_};
-    threads_.emplace_back([this, fn = std::move(fn), oc = std::move(onComplete)]
+    threads_.emplace_back([this, fn = std::move(fn), oc = std::move(onComplete)]() mutable
     {
         fn();
         if (oc) oc();
+        oc = {};
+        fn = {};
         // Publish completion under the lock so a waiter cannot miss it.
         std::lock_guard done{mtx_};
         if (--inFlight_ == 0U) idle_.notify_all();
