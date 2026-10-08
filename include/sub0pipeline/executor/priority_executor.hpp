@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -52,6 +53,14 @@ public:
          * thread-local state. Must not throw. Empty for none.
          */
         std::function<void()> onThreadStart{};
+
+        /**
+         * Maximum queued jobs, excluding jobs already running. 0 preserves
+         * the dynamically growing queue. A positive value reserves queue
+         * storage before workers start; dispatch rejects a full queue.
+         * Must fit uint32_t after adding the worker count.
+         */
+        std::size_t queueCapacity{0U};
     };
 
     /** Start a pool with default Options. */
@@ -59,7 +68,10 @@ public:
 
     /**
      * Start a pool configured by @p options.
-     * @param options  The worker count and per-thread setup.
+     * @param options  Worker count, per-thread setup and optional queue bound.
+     * @throws std::runtime_error Invalid worker/count bounds with exceptions enabled.
+     * @note Startup allocation or thread creation can fail. Already-started
+     *       workers are stopped and joined before an exception propagates.
      */
     explicit PriorityExecutor(Options options);
 
@@ -69,6 +81,13 @@ public:
     PriorityExecutor(const PriorityExecutor&)            = delete;
     PriorityExecutor& operator=(const PriorityExecutor&) = delete;
 
+    /**
+     * Accepts a job, or rejects it without retaining or invoking either callback.
+     * @note A full bounded queue reports a hard error according to
+     *       SUB0PIPELINE_EXCEPTIONS. Other submission exceptions propagate.
+     *       Accepted bodies and completion callbacks must not throw.
+     *       Callable storage may allocate before entry, even with a queue bound.
+     */
     void dispatch(
         std::string_view              name,
         std::function<void()>         fn,
@@ -93,8 +112,10 @@ private:
     };
 
     void work(const std::function<void()>& onThreadStart);
+    void stopWorkers() noexcept;
 
     std::priority_queue<QueuedJob>  queue_;             ///< Guarded by mtx_.
+    std::size_t                     queueCapacity_{0U};
     std::mutex                      mtx_;
     std::condition_variable         wake_;              ///< Work queued, or stopping.
     unsigned int                    idle_{0U};          ///< Workers waiting on wake_; guarded by mtx_.

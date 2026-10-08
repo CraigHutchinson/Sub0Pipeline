@@ -1,5 +1,6 @@
 #include <atomic>
 #include <condition_variable>
+#include <cstdio>
 #include <latch>
 #include <QCoreApplication>
 
@@ -10,6 +11,7 @@ using namespace sub0pipeline;
 int main(int argc, char** argv)
 {
     QCoreApplication app{argc, argv};
+    std::printf("Sub0Pipeline Qt receiving version: %s\n", qVersion());
     QtExecutor executor{1};
     Pipeline pipe;
     std::atomic<int> calls{0};

@@ -18,7 +18,7 @@ through `std::expected`.
 | Graph validation and reuse | Cycle validation before the first run and after topology edits; cached roots/validation on unchanged graphs; fresh per-run cancellation state |
 | Optional DSL | Separate `dsl.hpp`; `>>`, `+`, `_job`, job groups, tuples and structured bindings |
 | Job results | `std::expected<void, PipelineError>`; void jobs are wrapped as successful jobs |
-| Failure propagation | Required failures skip successors; optional ordinary failures allow them to continue; cancellation remains fatal |
+| Failure propagation | Required failures skip successors; optional ordinary failures allow them to continue; cancellation and rejected submissions remain fatal |
 | Cancellation | Per-job `cancel()` and external stop tokens for `run`, `runInline` and `runUntil`; queued plain jobs are also suppressible |
 | Timeouts | Native helpers or an injected deadline service with caller-owned registrations; expiry reports `kTimeout`; owned plain workers require reaping |
 | Structured completion | Opt-in `RunScope` requests stop and joins executor callbacks, deadline callbacks and orphan workers before teardown |
@@ -99,6 +99,31 @@ auto result = pipe.run(executor);
 pipe.joinOrphans();
 ```
 
+To bound queued jobs, append a startup capacity:
+
+```cpp
+PriorityExecutor bounded{{.threadCount = 2, .queueCapacity = 32}};
+auto result = pipe.run(bounded);
+```
+
+The bound excludes running bodies and completion callbacks. Queue storage is
+reserved before workers start. A full queue rejects without retaining or invoking
+either callback; it reports a hard error through `SUB0PIPELINE_EXCEPTIONS` (throws
+with the default policy, terminates with the no-exception hard-error policy).
+Callable argument storage may still allocate. The default capacity of zero keeps
+the existing dynamic queue. Worker count must fit `int`; queued plus worker counts
+must fit `uint32_t`.
+
+`IExecutor::dispatch` exceptions mean no work was accepted. `run()` converts a
+root or successor rejection to `kJobFailed`, skips unstarted work, and joins every
+accepted body and completion before returning; an optional job cannot suppress
+submission failure. Already-running bodies may finish normally, and concurrent
+submissions already in progress may still be accepted. The graph can then run
+again. `trigger()` returns `kJobFailed` on rejection and leaves the job retryable
+with status `kFailed`, without observer callbacks for rejected work. These joins
+provide ownership safety, without a time bound if an accepted body never returns.
+Timed non-cooperative helpers still require `joinOrphans()`.
+
 ### Optional DSL
 
 ```cpp
@@ -164,13 +189,14 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 |---|---|---|
 | Core DAG execution | Always | Job state, dependency counters, cancellation checks and run guard. Each run renews the stop state of every job that takes a `std::stop_token` (one allocation each); plain jobs keep theirs until a stop is requested |
 | Validation | Automatic on topology change; explicit `validate()` available | Retains reusable graph-sized scratch; validation queries serialize; automatic validation is cached for unchanged repeated runs |
-| Failure propagation | Required failure/cancellation | Lazily reserves a graph-sized worklist, reuses it across runs, and drains callbacks before completion |
+| Failure propagation | Required failure/cancellation/submission rejection | Prepares a graph-sized skip worklist and longest-name diagnostic capacity before dispatch, retains them across runs, and drains callbacks before completion; first preparation can allocate even on success |
 | External cancellation forwarding | Supply a stoppable token | One stop callback registration per run; a request then signals every job in the graph. Skipped for the no-token path |
 | Observer callbacks and tracing | Supply an `IObserver*` | Absent when no observer is supplied; an attached observer receives concurrent callbacks and pays its own capture/formatting costs |
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |
 | Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
-| Priority worker pool | Construct `PriorityExecutor` with `Options::threadCount` | Fixed worker count, dynamic priority queue; no queue-capacity/backpressure guarantee |
+| Priority worker pool | Construct `PriorityExecutor` with `Options::threadCount` and optional `queueCapacity` | Fixed worker count; zero capacity keeps the dynamic queue; positive capacity reserves queued storage at startup and rejects overflow; callable and platform allocations remain |
+| Scoped executor | Construct `ScopedExecutor` over a parent | Local completion accounting; wrapper storage can allocate before submission; rejected submissions roll back the local count |
 | Desktop execution | Construct `DesktopExecutor` | One native thread per dispatched job |
 | Snapshots / text diagnostics | Call the API | Snapshot allocation or formatting/I/O; not automatic |
 | DSL | Include `dsl.hpp` | Compile-time composition; ordinary graph-construction costs still apply |
@@ -209,11 +235,11 @@ have reference adapters under `examples/` but are not yet selectable defaults.
 | `DefaultExecutor` | `Sub0Pipeline::Default` | Alias chosen at compile time, as described above |
 | `SequentialExecutor` | Header-only, core library | Runs jobs on the calling thread in the order they become ready; constant stack depth; deterministic untimed test scheduling |
 | `DesktopExecutor` | `Sub0Pipeline::Desktop` | Thread per job; joins dispatched work; ignores priority/affinity hints |
-| `PriorityExecutor` | `Sub0Pipeline::Priority` | Configurable worker count; higher priorities start first; already-running work is not preempted |
+| `PriorityExecutor` | `Sub0Pipeline::Priority` | Configurable worker count and optional queued-job bound; higher priorities start first; already-running work is not preempted |
 | `ScopedExecutor` | Core header | Reuses a parent executor and waits only for locally dispatched jobs |
 | `QtExecutor` | `examples/qt_bounded` | Private bounded QThreadPool; caller-runs overflow; no GUI event-loop dependency |
 | `ZephyrExecutor` | `examples/zephyr_bounded` | Fixed slots and one Zephyr worker; caller-runs overflow; validated on native simulator |
-| `FreeRtosExecutor` | `platform/esp32p4` | ESP-IDF/FreeRTOS source adapter with task priority, affinity and stack hints; not validated by host CI |
+| `FreeRtosExecutor` | `platform/esp32p4` | ESP-IDF/FreeRTOS source adapter with task priority, affinity and stack hints; host mocks exercise rejection/fallback/completion ownership; physical RTOS execution remains unvalidated |
 
 `ScopedExecutor` supports inner pipelines without waiting for the outer job's
 own completion count. It does **not** solve worker starvation: if all workers in

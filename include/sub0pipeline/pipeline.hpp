@@ -187,7 +187,12 @@ public:
      * Execute all jobs in dependency order, parallelising independent jobs.
      *
      * Validates the DAG, seeds root jobs, then dispatches successors as their
-     * predecessors complete. Blocks until all jobs finish or a required job fails.
+     * predecessors complete. Joins all accepted bodies and completion callbacks
+     * before returning, including after a required job or submission fails.
+     * A dispatch exception reports kJobFailed even for an optional job. Its
+     * body never runs; unstarted jobs are skipped, running jobs finish normally.
+     * Concurrent submissions already in progress may still be accepted and joined.
+     * Preparation before any submission may allocate and propagate exceptions.
      *
      * Re-runnable: calling run() again re-executes the entire DAG using an
      * fresh cancellation/dependency state before dispatch. No separate reset()
@@ -476,12 +481,15 @@ public:
      *
      * The job executes asynchronously; completion is reported via the observer
      * passed to arm() (if any).
+     * A rejected submission reports kJobFailed, leaves the job kFailed and
+     * invokes no observer callback; it can be retried without waiting for rejected
+     * work. This applies even to optional jobs.
      *
      * @param j  The on-demand job to dispatch.
      * @return   Empty if the job was queued. Otherwise kUnknownJob for a foreign
      *           handle, kNotArmed before arm(), kNotOnDemand for a job not
      *           registered with addOnDemand(), or kBusy for an active run, a queued or running
-     *           duplicate, or unreaped timeout work.
+     *           duplicate, or unreaped timeout work, or kJobFailed on rejection.
      */
     [[nodiscard]] std::expected<void, PipelineError> trigger(Job j);
 

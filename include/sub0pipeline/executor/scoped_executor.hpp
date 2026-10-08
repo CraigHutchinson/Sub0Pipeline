@@ -42,6 +42,10 @@ namespace sub0pipeline
  *   }).name("dynamic_step");
  *   outer.run(exec);
  * @endcode
+ *
+ * A parent submission exception rejects both callbacks and is rethrown after
+ * local accounting is restored. Accepted bodies and callbacks must not throw.
+ * Completion-wrapper storage can allocate before the parent sees a submission.
  */
 class ScopedExecutor final : public IExecutor
 {
@@ -62,19 +66,26 @@ public:
         uint8_t               priority,
         uint32_t              stackBytes) override
     {
+        std::function<void()> completion = [this, oc = std::move(onComplete)]() mutable
+        {
+            if (oc) oc();
+            finishDispatch();
+        };
         localInFlight_.fetch_add(1U, std::memory_order_relaxed);
-        parent_.dispatch(
-            name,
-            std::move(fn),
-            [this, oc = std::move(onComplete)]() mutable
-            {
-                if (oc) oc();
-                // Publish completion and notify before the waiter can destroy us.
-                std::lock_guard lock{mtx_};
-                if (localInFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U)
-                    cv_.notify_all();
-            },
-            coreAffinity, priority, stackBytes);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+        try
+        {
+#endif
+            parent_.dispatch(name, std::move(fn), std::move(completion),
+                             coreAffinity, priority, stackBytes);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+        }
+        catch (...)
+        {
+            finishDispatch();
+            throw;
+        }
+#endif
     }
 
     void waitAll() override
@@ -97,6 +108,14 @@ public:
     }
 
 private:
+    void finishDispatch()
+    {
+        // Publish completion and notify before the waiter can destroy us.
+        std::lock_guard lock{mtx_};
+        if (localInFlight_.fetch_sub(1U, std::memory_order_acq_rel) == 1U)
+            cv_.notify_all();
+    }
+
     IExecutor&                parent_;
     std::atomic<uint32_t>     localInFlight_{0U};
     std::mutex                mtx_;

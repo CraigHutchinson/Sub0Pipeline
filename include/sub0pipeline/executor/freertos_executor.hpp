@@ -22,6 +22,8 @@ namespace sub0pipeline
  * priority (clamped to 1–24) and stack size. Each task deletes itself when its
  * job finishes. If the task or its context cannot be created, the job runs
  * synchronously on the dispatching task so the pipeline still makes progress.
+ * Callable-copy exceptions reject before accounting or task creation.
+ * Bodies, completion callbacks and callable destructors must not throw.
  *
  * Owns one counting semaphore, created in the constructor. Construct it
  * wherever suits the caller (stack, member, static); it is neither copyable
@@ -31,7 +33,11 @@ namespace sub0pipeline
 class FreeRtosExecutor final : public IExecutor
 {
 public:
-    /** Creates the completion semaphore. */
+    /**
+     * Creates the completion semaphore.
+     * @note Failure reports a hard error through SUB0PIPELINE_EXCEPTIONS;
+     *       no executor with an invalid semaphore is constructed.
+     */
     FreeRtosExecutor();
 
     /** Deletes the completion semaphore. Does not wait for running tasks. */

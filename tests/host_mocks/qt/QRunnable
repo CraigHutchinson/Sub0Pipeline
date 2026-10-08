@@ -1,0 +1,35 @@
+#pragma once
+
+#include <functional>
+#include <memory>
+#include <new>
+#include <type_traits>
+#include <utility>
+
+namespace qt_mock
+{
+inline bool failCreate = false;
+inline bool failStart = false;
+inline bool callerRuns = false;
+}
+
+// Host protocol mock; actual Qt receiving remains a separate build.
+class QRunnable
+{
+public:
+    virtual ~QRunnable() = default;
+    virtual void run() = 0;
+
+    template<class Function>
+    static QRunnable* create(Function&& function)
+    {
+        if (qt_mock::failCreate) throw std::bad_alloc{};
+        struct Runnable final : QRunnable
+        {
+            explicit Runnable(Function&& function) : function_{std::forward<Function>(function)} {}
+            void run() override { function_(); }
+            std::decay_t<Function> function_;
+        };
+        return new Runnable{std::forward<Function>(function)};
+    }
+};

@@ -13,10 +13,12 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <functional>
+#include <memory>
 #include <new>
 #include <string_view>
 #include <utility>
 
+#include "sub0pipeline/config.hpp"
 #include "sub0pipeline/executor/freertos_executor.hpp"
 
 static constexpr const char* cTag = "sub0pipeline";
@@ -36,6 +38,10 @@ SemaphoreHandle_t semaphore(void* handle) noexcept
 FreeRtosExecutor::FreeRtosExecutor()
 {
     completionSem_ = xSemaphoreCreateCounting(0x7FFFFFFF, 0);
+    if (!completionSem_)
+    {
+        SUB0PIPELINE_THROW("FreeRtosExecutor completion semaphore creation failed");
+    }
 }
 
 FreeRtosExecutor::~FreeRtosExecutor()
@@ -51,8 +57,6 @@ void FreeRtosExecutor::dispatch(
     uint8_t                       priority,
     uint32_t                      stackBytes)
 {
-    inFlight_.fetch_add(1U, std::memory_order_relaxed);
-
     const uint8_t clampedPriority = std::clamp<uint8_t>(priority, 1U, 24U);
 
     // Heap-allocate the context — the task outlives this stack frame.
@@ -61,7 +65,20 @@ void FreeRtosExecutor::dispatch(
         std::function<void()>  fn;
         std::function<void()>  onComplete;
         SemaphoreHandle_t      sem;
-        std::atomic<uint32_t>* inFlight;
+        std::atomic<uint32_t>* inFlight; // non-owning; caller joins before executor teardown
+
+        static void execute(void* raw)
+        {
+            std::unique_ptr<Ctx> context{static_cast<Ctx*>(raw)};
+            context->fn();
+            if (context->onComplete) context->onComplete();
+            const auto sem = context->sem;
+            auto* count = context->inFlight;
+            context.reset();
+            // No semaphore or borrowed callable remains in use after publication.
+            xSemaphoreGive(sem);
+            count->fetch_sub(1U, std::memory_order_release);
+        }
     };
 
     // Keep copies for the fallback path before moving into ctx.
@@ -77,12 +94,21 @@ void FreeRtosExecutor::dispatch(
                  static_cast<int>(name.size()), name.data(),
                  static_cast<unsigned long>(xPortGetFreeHeapSize()));
         // Run synchronously as fallback to avoid stalling the pipeline.
+        inFlight_.fetch_add(1U, std::memory_order_relaxed);
         fnCopy();
         if (onCompleteCopy) onCompleteCopy();
-        inFlight_.fetch_sub(1U, std::memory_order_release);
+        fn = {};
+        onComplete = {};
+        fnCopy = {};
+        onCompleteCopy = {};
         xSemaphoreGive(semaphore(completionSem_));
+        inFlight_.fetch_sub(1U, std::memory_order_release);
         return;
     }
+
+    fnCopy = {};
+    onCompleteCopy = {};
+    inFlight_.fetch_add(1U, std::memory_order_relaxed);
 
     // Task name: truncate to 15 chars (FreeRTOS limit).
     char taskName[16]{};
@@ -96,12 +122,7 @@ void FreeRtosExecutor::dispatch(
     const BaseType_t rc = xTaskCreatePinnedToCore(
         [](void* arg)
         {
-            auto* c = static_cast<Ctx*>(arg);
-            c->fn();
-            if (c->onComplete) c->onComplete();
-            c->inFlight->fetch_sub(1U, std::memory_order_release);
-            xSemaphoreGive(c->sem);
-            delete c;
+            Ctx::execute(arg);
             vTaskDelete(nullptr);
         },
         taskName,
@@ -119,11 +140,7 @@ void FreeRtosExecutor::dispatch(
                  static_cast<unsigned long>(xPortGetFreeHeapSize()));
         // Run synchronously as a fallback so the pipeline can propagate
         // to successors rather than silently stalling.
-        ctx->fn();
-        if (ctx->onComplete) ctx->onComplete();
-        ctx->inFlight->fetch_sub(1U, std::memory_order_release);
-        xSemaphoreGive(ctx->sem);
-        delete ctx;
+        Ctx::execute(ctx);
     }
 }
 

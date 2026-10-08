@@ -1,0 +1,32 @@
+#pragma once
+
+#include <memory>
+#include <mutex>
+#include <new>
+#include <QRunnable>
+#include <thread>
+#include <vector>
+
+class QThreadPool
+{
+public:
+    void setMaxThreadCount(int count) noexcept { count_ = count; }
+    [[nodiscard]] int maxThreadCount() const noexcept { return count_; }
+    bool tryStart(QRunnable* runnable)
+    {
+        if (qt_mock::failStart) throw std::bad_alloc{};
+        if (qt_mock::callerRuns) return false;
+        std::lock_guard lock{mutex_};
+        workers_.emplace_back([runnable]
+        {
+            std::unique_ptr<QRunnable> accepted{runnable};
+            accepted->run();
+        });
+        return true;
+    }
+    void waitForDone() { workers_.clear(); }
+private:
+    std::mutex mutex_;
+    std::vector<std::jthread> workers_;
+    int count_{1};
+};

@@ -72,7 +72,8 @@ public:
                              [[maybe_unused]] float progress) {}
 
     /**
-     * Called for non-optional failures and cancellation, even on optional jobs.
+     * Called for non-optional failures, cancellation and submission rejection,
+     * including cancellation and rejection on optional jobs during run().
      *
      * Separate from onJobFinish so callers only opt into failure detail when they
      * need it. The observer vtable dispatch is gated by `if (observer)`.
@@ -83,7 +84,7 @@ public:
      * @param error    The PipelineError code.
      * @param message  Diagnostic string set by the job via
      *                 Pipeline::setCurrentJobError() -- empty if the job
-     *                 did not provide context. The view is valid only during
+     *                 did not provide context or submission was rejected. Valid only during
      *                 this callback; supplying diagnostic text may allocate.
      */
     virtual void onJobFailure([[maybe_unused]] RunId runId,

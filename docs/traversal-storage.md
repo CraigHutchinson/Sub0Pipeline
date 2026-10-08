@@ -12,21 +12,25 @@ successful run until topology changes.
 Failure propagation uses one retained worklist per Pipeline and one active drainer
 per run. Workers claim a node's skipped status before queueing it, so shared
 successors appear at most once and the logical list cannot exceed the node count.
-The first failure reserves storage before status changes; subsequent failure runs
-reuse it. Successful runs do not reserve failure scratch. Observer callbacks run
+Run preparation reserves skip storage and longest-name diagnostic capacity before
+any dispatch, so submission allocation failure can be contained without another
+allocation. Later runs reuse that storage, including successful runs. Observer callbacks run
 outside the traversal lock. The drainer stays inside an executor callback until
 all queued skip notifications have returned, preserving the completion boundary.
 A queued job must claim Ready → Running and cannot overwrite a skipped state.
 
 This trades retained capacity and validation-query serialization for fewer
-allocations. It does not impose an application-selected byte limit or change
-allocation-exhaustion behavior. Vectors may retain more capacity than their logical
+allocations. It does not impose an application-selected byte limit. Submission
+exceptions now stop an epoch and join accepted work; preparation failures can
+still propagate before submission. Vectors may retain more capacity than their logical
 size. This is not a fixed/custom allocator API, a heap-free scheduler, or proof
 of bounded platform stack/latency. Native helpers, callables and stop states retain
 their existing allocation/lifetime contracts.
 
 ## Allocation evidence
 
+The historical traversal-only captures below predate eager failure preparation
+and submission containment; they do not measure the current first-run cost.
 Three independent GCC 13.3/libstdc++ Release captures agreed exactly; raw CSV is
 in [allocations/2026-09-25-traversal](allocations/2026-09-25-traversal/). Compare
 with the [prior audit](allocation-audit.md), which documents the measurement

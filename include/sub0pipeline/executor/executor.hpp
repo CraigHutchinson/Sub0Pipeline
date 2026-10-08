@@ -19,9 +19,14 @@ namespace sub0pipeline
  * any platform: threaded, sequential/inline, or RTOS-based.
  *
  * Contract:
- *   - dispatch() MUST increment its in-flight counter before returning.
- *   - dispatch() MUST eventually call onComplete() from the dispatched context.
+ *   - Accepted dispatches MUST be accounted for before returning, unless the
+ *     body and completion already returned inline; no public counter is required.
+ *   - Accepted dispatches MUST eventually call onComplete() from their context.
+ *   - If dispatch() throws, no job was accepted: neither callback is retained
+ *     or invoked. Exceptions while constructing its arguments also reject.
  *   - waitAll() MUST NOT return until all dispatched bodies and onComplete() calls have returned.
+ *     It MUST NOT throw while accepted callbacks can still execute.
+ *   - Job bodies and completion callbacks MUST NOT throw across the executor.
  */
 class IExecutor
 {
@@ -36,6 +41,7 @@ public:
      * @param coreAffinity CPU core hint (-1 = any).
      * @param priority     Scheduling priority (1–24).
      * @param stackBytes   Stack allocation for embedded targets.
+     * @throws Submission exceptions reject the job without accepting work.
      */
     virtual void dispatch(
         std::string_view              name,

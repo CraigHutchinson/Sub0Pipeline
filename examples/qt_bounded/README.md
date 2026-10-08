@@ -19,3 +19,14 @@ for GUI callbacks if that GUI thread is joining the scope. To post UI results,
 use a Qt receiver/context whose lifetime is independently managed.
 
 Reference: [QThreadPool contract](https://doc.qt.io/qt-6/qthreadpool.html).
+
+Runnable preparation precedes local accounting. A `tryStart(QRunnable*)`
+exception rolls back that accounting without accepting work; ordinary overflow
+still runs on the caller. This relies on Qt rejecting before handing the runnable
+to a worker. The inspected
+[Qt 6.4.2 implementation](https://github.com/qt/qtbase/blob/v6.4.2/src/corelib/thread/qthreadpool.cpp)
+and [Qt 6.8.3 implementation](https://github.com/qt/qtbase/blob/v6.8.3/src/corelib/thread/qthreadpool.cpp)
+allocate worker/queue storage before handoff. The actual receiving executable
+prints its Qt version. Host protocol mocks check preparation, rejection, reuse
+and caller-runs behavior; they do not validate Qt's internals or replace the real
+Qt full-CI run. Bodies, completion callbacks and callable destructors must not throw.
