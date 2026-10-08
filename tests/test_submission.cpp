@@ -357,7 +357,9 @@ TEST_CASE("Submission: completion target destruction retains body-owned state")
         std::function<void()> body = [payload] {};
         std::function<void()> completion = BorrowingCompletion{retained, violation, calls};
         payload.reset();
-        executor.dispatch("borrowed", std::move(body), std::move(completion), -1, 5, 0);
+        // Moving a std::function may retain its source target. Clear caller ownership
+        // before dispatch so the join observes only accepted executor-owned targets.
+        executor.dispatch("borrowed", std::exchange(body, {}), std::exchange(completion, {}), -1, 5, 0);
         executor.waitAll();
         CHECK(calls.load() == 1);
         CHECK_FALSE(violation.load());
