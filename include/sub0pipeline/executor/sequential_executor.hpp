@@ -39,6 +39,8 @@ public:
     {
         fn();
         if (onComplete) onComplete();
+        onComplete = {};
+        fn = {};
     }
 
     /** Nothing to wait for: every job has finished by the time dispatch() returns. */

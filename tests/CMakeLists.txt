@@ -34,6 +34,41 @@ target_compile_features(Sub0Pipeline_Tests PRIVATE cxx_std_23)
 
 add_test(NAME Sub0Pipeline_Tests COMMAND Sub0Pipeline_Tests)
 
+if(SUB0PIPELINE_EXCEPTIONS)
+    add_executable(Sub0Pipeline_SubmissionTests test_main.cpp test_submission.cpp)
+    target_link_libraries(Sub0Pipeline_SubmissionTests PRIVATE
+        Sub0Pipeline::Sub0Pipeline Sub0Pipeline::Desktop Sub0Pipeline::Priority)
+    target_include_directories(Sub0Pipeline_SubmissionTests PRIVATE "${VENDOR_DIR}")
+    target_compile_features(Sub0Pipeline_SubmissionTests PRIVATE cxx_std_23)
+    add_test(NAME Sub0Pipeline_SubmissionTests COMMAND Sub0Pipeline_SubmissionTests)
+    set_tests_properties(Sub0Pipeline_SubmissionTests PROPERTIES TIMEOUT 30)
+
+    # Replacement allocation operators are isolated from all other suites.
+    add_executable(Sub0Pipeline_SubmissionAllocationTests
+        test_main.cpp test_submission_allocations.cpp)
+    target_link_libraries(Sub0Pipeline_SubmissionAllocationTests PRIVATE
+        Sub0Pipeline::Sub0Pipeline Sub0Pipeline::Priority)
+    target_include_directories(Sub0Pipeline_SubmissionAllocationTests PRIVATE "${VENDOR_DIR}")
+    target_compile_features(Sub0Pipeline_SubmissionAllocationTests PRIVATE cxx_std_23)
+    add_test(NAME Sub0Pipeline_SubmissionAllocationTests COMMAND Sub0Pipeline_SubmissionAllocationTests)
+    set_tests_properties(Sub0Pipeline_SubmissionAllocationTests PROPERTIES TIMEOUT 30)
+
+    add_executable(Sub0Pipeline_FreeRtosSubmissionTests test_main.cpp test_freertos_submission.cpp
+        "${PROJECT_SOURCE_DIR}/platform/esp32p4/freertos_executor.cpp")
+    target_include_directories(Sub0Pipeline_FreeRtosSubmissionTests PRIVATE
+        "${VENDOR_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host_mocks")
+    target_link_libraries(Sub0Pipeline_FreeRtosSubmissionTests PRIVATE Sub0Pipeline::Sub0Pipeline)
+    add_test(NAME Sub0Pipeline_FreeRtosSubmissionTests COMMAND Sub0Pipeline_FreeRtosSubmissionTests)
+    set_tests_properties(Sub0Pipeline_FreeRtosSubmissionTests PROPERTIES TIMEOUT 30)
+
+    add_executable(Sub0Pipeline_QtSubmissionHostTests test_main.cpp test_qt_submission.cpp)
+    target_include_directories(Sub0Pipeline_QtSubmissionHostTests PRIVATE "${VENDOR_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/host_mocks/qt" "${PROJECT_SOURCE_DIR}/examples/qt_bounded")
+    target_link_libraries(Sub0Pipeline_QtSubmissionHostTests PRIVATE Sub0Pipeline::Sub0Pipeline)
+    add_test(NAME Sub0Pipeline_QtSubmissionHostTests COMMAND Sub0Pipeline_QtSubmissionHostTests)
+    set_tests_properties(Sub0Pipeline_QtSubmissionHostTests PROPERTIES TIMEOUT 30)
+endif()
+
 # ── DSL tests ─────────────────────────────────────────────────────────────────
 
 add_executable(Sub0Pipeline_DslTests test_dsl.cpp)

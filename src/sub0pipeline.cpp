@@ -13,6 +13,7 @@
 #undef _GLIBCXX_USE_POSIX_SEMAPHORE
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -289,7 +290,7 @@ struct Pipeline::Impl : detail::PipelineAnchor
     IExecutor*                armedExecutor_{nullptr};
     IObserver*                armedObserver_{nullptr};
 
-    // Written once (under fatalMtx) when the first non-optional job fails.
+    // Written once under fatalMtx for the first fatal body/cancellation/submission error.
     // Readable after run() returns via Pipeline::firstFailureName().
     std::string               failedJobName_;
 
@@ -789,6 +790,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         impl_->rootsCached_ = true;
     }
 
+    std::size_t failureNameCapacity = 0U;
     {
         std::lock_guard lock{impl_->stopMtx_};
         for (auto& node : impl_->nodes_)
@@ -797,8 +799,12 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
             node.unmetDeps_.store(node.predecessorCount_, std::memory_order_relaxed);
             node.jobStatus_.store(node.predecessorCount_ == 0U && !node.isOnDemand()
                 ? JobStatus::kReady : JobStatus::kPending, std::memory_order_relaxed);
+            failureNameCapacity = std::max(failureNameCapacity, node.nameStr_.size());
         }
     }
+    // Failure containment must still work when a submission ran out of memory.
+    impl_->skipped_.reserve(total);
+    impl_->failedJobName_.reserve(failureNameCapacity);
 
     std::atomic<bool> hasFatalFailure{false};
     PipelineError     fatalError{PipelineError::kJobFailed};
@@ -825,6 +831,38 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         std::size_t skipRead = 0;
         bool drainingSkips = false;
 
+        void recordFailure(uint32_t idx, PipelineError error)
+        {
+            std::lock_guard lock{fatalMtx};
+            if (!hasFatalFailure.load(std::memory_order_relaxed))
+            {
+                fatalError = error;
+                impl.failedJobName_ = impl.nodes_[idx].nameStr_;
+                hasFatalFailure.store(true, std::memory_order_release);
+            }
+        }
+
+        void submissionFailed(uint32_t idx)
+        {
+            auto& nd = impl.nodes_[idx];
+            auto ready = JobStatus::kReady;
+            const bool failed = nd.jobStatus_.compare_exchange_strong(
+                ready, JobStatus::kFailed, std::memory_order_acq_rel);
+            recordFailure(idx, PipelineError::kJobFailed);
+            if (failed)
+            {
+                const auto done = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
+                if (observer)
+                {
+                    observer->onJobFinish(runId, idx, nd.nameStr_, JobStatus::kFailed,
+                                         static_cast<float>(done) / static_cast<float>(total));
+                    observer->onJobFailure(runId, idx, nd.nameStr_, PipelineError::kJobFailed, {});
+                    notifyDependencies(*observer, pipeline, runId, idx, nd.nameStr_);
+                }
+            }
+            for (uint32_t pending = 0U; pending < total; ++pending) skipNode(pending);
+        }
+
         // Called with skipMutex held. Claim before appending, so even shared
         // descendants appear at most once and scratch never exceeds total nodes.
         void enqueueSkip(uint32_t idx)
@@ -845,9 +883,6 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         void skipNode(uint32_t startIdx)
         {
             std::unique_lock lock{skipMutex};
-            // Grow only on failure, then reuse on later runs. Reserve before
-            // claiming statuses so append cannot allocate mid-traversal.
-            impl.skipped_.reserve(total);
             enqueueSkip(startIdx);
             if (drainingSkips) return;
             drainingSkips = true;
@@ -907,19 +942,18 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 if (observer)
                     observer->onJobFailure(runId, idx, nd.nameStr_, result.error(), jobErrorCtx);
 
-                bool expected = false;
-                if (hasFatalFailure.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-                {
-                    std::lock_guard lk{fatalMtx};
-                    fatalError = result.error();
-                    impl.failedJobName_ = nd.nameStr_;
-                }
+                recordFailure(idx, result.error());
                 for (auto succIdx : nd.successors_.range(impl.succPool_)) skipNode(succIdx);
                 return;
             }
 
             for (auto succIdx : nd.successors_.range(impl.succPool_))
             {
+                if (hasFatalFailure.load(std::memory_order_acquire))
+                {
+                    skipNode(succIdx);
+                    continue;
+                }
                 auto& succ = impl.nodes_[succIdx];
                 const auto remaining = succ.unmetDeps_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
                 if (remaining == 0U)
@@ -932,11 +966,23 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                         inlineReady->push_back(succIdx);
                         continue;
                     }
-                    executor.dispatch(
-                        succ.nameStr_,
-                        [this, si = succIdx]{ dispatchJob(si); },
-                        [] {},
-                        succ.coreAffinity_, succ.priority_, succ.stackBytes_);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+                    try
+                    {
+#endif
+                        executor.dispatch(
+                            succ.nameStr_,
+                            [this, si = succIdx]{ dispatchJob(si); },
+                            [] {},
+                            succ.coreAffinity_, succ.priority_, succ.stackBytes_);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+                    }
+                    catch (...)
+                    {
+                        submissionFailed(succIdx);
+                        return;
+                    }
+#endif
                 }
             }
         }
@@ -980,12 +1026,29 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     {
         for (auto idx : impl_->roots_)
         {
+            if (hasFatalFailure.load(std::memory_order_acquire))
+            {
+                ctx.skipNode(idx);
+                continue;
+            }
             auto& nd = impl_->nodes_[idx];
-            executor.dispatch(
-                nd.nameStr_,
-                [&ctx, i = idx]{ ctx.dispatchJob(i); },
-                [] {},
-                nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            try
+            {
+#endif
+                executor.dispatch(
+                    nd.nameStr_,
+                    [&ctx, i = idx]{ ctx.dispatchJob(i); },
+                    [] {},
+                    nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            }
+            catch (...)
+            {
+                ctx.submissionFailed(idx);
+                break;
+            }
+#endif
         }
     }
 
@@ -1167,7 +1230,11 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
 
     // Capture by index, not by nd reference: nodes_ may reallocate if another
     // addOnDemand() is called before the dispatch lambda executes.
-    exec->dispatch(
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+    try
+    {
+#endif
+        exec->dispatch(
         nd.nameStr_,
         [impl = impl_.get(), pipeline = this, idx = j.idx_, obs]
         {
@@ -1196,6 +1263,14 @@ auto Pipeline::trigger(Job j) -> std::expected<void, PipelineError>
         nd.coreAffinity_,
         nd.priority_,
         nd.stackBytes_);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+    }
+    catch (...)
+    {
+        nd.jobStatus_.store(JobStatus::kFailed, std::memory_order_release);
+        return std::unexpected(PipelineError::kJobFailed);
+    }
+#endif
 
     return {};
 }

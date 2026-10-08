@@ -5,8 +5,10 @@
 // that have not yet started executing.
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
+#include "sub0pipeline/config.hpp"
 #include "sub0pipeline/executor/priority_executor.hpp"
 
 namespace sub0pipeline
@@ -14,23 +16,52 @@ namespace sub0pipeline
 
 PriorityExecutor::PriorityExecutor() : PriorityExecutor{Options{}} {}
 
-PriorityExecutor::PriorityExecutor(Options options)
+PriorityExecutor::PriorityExecutor(Options options) : queueCapacity_{options.queueCapacity}
 {
     const unsigned int threadCount = options.threadCount != 0U
         ? options.threadCount
         : std::max(1U, std::thread::hardware_concurrency());
-    workers_.reserve(threadCount);
-    for (unsigned int i = 0; i < threadCount; ++i)
+    if (threadCount > static_cast<unsigned int>(std::numeric_limits<int>::max()) ||
+        queueCapacity_ > std::numeric_limits<uint32_t>::max() - threadCount)
     {
-        workers_.emplace_back([this, onThreadStart = options.onThreadStart] {
-            work(onThreadStart);
-        });
+        SUB0PIPELINE_THROW("PriorityExecutor worker/queue counts exceed the supported range");
     }
+    if (queueCapacity_ != 0U)
+    {
+        std::vector<QueuedJob> storage;
+        storage.reserve(queueCapacity_);
+        queue_ = decltype(queue_){std::less<QueuedJob>{}, std::move(storage)};
+    }
+    workers_.reserve(threadCount);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+    try
+    {
+#endif
+        for (unsigned int i = 0; i < threadCount; ++i)
+        {
+            workers_.emplace_back([this, onThreadStart = options.onThreadStart]
+            {
+                work(onThreadStart);
+            });
+        }
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+    }
+    catch (...)
+    {
+        stopWorkers();
+        throw;
+    }
+#endif
 }
 
 PriorityExecutor::~PriorityExecutor()
 {
     waitAll();
+    stopWorkers();
+}
+
+void PriorityExecutor::stopWorkers() noexcept
+{
     {
         std::lock_guard lk{mtx_};
         stopping_ = true;
@@ -48,11 +79,17 @@ void PriorityExecutor::dispatch(
     uint8_t                       priority,
     uint32_t                      /*stackBytes*/)
 {
-    inFlight_.fetch_add(1U, std::memory_order_relaxed);
     bool wake;
     {
         std::lock_guard lk{mtx_};
+        if ((queueCapacity_ != 0U && queue_.size() == queueCapacity_) ||
+            inFlight_.load(std::memory_order_relaxed) == std::numeric_limits<uint32_t>::max())
+        {
+            SUB0PIPELINE_THROW("PriorityExecutor submission capacity exhausted");
+        }
         queue_.push(QueuedJob{std::move(fn), std::move(onComplete), priority});
+        // Workers cannot remove the accepted job until its count is published.
+        inFlight_.fetch_add(1U, std::memory_order_relaxed);
         // A busy worker re-checks the queue before it sleeps, so a wake-up
         // is only needed when some worker is already asleep.
         wake = idle_ != 0U;
@@ -88,6 +125,9 @@ void PriorityExecutor::work(const std::function<void()>& onThreadStart)
         }
         job.fn();
         if (job.onComplete) job.onComplete();
+        // Completion may borrow state owned only by the body target.
+        job.onComplete = {};
+        job.fn = {};
         // Only the completion that empties the executor has a waiter to
         // wake. Taking doneMtx_ there orders the notify after the waiter's
         // predicate check, so it cannot be missed.

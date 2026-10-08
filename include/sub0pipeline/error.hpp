@@ -14,7 +14,7 @@ namespace sub0pipeline
 enum class PipelineError : uint8_t
 {
     kTimeout,           ///< Job exceeded its declared timeout.
-    kJobFailed,         ///< Job function returned an unexpected error.
+    kJobFailed,         ///< Job function failed, or its executor rejected submission.
     kCyclicDependency,  ///< The DAG contains a cycle.
     kUnknownJob,        ///< Operation on an invalid Job handle.
     kNotArmed,          ///< trigger() called before arm() -- no executor stored.
