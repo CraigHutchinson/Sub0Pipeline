@@ -110,6 +110,33 @@ TEST_CASE("Concurrent: wide fan-out stress N=50 with real threads")
     CHECK(counter.load() == cN + 1);
 }
 
+TEST_CASE("Concurrent: fan-in -- sink runs once on every run")
+{
+    // The sources meet at a barrier so they finish together; each decrement of the
+    // sink's unmet dependency count must survive the other sources finishing.
+    Pipeline           pipeline;
+    ThreadPoolExecutor exec;
+    std::atomic<int>   sinkRuns{0};
+    std::atomic<int>   arrived{0};
+    constexpr int      cN    = 8;
+    constexpr int      cRuns = 50;
+
+    auto sink = pipeline.emplace([&] { sinkRuns.fetch_add(1, std::memory_order_relaxed); }).name("sink");
+    for (int i = 0; i < cN; ++i) {
+        pipeline.emplace([&] {
+                arrived.fetch_add(1, std::memory_order_acq_rel);
+                while (arrived.load(std::memory_order_acquire) % cN != 0) {}
+            })
+            .name("source_" + std::to_string(i))
+            .precede(sink);
+    }
+
+    for (int run = 0; run < cRuns; ++run) {
+        REQUIRE(pipeline.run(exec).has_value());
+        REQUIRE(sinkRuns.load() == run + 1);
+    }
+}
+
 TEST_CASE("Concurrent: DesktopExecutor smoke test — sequential pipeline succeeds")
 {
     DesktopExecutor exec;
