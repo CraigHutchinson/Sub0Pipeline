@@ -36,8 +36,12 @@ namespace sub0pipeline
  * wherever suits the caller (stack, member, static); it is neither copyable
  * nor movable. dispatch() is thread-safe. Do not call waitAll() from inside a
  * job running on this executor; use ScopedExecutor for nested runs.
+ *
+ * @tparam Stable  Whether equal-priority jobs start in dispatch order. Only
+ *                 false is instantiated, as PriorityExecutor.
  */
-class PriorityExecutor final : public IExecutor
+template<bool Stable>
+class BasicPriorityExecutor final : public IExecutor
 {
 public:
     /** Construction settings. Every field has a usable default. */
@@ -64,7 +68,7 @@ public:
     };
 
     /** Start a pool with default Options. */
-    PriorityExecutor();
+    BasicPriorityExecutor();
 
     /**
      * Start a pool configured by @p options.
@@ -73,13 +77,13 @@ public:
      * @note Startup allocation or thread creation can fail. Already-started
      *       workers are stopped and joined before an exception propagates.
      */
-    explicit PriorityExecutor(Options options);
+    explicit BasicPriorityExecutor(Options options);
 
     /** Waits for every dispatched job, then stops and joins the workers. */
-    ~PriorityExecutor() override;
+    ~BasicPriorityExecutor() override;
 
-    PriorityExecutor(const PriorityExecutor&)            = delete;
-    PriorityExecutor& operator=(const PriorityExecutor&) = delete;
+    BasicPriorityExecutor(const BasicPriorityExecutor&)            = delete;
+    BasicPriorityExecutor& operator=(const BasicPriorityExecutor&) = delete;
 
     /**
      * Accepts a job, or rejects it without retaining or invoking either callback.
@@ -125,5 +129,9 @@ private:
     std::mutex                      doneMtx_;
     std::condition_variable         doneCv_;
 };
+
+using PriorityExecutor = BasicPriorityExecutor<false>;
+
+extern template class BasicPriorityExecutor<false>;
 
 } // namespace sub0pipeline

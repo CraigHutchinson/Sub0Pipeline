@@ -14,9 +14,11 @@
 namespace sub0pipeline
 {
 
-PriorityExecutor::PriorityExecutor() : PriorityExecutor{Options{}} {}
+template<bool Stable>
+BasicPriorityExecutor<Stable>::BasicPriorityExecutor() : BasicPriorityExecutor{Options{}} {}
 
-PriorityExecutor::PriorityExecutor(Options options) : queueCapacity_{options.queueCapacity}
+template<bool Stable>
+BasicPriorityExecutor<Stable>::BasicPriorityExecutor(Options options) : queueCapacity_{options.queueCapacity}
 {
     const unsigned int threadCount = options.threadCount != 0U
         ? options.threadCount
@@ -54,13 +56,15 @@ PriorityExecutor::PriorityExecutor(Options options) : queueCapacity_{options.que
 #endif
 }
 
-PriorityExecutor::~PriorityExecutor()
+template<bool Stable>
+BasicPriorityExecutor<Stable>::~BasicPriorityExecutor()
 {
     waitAll();
     stopWorkers();
 }
 
-void PriorityExecutor::stopWorkers() noexcept
+template<bool Stable>
+void BasicPriorityExecutor<Stable>::stopWorkers() noexcept
 {
     {
         std::lock_guard lk{mtx_};
@@ -71,7 +75,8 @@ void PriorityExecutor::stopWorkers() noexcept
     workers_.clear();
 }
 
-void PriorityExecutor::dispatch(
+template<bool Stable>
+void BasicPriorityExecutor<Stable>::dispatch(
     std::string_view              /*name*/,
     std::function<void()>         fn,
     std::function<void()>         onComplete,
@@ -97,18 +102,21 @@ void PriorityExecutor::dispatch(
     if (wake) wake_.notify_one();
 }
 
-void PriorityExecutor::waitAll()
+template<bool Stable>
+void BasicPriorityExecutor<Stable>::waitAll()
 {
     std::unique_lock lk{doneMtx_};
     doneCv_.wait(lk, [this]{ return inFlight_.load(std::memory_order_acquire) == 0U; });
 }
 
-int PriorityExecutor::concurrency() const noexcept
+template<bool Stable>
+int BasicPriorityExecutor<Stable>::concurrency() const noexcept
 {
     return static_cast<int>(workers_.size());
 }
 
-void PriorityExecutor::work(const std::function<void()>& onThreadStart)
+template<bool Stable>
+void BasicPriorityExecutor<Stable>::work(const std::function<void()>& onThreadStart)
 {
     if (onThreadStart) onThreadStart();
     for (;;)
@@ -138,5 +146,7 @@ void PriorityExecutor::work(const std::function<void()>& onThreadStart)
         }
     }
 }
+
+template class BasicPriorityExecutor<false>;
 
 } // namespace sub0pipeline
