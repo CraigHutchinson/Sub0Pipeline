@@ -1,6 +1,7 @@
 // include/sub0pipeline/executor/priority_executor.hpp
 //
-// PriorityExecutor — bounded worker pool that starts higher-priority jobs first.
+// PriorityExecutor / StablePriorityExecutor — bounded worker pool that starts
+// higher-priority jobs first.
 // Link Sub0Pipeline::Priority.
 #pragma once
 
@@ -24,9 +25,8 @@ namespace sub0pipeline
  * Runs jobs on a fixed-size worker pool, starting queued jobs in priority order.
  *
  * A job with a larger `.priority()` value starts before lower-priority jobs
- * that are still queued. Running jobs are not preempted, and jobs of equal
- * priority start in no particular order. Core affinity and stack hints are
- * ignored.
+ * that are still queued. Running jobs are not preempted. Core affinity and
+ * stack hints are ignored.
  *
  * Typical use: work a client is waiting on (`.priority(10)`) overtakes
  * background prefetching (`.priority(5)`) when the pool is busy.
@@ -37,8 +37,12 @@ namespace sub0pipeline
  * nor movable. dispatch() is thread-safe. Do not call waitAll() from inside a
  * job running on this executor; use ScopedExecutor for nested runs.
  *
- * @tparam Stable  Whether equal-priority jobs start in dispatch order. Only
- *                 false is instantiated, as PriorityExecutor.
+ * @tparam Stable  Whether equal-priority jobs start in dispatch order.
+ *                 PriorityExecutor (false) starts them in no particular order
+ *                 and stores nothing extra per job. StablePriorityExecutor
+ *                 (true) starts them in dispatch order, for callers whose
+ *                 dispatch order carries meaning, such as an access-order
+ *                 prefetch.
  */
 template<bool Stable>
 class BasicPriorityExecutor final : public IExecutor
@@ -130,8 +134,10 @@ private:
     std::condition_variable         doneCv_;
 };
 
-using PriorityExecutor = BasicPriorityExecutor<false>;
+using PriorityExecutor       = BasicPriorityExecutor<false>;
+using StablePriorityExecutor = BasicPriorityExecutor<true>;
 
 extern template class BasicPriorityExecutor<false>;
+extern template class BasicPriorityExecutor<true>;
 
 } // namespace sub0pipeline

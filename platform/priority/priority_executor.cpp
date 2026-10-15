@@ -148,5 +148,6 @@ void BasicPriorityExecutor<Stable>::work(const std::function<void()>& onThreadSt
 }
 
 template class BasicPriorityExecutor<false>;
+template class BasicPriorityExecutor<true>;
 
 } // namespace sub0pipeline
