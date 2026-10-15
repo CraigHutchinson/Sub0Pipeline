@@ -21,6 +21,19 @@
 namespace sub0pipeline
 {
 
+namespace detail
+{
+    /** Dispatch sequence of a queued job; empty unless the executor keeps dispatch order. */
+    template<bool Stable>
+    struct PriorityJobSequence {};
+
+    template<>
+    struct PriorityJobSequence<true>
+    {
+        uint64_t sequence{0U};
+    };
+} // namespace detail
+
 /**
  * Runs jobs on a fixed-size worker pool, starting queued jobs in priority order.
  *
@@ -110,19 +123,28 @@ public:
     [[nodiscard]] int concurrency() const noexcept override;
 
 private:
-    struct QueuedJob
+    // An empty base, not a member, so PriorityExecutor's queued job stays the same size on MSVC,
+    // which ignores [[no_unique_address]].
+    struct QueuedJob : detail::PriorityJobSequence<Stable>
     {
         std::function<void()> fn;
         std::function<void()> onComplete;
         uint8_t               priority{5};
 
-        bool operator<(const QueuedJob& o) const noexcept { return priority < o.priority; }
+        /** priority_queue pops the greatest job: the higher priority, then the earlier dispatch. */
+        bool operator<(const QueuedJob& o) const noexcept
+        {
+            if (priority != o.priority) return priority < o.priority;
+            if constexpr (Stable) return this->sequence > o.sequence;
+            else return false;
+        }
     };
 
     void work(const std::function<void()>& onThreadStart);
     void stopWorkers() noexcept;
 
     std::priority_queue<QueuedJob>  queue_;             ///< Guarded by mtx_.
+    uint64_t                        nextSequence_{0U};  ///< Guarded by mtx_; read only when Stable.
     std::size_t                     queueCapacity_{0U};
     std::mutex                      mtx_;
     std::condition_variable         wake_;              ///< Work queued, or stopping.

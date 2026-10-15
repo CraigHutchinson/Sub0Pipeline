@@ -92,7 +92,13 @@ void BasicPriorityExecutor<Stable>::dispatch(
         {
             SUB0PIPELINE_THROW("PriorityExecutor submission capacity exhausted");
         }
-        queue_.push(QueuedJob{std::move(fn), std::move(onComplete), priority});
+        struct UnorderedJob { std::function<void()> fn; std::function<void()> onComplete; uint8_t priority; };
+        static_assert(Stable || sizeof(QueuedJob) == sizeof(UnorderedJob),
+            "PriorityExecutor must store nothing per job for the dispatch order it does not keep");
+        if constexpr (Stable)
+            queue_.push(QueuedJob{{nextSequence_++}, std::move(fn), std::move(onComplete), priority});
+        else
+            queue_.push(QueuedJob{{}, std::move(fn), std::move(onComplete), priority});
         // Workers cannot remove the accepted job until its count is published.
         inFlight_.fetch_add(1U, std::memory_order_relaxed);
         // A busy worker re-checks the queue before it sleeps, so a wake-up
