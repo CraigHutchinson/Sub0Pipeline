@@ -11,6 +11,7 @@
 #include <doctest.h>
 #include <mutex>
 #include <set>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -69,6 +70,73 @@ TEST_CASE("PriorityExecutor: higher-priority job queued behind a busy pool runs 
 
     REQUIRE(order.size() == 3U);
     CHECK(order[0] == "high"); // highest priority among the three queued jobs
+}
+
+TEST_CASE("StablePriorityExecutor: equal-priority jobs start in dispatch order")
+{
+    // One worker: every job queues behind the hold job, so the start order of
+    // the equal-priority jobs is decided by the queue alone.
+    StablePriorityExecutor exec{{.threadCount = 1}};
+
+    std::mutex              mtx;
+    std::condition_variable holdCv;
+    bool                    releaseHold = false;
+    exec.dispatch("hold", [&] {
+        std::unique_lock lk{mtx};
+        holdCv.wait(lk, [&] { return releaseHold; });
+    }, nullptr, -1, 5, 8192U);
+
+    std::vector<std::string>       order;
+    std::mutex                     orderMtx;
+    const std::vector<std::string> expected{"a", "b", "c", "d", "e", "f", "g", "h"};
+    for (const auto& name : expected)
+    {
+        exec.dispatch(name, [&, name] {
+            std::lock_guard lk{orderMtx};
+            order.push_back(name);
+        }, nullptr, -1, 5, 8192U);
+    }
+
+    {
+        std::lock_guard lk{mtx};
+        releaseHold = true;
+    }
+    holdCv.notify_one();
+    exec.waitAll();
+
+    CHECK(order == expected);
+}
+
+TEST_CASE("StablePriorityExecutor: a higher-priority job still starts before queued lower-priority ones")
+{
+    StablePriorityExecutor exec{{.threadCount = 1}};
+
+    std::mutex              mtx;
+    std::condition_variable holdCv;
+    bool                    releaseHold = false;
+    exec.dispatch("hold", [&] {
+        std::unique_lock lk{mtx};
+        holdCv.wait(lk, [&] { return releaseHold; });
+    }, nullptr, -1, 10, 8192U);
+
+    std::vector<std::string> order;
+    std::mutex               orderMtx;
+    auto recordJob = [&](std::string_view name) {
+        std::lock_guard lk{orderMtx};
+        order.emplace_back(name);
+    };
+    exec.dispatch("low_a", [&] { recordJob("low_a"); }, nullptr, -1, 1, 8192U);
+    exec.dispatch("low_b", [&] { recordJob("low_b"); }, nullptr, -1, 1, 8192U);
+    exec.dispatch("high", [&] { recordJob("high"); }, nullptr, -1, 9, 8192U);
+
+    {
+        std::lock_guard lk{mtx};
+        releaseHold = true;
+    }
+    holdCv.notify_one();
+    exec.waitAll();
+
+    CHECK(order == std::vector<std::string>{"high", "low_a", "low_b"});
 }
 
 TEST_CASE("PriorityExecutor: onThreadStart runs exactly once per worker, before any job on that thread")

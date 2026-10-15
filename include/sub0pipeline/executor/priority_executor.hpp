@@ -1,6 +1,7 @@
 // include/sub0pipeline/executor/priority_executor.hpp
 //
-// PriorityExecutor — bounded worker pool that starts higher-priority jobs first.
+// PriorityExecutor / StablePriorityExecutor — bounded worker pool that starts
+// higher-priority jobs first.
 // Link Sub0Pipeline::Priority.
 #pragma once
 
@@ -20,13 +21,25 @@
 namespace sub0pipeline
 {
 
+namespace detail
+{
+    /** Dispatch sequence of a queued job; empty unless the executor keeps dispatch order. */
+    template<bool Stable>
+    struct PriorityJobSequence {};
+
+    template<>
+    struct PriorityJobSequence<true>
+    {
+        uint64_t sequence{0U};
+    };
+} // namespace detail
+
 /**
  * Runs jobs on a fixed-size worker pool, starting queued jobs in priority order.
  *
  * A job with a larger `.priority()` value starts before lower-priority jobs
- * that are still queued. Running jobs are not preempted, and jobs of equal
- * priority start in no particular order. Core affinity and stack hints are
- * ignored.
+ * that are still queued. Running jobs are not preempted. Core affinity and
+ * stack hints are ignored.
  *
  * Typical use: work a client is waiting on (`.priority(10)`) overtakes
  * background prefetching (`.priority(5)`) when the pool is busy.
@@ -36,8 +49,16 @@ namespace sub0pipeline
  * wherever suits the caller (stack, member, static); it is neither copyable
  * nor movable. dispatch() is thread-safe. Do not call waitAll() from inside a
  * job running on this executor; use ScopedExecutor for nested runs.
+ *
+ * @tparam Stable  Whether equal-priority jobs start in dispatch order.
+ *                 PriorityExecutor (false) starts them in no particular order
+ *                 and stores nothing extra per job. StablePriorityExecutor
+ *                 (true) starts them in dispatch order, for callers whose
+ *                 dispatch order carries meaning, such as an access-order
+ *                 prefetch.
  */
-class PriorityExecutor final : public IExecutor
+template<bool Stable>
+class BasicPriorityExecutor final : public IExecutor
 {
 public:
     /** Construction settings. Every field has a usable default. */
@@ -64,7 +85,7 @@ public:
     };
 
     /** Start a pool with default Options. */
-    PriorityExecutor();
+    BasicPriorityExecutor();
 
     /**
      * Start a pool configured by @p options.
@@ -73,13 +94,13 @@ public:
      * @note Startup allocation or thread creation can fail. Already-started
      *       workers are stopped and joined before an exception propagates.
      */
-    explicit PriorityExecutor(Options options);
+    explicit BasicPriorityExecutor(Options options);
 
     /** Waits for every dispatched job, then stops and joins the workers. */
-    ~PriorityExecutor() override;
+    ~BasicPriorityExecutor() override;
 
-    PriorityExecutor(const PriorityExecutor&)            = delete;
-    PriorityExecutor& operator=(const PriorityExecutor&) = delete;
+    BasicPriorityExecutor(const BasicPriorityExecutor&)            = delete;
+    BasicPriorityExecutor& operator=(const BasicPriorityExecutor&) = delete;
 
     /**
      * Accepts a job, or rejects it without retaining or invoking either callback.
@@ -102,19 +123,28 @@ public:
     [[nodiscard]] int concurrency() const noexcept override;
 
 private:
-    struct QueuedJob
+    // An empty base, not a member, so PriorityExecutor's queued job stays the same size on MSVC,
+    // which ignores [[no_unique_address]].
+    struct QueuedJob : detail::PriorityJobSequence<Stable>
     {
         std::function<void()> fn;
         std::function<void()> onComplete;
         uint8_t               priority{5};
 
-        bool operator<(const QueuedJob& o) const noexcept { return priority < o.priority; }
+        /** priority_queue pops the greatest job: the higher priority, then the earlier dispatch. */
+        bool operator<(const QueuedJob& o) const noexcept
+        {
+            if (priority != o.priority) return priority < o.priority;
+            if constexpr (Stable) return this->sequence > o.sequence;
+            else return false;
+        }
     };
 
     void work(const std::function<void()>& onThreadStart);
     void stopWorkers() noexcept;
 
     std::priority_queue<QueuedJob>  queue_;             ///< Guarded by mtx_.
+    uint64_t                        nextSequence_{0U};  ///< Guarded by mtx_; read only when Stable.
     std::size_t                     queueCapacity_{0U};
     std::mutex                      mtx_;
     std::condition_variable         wake_;              ///< Work queued, or stopping.
@@ -125,5 +155,11 @@ private:
     std::mutex                      doneMtx_;
     std::condition_variable         doneCv_;
 };
+
+using PriorityExecutor       = BasicPriorityExecutor<false>;
+using StablePriorityExecutor = BasicPriorityExecutor<true>;
+
+extern template class BasicPriorityExecutor<false>;
+extern template class BasicPriorityExecutor<true>;
 
 } // namespace sub0pipeline
