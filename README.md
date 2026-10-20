@@ -61,6 +61,9 @@ fixed-capacity execution remain separate work. See
   measured, explicit bounded-allocation profiles. The current implementation
   retains some reusable scratch but still uses dynamic allocation; it does not
   promise heap-free execution or a caller-selected total memory budget.
+- Deferred completion and remote sub-graphs (jobs that wait on work in another
+  process without holding a thread) are designed in
+  [cross-process orchestration](docs/design/cross-process-orchestration.md).
 - `TickLoop::run(std::stop_token)` returns after the current tick pass;
   callbacks in that pass are not interrupted, and the platform yield may delay
   return by one interval.
