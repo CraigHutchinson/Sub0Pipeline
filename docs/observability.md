@@ -30,7 +30,11 @@ Pipeline accepts at most 65,536 jobs.
 The interface is forward-only; prior name-only callback hooks are not retained.
 
 `onJobStart` means dispatch is about to execute the body; it does not guarantee
-the body ran if cancellation wins the entry race. `onJobFinish` reports terminal
+the body ran if cancellation wins the entry race. `onJobAwaiting` reports that a
+deferred job's body returned and the job now waits for its `Completion`; for
+one job it always falls between `onJobStart` and `onJobFinish`, and it is not
+called when the job was completed before its body returned. A deferred job's
+`onJobFinish` may arrive on a different thread from its `onJobStart`. `onJobFinish` reports terminal
 status, including skipped jobs that never started. `onDependenciesResolved` is
 called once after a predecessor's terminal callback with a non-owning range of
 all outgoing edges, including edges through which a required failure skips a

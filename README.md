@@ -19,6 +19,7 @@ through `std::expected`.
 | Optional DSL | Separate `dsl.hpp`; `>>`, `+`, `_job`, job groups, tuples and structured bindings |
 | Job results | `std::expected<void, PipelineError>`; void jobs are wrapped as successful jobs |
 | Failure propagation | Required failures skip successors; optional ordinary failures allow them to continue; cancellation and rejected submissions remain fatal |
+| Deferred completion | `emplaceDeferred` hands the body a move-only `Completion`; the job completes when it is signalled from any thread and holds no executor thread while `kAwaiting`. Cancellation and timeouts finish it at once; the outstanding work is tracked as an orphan |
 | Cancellation | Per-job `cancel()` and external stop tokens for `run`, `runInline` and `runUntil`; queued plain jobs are also suppressible |
 | Timeouts | Native helpers or an injected deadline service with caller-owned registrations; expiry reports `kTimeout`; owned plain workers require reaping |
 | Structured completion | Opt-in `RunScope` requests stop and joins executor callbacks, deadline callbacks and orphan workers before teardown |
@@ -61,8 +62,9 @@ fixed-capacity execution remain separate work. See
   measured, explicit bounded-allocation profiles. The current implementation
   retains some reusable scratch but still uses dynamic allocation; it does not
   promise heap-free execution or a caller-selected total memory budget.
-- Deferred completion and remote sub-graphs (jobs that wait on work in another
-  process without holding a thread) are designed in
+- Remote sub-graphs -- sending a sub-graph of registered job kinds to a worker
+  process, which appears on the coordinator as one deferred job -- are designed
+  but not implemented. See
   [cross-process orchestration](docs/design/cross-process-orchestration.md).
 - `TickLoop::run(std::stop_token)` returns after the current tick pass;
   callbacks in that pass are not interrupted, and the platform yield may delay
@@ -186,6 +188,42 @@ suppresses ACK. Cancellation can suppress ACK after commit succeeds; the write
 is not rolled back. The consumer must supply durable deduplication/idempotent
 retry behavior. See the [complete contract](docs/structured-cancellation.md).
 
+## Deferred completion
+
+A deferred job starts work that finishes elsewhere -- asynchronous I/O, a GPU
+queue, a timer, another process -- and returns. It completes when its
+`Completion` is signalled, from any thread; only then do its dependants start.
+
+```cpp
+auto read = pipe.emplaceDeferred([&io](Completion done) {
+    io.readAsync(path, [done = std::move(done)](std::error_code ec) mutable {
+        if (ec) done.fail(PipelineError::kJobFailed, ec.message());
+        else    done.succeed();
+    });
+}).name("read").timeout(5s);
+read.precede(decode);
+auto result = pipe.run(pool);   // returns once every deferred job has finished
+```
+
+- While waiting the job is `kAwaiting` (`status()`, `snapshot()`,
+  `IObserver::onJobAwaiting`) and holds no executor thread, so a pool of two
+  threads can have any number of deferred jobs pending while CPU jobs run.
+- `Completion` is move-only: one holder completes the job once. Destroying an
+  uncompleted handle fails the job with "completion abandoned".
+- When the handle is completed on another thread, the job's finish (observer
+  callbacks, releasing dependants) is dispatched to the run's executor; an
+  inline run (`runInline()`, `SequentialExecutor`) does it on the run thread.
+- Cancellation and `.timeout()` finish a waiting job at once as `kCancelled` /
+  `kTimedOut`. The work sees the request through `Completion::stopToken()`.
+  Its late completion is ignored; until then it is an orphan, so
+  `hasPendingOrphans()`, `joinOrphans()`, the next run and the destructor wait
+  for the handle to be completed or destroyed.
+- Without an injected `IDeadlineService`, deferred timeouts share one timer
+  thread per pipeline. On-demand jobs cannot be deferred.
+
+See the [deferred_completion example](examples/deferred_completion/main.cpp) and
+the [design](docs/design/cross-process-orchestration.md).
+
 ## Costs and opt-in behavior
 
 | Path or feature | Selection | Cost / limit |
@@ -196,6 +234,7 @@ retry behavior. See the [complete contract](docs/structured-cancellation.md).
 | External cancellation forwarding | Supply a stoppable token | One stop callback registration per run; a request then signals every job in the graph. Skipped for the no-token path |
 | Observer callbacks and tracing | Supply an `IObserver*` | Absent when no observer is supplied; an attached observer receives concurrent callbacks and pays its own capture/formatting costs |
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
+| Deferred jobs | Use `emplaceDeferred` | One heap slot per deferred job at construction; per run a stop-callback registration, two short mutex sections and, when completed on another thread, one executor dispatch. Graphs without deferred jobs only test a flag. Timed deferred jobs without an injected service start one timer thread per pipeline |
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |
 | Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
 | Priority worker pool | Construct `PriorityExecutor` with `Options::threadCount` and optional `queueCapacity` | Fixed worker count; zero capacity keeps the dynamic queue; positive capacity reserves queued storage at startup and rejects overflow; callable and platform allocations remain |
@@ -305,7 +344,7 @@ exhaustion recoverable.
 
 | Area | Entry points |
 |---|---|
-| Construct / connect | `emplace`, `reserve`, `succeed`, `precede`, `parallel`, `size` |
+| Construct / connect | `emplace`, `emplaceDeferred`, `reserve`, `succeed`, `precede`, `parallel`, `size` |
 | Execute / cancel | `run`, `runInline`, `runUntil`, `Job::cancel` |
 | Join / inspect | `joinOrphans`, `hasPendingOrphans`, `status`, `name`, `statusText`, `successors`, `snapshot`, `Job::id` |
 | Diagnose | `validate`, `firstFailureName`, `setCurrentJobError`, `dumpText(std::ostream&)` |
@@ -318,14 +357,15 @@ also be included on its own:
 | Header | Provides |
 |---|---|
 | `pipeline.hpp` | `Pipeline` |
+| `completion.hpp` | `Completion`, the handle that finishes a deferred job |
 | `job.hpp`, `job_group.hpp` | `Job`, `JobId`, `JobStatus`; `JobGroup`, `parallel` |
 | `executors.hpp` | Everything under `executor/`: `executor.hpp` (`IExecutor`), `scoped_executor.hpp`, one header per bundled executor class (`desktop_`, `sequential_`, `priority_`, `freertos_executor.hpp`) and `default_executor.hpp` |
 | `observer.hpp`, `dependency_range.hpp` | `IObserver`, `RunId`; `DependencyRange` |
 | `error.hpp`, `tick_loop.hpp`, `config.hpp` | `PipelineError`; `TickLoop`, `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
 | `dsl.hpp`, `deadline.hpp`, `run_scope.hpp` | Opt-in layers, not part of the umbrella |
 
-Job statuses distinguish pending, ready, running, done, failed, skipped, timed
-out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
+Job statuses distinguish pending, ready, running, awaiting (a deferred job
+waiting for its `Completion`), done, failed, skipped, timed out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
 `kCyclicDependency`, `kUnknownJob`, `kNotArmed`, `kNotOnDemand`, `kBusy` and
 `kDeadlineUnavailable`. A job skipped because a predecessor failed has status
 `kSkipped`; `run()` returns the error of the job that caused it.
@@ -334,7 +374,7 @@ out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
 `statusText(JobId)` and `successors(JobId)` accept. Job handles stay valid when
 their `Pipeline` is moved.
 
-`IObserver` provides run, identity-aware job start/finish and dependency
+`IObserver` provides run, identity-aware job start/awaiting/finish and dependency
 resolution hooks, plus failure details. Existing name-only callbacks remain
 supported. With parallel executors, callbacks may overlap and must protect
 shared state. A dispatch-start notification does not prove that a cancelled
@@ -406,6 +446,7 @@ and manually triggered CI workflow retain machine-readable evidence, and
 | [trace_capture](examples/trace_capture/main.cpp) | Bounded concurrent event capture, Chrome Trace JSON and live snapshot polling |
 | [job_options](examples/job_options/main.cpp) | Job builder methods, `precede()`/`succeed()` and optional chains |
 | [tick_loop](examples/tick_loop/main.cpp) | Recurring ticks with joinable `std::jthread` shutdown |
+| [deferred_completion](examples/deferred_completion/main.cpp) | Deferred jobs completed by an asynchronous device, more pending than pool threads, timeout and late completion |
 
 The suites include core and DSL regression tests plus optional Qt and Zephyr
 adapter executions. Coverage includes

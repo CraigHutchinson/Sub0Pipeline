@@ -222,9 +222,13 @@ stop token or `Job::cancel()` to abandon it.
 - Status transitions use the existing atomic `jobStatus_`. The body moves
   `kRunning -> kAwaiting` with a compare-exchange, so it never overwrites a
   final status stored by a finisher on another thread.
-- Re-runs: the run initialization renews every deferred job's stop source and
-  resets its per-run state; this is safe because the previous run's orphans
-  were joined first and every non-orphan handle was released.
+- Re-runs: the run initialization renews every deferred job's stop source, and
+  the thread that runs the body resets the per-run state before it creates the
+  `Completion`. This is safe because the previous run's orphans were joined
+  first and every non-orphan handle was released.
+- At the end of a run, the run thread releases every deferred job's stop
+  callback and deadline registration that a finish could not release itself
+  (the executor-rejection fallback).
 
 ### Costs
 
