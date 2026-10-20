@@ -86,6 +86,7 @@ private:
     bool                                             handshaken_{false};
     bool                                             closed_{false};
     uint32_t                                         admitted_{0U}; ///< Queued plus running requests.
+    uint32_t                                         inlineLimit_{0U}; ///< Smaller of both sides' inline limits.
     std::deque<std::shared_ptr<Work>>                queue_;
     std::unordered_map<uint64_t, std::shared_ptr<Work>> active_;
 };

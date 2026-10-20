@@ -537,8 +537,9 @@ TEST_CASE("Remote: cancelling a remote job stops the worker's request; the late 
 
 TEST_CASE("Remote: more awaiting remote jobs than coordinator threads while CPU jobs finish")
 {
+    PriorityExecutor workerPool{{.threadCount = 8}}; // the blocking worker jobs each hold a worker thread
     Rig rig;
-    rig.startWorker({.maxConcurrentRequests = 8});
+    rig.startWorker({.executor = &workerPool, .maxConcurrentRequests = 8});
     REQUIRE(rig.connect({.maxInFlight = 8}).has_value());
 
     PriorityExecutor pool{{.threadCount = 2}};
