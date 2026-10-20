@@ -14,12 +14,14 @@
 namespace sub0pipeline::remote
 {
 
+using Frame = std::shared_ptr<std::vector<std::byte>>;
+
 struct LoopbackTransport::Shared
 {
-    std::mutex                                       mtx;
-    std::condition_variable                          changed;
-    bool                                             closed{false};
-    std::deque<std::vector<std::byte>>               inbox[2]; ///< Frames waiting for delivery at each side.
+    std::mutex              mtx;
+    std::condition_variable changed;
+    bool                    closed{false};
+    std::deque<Frame>       inbox[2]; ///< Frames waiting for delivery at each side.
 };
 
 std::pair<std::unique_ptr<LoopbackTransport>, std::unique_ptr<LoopbackTransport>> LoopbackTransport::pair()
@@ -47,7 +49,8 @@ void LoopbackTransport::start(IFrameSink& sink)
             auto frame = std::move(inbox.front());
             inbox.pop_front();
             lock.unlock();
-            sink.onFrame(frame);
+            const std::span<const std::byte> bytes{*frame};
+            sink.onFrameBuffer(std::move(frame), bytes);
             lock.lock();
         }
         lock.unlock();
@@ -57,10 +60,22 @@ void LoopbackTransport::start(IFrameSink& sink)
 
 std::expected<void, TransportError> LoopbackTransport::send(std::span<const std::byte> frame)
 {
+    const std::span<const std::byte> parts[] = {frame};
+    return sendParts(parts);
+}
+
+std::expected<void, TransportError> LoopbackTransport::sendParts(std::span<const std::span<const std::byte>> parts)
+{
+    // The one copy this medium needs: into the peer's queue.
+    std::size_t total = 0U;
+    for (auto part : parts) total += part.size();
+    auto frame = std::make_shared<std::vector<std::byte>>();
+    frame->reserve(total);
+    for (auto part : parts) frame->insert(frame->end(), part.begin(), part.end());
     {
         std::lock_guard lock{shared_->mtx};
         if (shared_->closed) return std::unexpected(TransportError::kClosed);
-        shared_->inbox[1U - side_].emplace_back(frame.begin(), frame.end());
+        shared_->inbox[1U - side_].push_back(std::move(frame));
     }
     shared_->changed.notify_all();
     return {};

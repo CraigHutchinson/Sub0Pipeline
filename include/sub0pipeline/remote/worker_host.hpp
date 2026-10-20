@@ -12,10 +12,12 @@
 #include <span>
 #include <stop_token>
 #include <unordered_map>
+#include <vector>
 
 #include "sub0pipeline/executor/executor.hpp"
 #include "sub0pipeline/remote/payload.hpp"
 #include "sub0pipeline/remote/registry.hpp"
+#include "sub0pipeline/remote/strategy.hpp"
 #include "sub0pipeline/remote/transport.hpp"
 
 namespace sub0pipeline::remote
@@ -44,7 +46,10 @@ public:
         IExecutor*     executor{nullptr};           ///< Runs the jobs; nullptr runs each request inline on its runner thread.
         uint32_t       maxConcurrentRequests{4U};   ///< Requests run at once, one runner thread each.
         uint32_t       maxInlineBytes{64U * 1024U}; ///< Largest inline payload either way; larger outputs go to the store.
-        IPayloadStore* store{nullptr};              ///< Resolves handles for jobs and stores large outputs; optional.
+        IPayloadStore* store{nullptr};              ///< Given to jobs through JobContext::store(); optional.
+        /// Payload strategies this worker supports; streamStrategy() is always
+        /// appended. The coordinator's preference order decides among them.
+        std::vector<PayloadStrategyFactory> strategies{};
     };
 
     /**
@@ -73,6 +78,7 @@ private:
     struct Work;
 
     void onFrame(std::span<const std::byte> frame) override;
+    void onFrameBuffer(std::shared_ptr<const void> owner, std::span<const std::byte> frame) override;
     void onClosed(TransportError reason) noexcept override;
 
     void runner(std::stop_token stop);
@@ -89,6 +95,8 @@ private:
     uint32_t                                         inlineLimit_{0U}; ///< Smaller of both sides' inline limits.
     std::deque<std::shared_ptr<Work>>                queue_;
     std::unordered_map<uint64_t, std::shared_ptr<Work>> active_;
+    std::unique_ptr<IPayloadStrategy>                strategy_; ///< Chosen at the handshake; null for none.
+    std::unique_ptr<IPayloadSender>                  sender_;
 };
 
 } // namespace sub0pipeline::remote

@@ -73,7 +73,7 @@ endif()
 # ── Remote sub-graph tests ────────────────────────────────────────────────────
 
 if(SUB0PIPELINE_BUILD_REMOTE)
-    add_executable(Sub0Pipeline_RemoteTests test_main.cpp test_remote.cpp)
+    add_executable(Sub0Pipeline_RemoteTests test_main.cpp test_remote.cpp test_payload.cpp)
     target_link_libraries(Sub0Pipeline_RemoteTests PRIVATE
         Sub0Pipeline::Remote Sub0Pipeline::Default Sub0Pipeline::Priority)
     target_include_directories(Sub0Pipeline_RemoteTests PRIVATE "${VENDOR_DIR}")
@@ -139,5 +139,10 @@ if(SUB0PIPELINE_BUILD_BENCHMARKS)
     if(SUB0PIPELINE_BUILD_REMOTE)
         target_link_libraries(Sub0Pipeline_Bench PRIVATE Sub0Pipeline::Remote)
         target_compile_definitions(Sub0Pipeline_Bench PRIVATE SUB0PIPELINE_BENCH_REMOTE=1)
+
+        add_executable(Sub0Pipeline_PayloadBench bench_payload.cpp)
+        target_link_libraries(Sub0Pipeline_PayloadBench PRIVATE Sub0Pipeline::Remote Sub0Pipeline::Priority)
+        target_include_directories(Sub0Pipeline_PayloadBench PRIVATE "${VENDOR_DIR}")
+        target_compile_features(Sub0Pipeline_PayloadBench PRIVATE cxx_std_23)
     endif()
 endif()

@@ -6,10 +6,13 @@
 //   third) as one request; in its own graph that request is one deferred job.
 // - The reply carries only the exported output, which a later local job uses.
 // - A failing job is reported by name.
+// - A 4 MiB payload streams to the worker and back over the pipe; the worker
+//   writes its output in place with JobContext::allocateOutput().
 //
-// Both ends run in this process over LoopbackTransport. In a real deployment
-// the worker is another process -- for example one hosting a runtime the
-// coordinator does not have -- and each side gets a pipe or socket transport.
+// Both ends run in this process over PipeTransport::pair(). In a real
+// deployment the worker is another process -- for example one hosting a
+// runtime the coordinator does not have -- and each side wraps that process's
+// pipes or socket in a PipeTransport.
 
 #include <algorithm>
 #include <cctype>
@@ -21,7 +24,7 @@
 #include <vector>
 
 #include "sub0pipeline/remote/channel.hpp"
-#include "sub0pipeline/remote/loopback_transport.hpp"
+#include "sub0pipeline/remote/pipe_transport.hpp"
 #include "sub0pipeline/remote/worker_host.hpp"
 #include "sub0pipeline/sub0pipeline.hpp"
 
@@ -64,6 +67,12 @@ JobRegistry makeRegistry()
         ctx.setOutput(Payload::inlineBytes(toBytes(text)));
         return {};
     });
+    registry.add({"invert", 1}, [](JobContext& ctx) -> std::expected<void, PipelineError> {
+        const auto in = ctx.input().bytes();
+        auto out = ctx.allocateOutput(in.size());
+        for (std::size_t i = 0; i < in.size(); ++i) out[i] = ~in[i];
+        return {};
+    });
     registry.add({"reject", 1}, [](JobContext& ctx) -> std::expected<void, PipelineError> {
         ctx.setError("input is not accepted");
         return std::unexpected(PipelineError::kJobFailed);
@@ -76,7 +85,8 @@ JobRegistry makeRegistry()
 int main()
 {
     const JobRegistry registry = makeRegistry();
-    auto [coordinatorEnd, workerEnd] = LoopbackTransport::pair();
+    auto [coordinatorEnd, workerEnd] = PipeTransport::pair();
+    if (!coordinatorEnd || !workerEnd) return 1;
 
     // ── Worker side ──────────────────────────────────────────────────────────
     PriorityExecutor workerPool{{.threadCount = 2}};
@@ -125,6 +135,21 @@ int main()
         } report;
         const auto failed = failing.run(pool, &report);
         std::printf("Run 2: %s\n", failed ? "unexpected success" : "failed as expected");
+
+        // Above the inline limit (64 KiB by default) payloads go through the
+        // negotiated strategy; with no other configured, that is streaming.
+        constexpr std::size_t kImageBytes = 4U * 1024U * 1024U;
+        auto image = channel.allocatePayload(kImageBytes);
+        std::fill(image.bytes.begin(), image.bytes.end(), std::byte{0x0F});
+        SubGraphRequest large;
+        large.add({"invert", 1}, image.payload, /*exported=*/true);
+        Pipeline big;
+        Payload inverted;
+        (void)channel.emplace(big, large, [&](const SubGraphReply& r) { inverted = r.results[0].output; });
+        const auto streamed = big.run(pool);
+        const bool correct = inverted.bytes().size() == kImageBytes && inverted.bytes()[0] == std::byte{0xF0};
+        std::printf("Run 3: %s via \"%s\", 4 MiB returned %s\n", streamed ? "ok" : "failed",
+                    channel.payloadStrategy().c_str(), correct ? "correctly" : "wrongly");
     } // the channel closes the connection; the worker's serve() then returns
 
     return 0;

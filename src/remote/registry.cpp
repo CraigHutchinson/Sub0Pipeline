@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "sub0pipeline/remote/registry.hpp"
+#include "sub0pipeline/remote/strategy.hpp"
 
 namespace sub0pipeline::remote
 {
@@ -74,6 +75,26 @@ uint64_t JobRegistry::fingerprint() const
 {
     const auto all = kinds();
     return registryFingerprint(all);
+}
+
+} // namespace sub0pipeline::remote
+
+namespace sub0pipeline::remote
+{
+
+std::span<std::byte> JobContext::allocateOutput(std::size_t size)
+{
+    if (strategy_)
+    {
+        if (auto writable = strategy_->allocate(size))
+        {
+            output_ = std::move(writable->payload);
+            return writable->bytes;
+        }
+    }
+    auto writable = makeWritablePayload(size);
+    output_ = std::move(writable.payload);
+    return writable.bytes;
 }
 
 } // namespace sub0pipeline::remote

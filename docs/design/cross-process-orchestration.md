@@ -1,7 +1,10 @@
 # Cross-process orchestration: deferred completion and remote sub-graphs
 
-Status: both parts are implemented. Deferred completion is in the core
-library; remote sub-graphs are the optional `Sub0Pipeline::Remote` target.
+Status: Parts 1 and 2 are implemented: deferred completion is in the core
+library, remote sub-graphs are the optional `Sub0Pipeline::Remote` target.
+Part 3, payload transfer strategies, is implemented for streaming,
+negotiation, the pipe transport and the store strategy; the shared-memory
+strategy follows as a separate step.
 
 This document is the single source of truth for both features. Each design
 element names the requirement it satisfies with a stable handle in backticks,
@@ -364,12 +367,13 @@ A `Payload` is nothing, inline bytes, or an opaque handle of at most 64 bytes
 store. The library never interprets handles and never resolves an input
 handle itself: a job calls `ctx.store()->get()` only when it needs the bytes.
 
-Inline payloads are limited to the smaller of both sides' `maxInlineBytes`
-(default 64 KiB). The coordinator refuses a request with a larger inline input
-(`kJobFailed`). The worker turns a larger exported output into a handle through
-its store. Successors inside the request still received the inline bytes in
-memory. Without a store, that job fails with a message saying so. A large
-payload therefore never travels through the transport.
+Payloads up to the smaller of both sides' `maxInlineBytes` (default 64 KiB)
+travel inline in the control frame. Larger inline payloads go through the
+connection's payload strategy (Part 3), in both directions. Only with a peer
+that speaks protocol minor 0, which negotiates no strategy, does the earlier
+rule apply: the coordinator refuses a larger inline input (`kJobFailed`), and
+the worker turns a larger exported output into a handle through
+`WorkerHost::Options::store`, failing the job if there is none.
 
 ### Wire format (`req-transport-interface`, `req-handshake`)
 
@@ -473,7 +477,7 @@ gives each side its transport.
 | Topic | Current choice | Reason | What would change it |
 |---|---|---|---|
 | Worker-loss error | New core `PipelineError::kUnavailable` | Generic retry logic recognises it without the remote target's types, and it reads correctly for other resources that go away | A consumer needing the transport's close reason in the job result; then add it to the reply handler or a channel query, keeping the code |
-| Reply payloads | Inline up to the smaller limit both ways; larger exported outputs as store handles | Small outputs avoid a store round trip; large ones never cross the transport | A store-only consumer (always handles), or a measured cost of inline copies for mid-sized outputs |
+| Large payloads | Inline up to the smaller limit both ways; larger payloads through the negotiated payload strategy (Part 3) | Small payloads avoid a strategy round trip; how large ones move depends on the deployment | A strategy frame cheaper than inline bytes for mid-sized payloads; then lower the default limit |
 | Worker limits | One per-request concurrency limit, no per-kind limits | Kinds share one executor pool, which already bounds CPU; nothing yet needs per-kind isolation | A kind with an exclusive resource (a device, a licence, a large memory footprint) that must run alone; add a per-kind semaphore in the worker |
 | Full channel | Fail fast with `kBusy`; opt-in bounded queue (`queueCapacity`) | The caller decides retry and back-off; the queue keeps large graphs simple without unbounded growth | Graph builders consistently wanting automatic waiting; make a non-zero queue the default |
 
@@ -504,6 +508,208 @@ The fixed cost is dominated by two thread hand-offs per direction (loopback
 delivery thread, runner thread, executor, continuation); batching jobs into one
 request amortises it.
 
+## Part 3: Payload transfer strategies
+
+### Problem
+
+With Part 2 alone, a payload either travels inline in the control frame (copied
+into the frame, into the transport, and out again into a new vector) or goes
+through an `IPayloadStore` the consumer supplies. Measured on a first consumer,
+a job that takes 12 us in process took a median 1.0 ms round trip in a worker,
+almost all of it spent copying the payload through a file-based store.
+
+Deployments differ in what they offer. A worker on the same machine can share
+memory. A container may have only a socket, and a serverless function only a
+request and response byte stream. How payload bytes move must therefore be
+chosen per deployment, not fixed by the library.
+
+### Strategy abstraction (`req-payload-strategy`)
+
+An `IPayloadStrategy` moves payload bytes; the `ITransport` still carries the
+control frames. Each `RemoteChannel` and `WorkerHost` holds an ordered list of
+strategy factories, and every connection creates its own strategy instances.
+
+```cpp
+class IPayloadStrategy
+{
+public:
+    virtual ~IPayloadStrategy() = default;
+    virtual std::string_view name() const noexcept = 0;           // advertised in the handshake
+
+    // Handshake: coordinator offer() -> worker accept() -> coordinator complete().
+    virtual std::vector<std::byte> offer() = 0;
+    virtual std::expected<std::vector<std::byte>, PipelineError> accept(std::span<const std::byte> offer) = 0;
+    virtual std::expected<void, PipelineError> complete(std::span<const std::byte> accepted) = 0;
+    virtual void attach(IPayloadSender& sender) = 0;              // sends this strategy's own frames
+
+    // Transfer. send() may emit payload frames before it returns the reference
+    // that the control frame carries; receive() turns a reference back into a payload.
+    virtual std::expected<std::vector<std::byte>, PipelineError> send(const Payload& payload, uint64_t scope) = 0;
+    virtual std::expected<Payload, PipelineError> receive(std::span<const std::byte> reference) = 0;
+    virtual void onPayloadFrame(const FrameView& frame) = 0;      // frames of type kPayload
+    virtual void endScope(uint64_t scope) noexcept {}             // the peer finished with scope's payloads
+    virtual std::optional<WritablePayload> allocate(std::size_t bytes) { return std::nullopt; }
+    virtual void onClosed() noexcept {}
+};
+```
+
+The library ships three strategies, each behind a factory:
+
+| Factory | Name | Medium | Copies per payload, beyond the medium's own |
+|---|---|---|---|
+| `streamStrategy({.chunkBytes})` | `stream` | The transport's byte stream: payload bytes in `kPayload` frames of at most `chunkBytes` | Send: none (gathered write). Receive: none when the payload fits one chunk (the frame buffer becomes the payload); one when it spans chunks (into the assembled buffer) |
+| `sharedMemoryStrategy({.regionBytes})` | `shm` | One mapped region per direction (Windows named file mapping; POSIX `shm_open` + `mmap`) | Send: one `memcpy` into the region, none for a buffer from `allocate()`. Receive: none (a view into the region) |
+| `storeStrategy(store)` | `store` | The consumer's `IPayloadStore` | Whatever `put()` and `get()` cost |
+
+A consumer adds its own strategy (for example a cloud object store) by
+implementing `IPayloadStrategy` and passing its factory; the library needs no
+change.
+
+Payloads at or below the connection's inline limit still travel inline in the
+control frame, whatever the strategy, because a strategy frame would cost more
+than the bytes. Explicit `Payload::handle()` payloads are passed through as
+handles, as in Part 2. Only inline-kind payloads above the limit go through the
+strategy, on the wire as `PayloadKind::kReference` (value 3) carrying the
+strategy's reference bytes.
+
+### Negotiation (`req-payload-negotiation`)
+
+Protocol minor version 1 appends strategy fields to the handshake; minor-0
+peers skip them, and a minor-1 peer that receives none falls back to Part 2
+behaviour (inline up to the limit, larger inline payloads refused).
+
+```
+Hello       += u8 count | (string name | blob setup)*      coordinator's offers, in preference order
+HelloAck    += string chosen | blob setup                   empty name: none chosen
+```
+
+The coordinator calls `offer()` on each configured strategy, in order. The
+worker walks that list and, for the first name it also supports, calls
+`accept()`. If that fails -- for example the worker cannot open the
+coordinator's shared memory because it runs in a container -- it tries the
+next. The coordinator then calls `complete()` on the chosen strategy and drops
+the others. `stream` is appended implicitly to both sides' lists, so two
+minor-1 peers always agree on at least `stream`. A worker without shared memory
+therefore falls back to streaming with no coordinator change.
+`RemoteChannel::payloadStrategy()` reports the chosen name.
+
+### Zero-copy views (`req-payload-zero-copy`)
+
+`Payload` gains view storage, compatibly: `Payload::view(bytes, owner)` refers
+to bytes kept alive by `owner`, a `std::shared_ptr<const void>`. `bytes()`
+returns a span either way, and copying a view shares the owner instead of
+copying the bytes. Strategies return views: of a stream frame buffer, of an
+assembled buffer, or of the peer's shared-memory region.
+
+Jobs and coordinators can write payloads in place:
+
+```cpp
+std::span<std::byte> out = ctx.allocateOutput(size);   // JobContext, worker side
+WritablePayload input = channel.allocatePayload(size); // RemoteChannel, coordinator side
+```
+
+With `shm` these buffers lie in the sender's mapped region, so the payload is
+never copied by the library. With other strategies they are plain buffers that
+the strategy sends without an extra copy.
+
+View lifetimes, the contract the tests pin:
+
+| Where | View | Valid until |
+|---|---|---|
+| Worker, job input | `ctx.input()`, `ctx.predecessor(i)` | The request's reply is sent; a job must not keep it |
+| Worker, `allocateOutput()` | The returned span | The reply is sent |
+| Coordinator, reply output | `reply.results[i].output` and copies of that `Payload` | The last copy is destroyed, even after the channel, the transport or the worker is gone |
+| Coordinator, `allocatePayload()` | `WritablePayload::bytes` | The `Payload` is destroyed; write before submitting |
+
+### Shared-memory ownership and cleanup
+
+Each side creates one region for the payloads it sends and maps the peer's
+region read-only for its intent (the mapping is read-write; the protocol never
+writes the peer's region). Allocation happens only in the owner's process, with
+the allocator's bookkeeping in private memory and never in the region. A peer
+crash therefore cannot corrupt it, and no cross-process lock exists.
+
+- Allocation: first-fit over a free list of 64-byte-aligned blocks, under a
+  mutex, so concurrent requests share the region. A payload that does not fit
+  (region full, or larger than the region) is sent by the strategy's built-in
+  stream fallback instead; the reference records which.
+- Coordinator inputs live in the coordinator's region and are freed when the
+  request's reply arrives (`endScope(requestId)`), or when the connection closes.
+- Worker outputs live in the worker's region. The coordinator's view holds a
+  lease; when the last copy of that `Payload` is destroyed, the coordinator
+  sends a release frame and the worker frees the block. When the connection
+  closes, the worker frees every block still awaiting release.
+- A lease keeps the coordinator's mapping of the worker's region alive, so a
+  reply output stays readable after the worker died.
+- Names: `Local\s0pl-<pid>-<n>-<random>` on Windows, `/s0pl-<pid>-<n>-<random>`
+  on POSIX. Windows frees the mapping when the last handle closes, including
+  on a crash. On POSIX the coordinator unlinks both names as soon as it has
+  mapped the worker's region, so after the handshake the segments exist only
+  while mapped. A crash during the handshake can leave a name behind; each side
+  also unlinks its own name in its destructor.
+
+### Pipe transport
+
+`PipeTransport` implements `ITransport` over a pair of byte-stream handles
+(file descriptors on POSIX, `HANDLE`s on Windows) such as a child process's
+stdin and stdout, or one end of each of two anonymous pipes. `PipeTransport::pair()`
+creates a connected pair for tests and benchmarks.
+
+It writes a frame's parts with one call per part, with no concatenation. It
+reads each frame's header and then its body straight into a buffer allocated for
+that frame. The buffer is handed to the sink with ownership (`onFrameBuffer`),
+so a single-chunk streamed payload is never copied by the library on receive.
+
+`ITransport` gains `sendParts(parts)`, whose default concatenates and calls
+`send()`. `IFrameSink` gains `onFrameBuffer(owner, frame)`, whose default calls
+`onFrame()`. Both are compatible additions for existing transports and sinks.
+
+### Benchmarks (`req-payload-baseline`)
+
+For each shipped strategy, one-way transfer of 64 KiB, 1 MiB and 16 MiB
+against a hand-written baseline that moves the same bytes over the same medium
+with no library code:
+
+- `stream` over `PipeTransport`: raw `write` of the bytes on one end of an
+  anonymous pipe and a raw `read` loop into a preallocated buffer on the other.
+- `shm`: raw `memcpy` into a mapped region of the same size.
+- `store`: raw `put` then `get` on the same in-memory store.
+
+The target is within 10% of the baseline at 1 MiB and above; the results table
+below reports any miss and its reason. The round-trip benchmark (1, 16, 256
+jobs) is repeated per strategy.
+
+Results (`Sub0Pipeline_PayloadBench`, MSVC 19.51 Release, i7-11800H, Windows
+11, pinned at high priority, median of three process runs of seven epochs):
+
+| Strategy | Size | Baseline | Strategy | vs baseline |
+|---|---|---|---|---|
+| `stream` over `PipeTransport` | 64 KiB | 22.9 us | 23.8 us | +4% |
+| | 1 MiB | 255 us | 257 us | +0.6% |
+| | 16 MiB | 4.60 ms | 4.25 ms | -8% |
+| `store` (in-memory store) | 64 KiB | 55.3 us | 21.3 us | the first case run; it absorbs allocator warm-up |
+| | 1 MiB | 505 us | 478 us | -5% |
+| | 16 MiB | 6.76 ms | 7.03 ms | +4% |
+
+The streaming numbers depend on `PipeTransport` recycling frame buffers. With a
+fresh buffer per frame, the first touch of each page costs a fault (about 1 ms
+for 16 MiB) that the baseline's warm buffer does not, and streaming measured
++51% at 1 MiB and +25% at 16 MiB. The transport now keeps up to eight released
+frame buffers (at most 256 MiB) and reuses them. It also sends the frame and
+chunk headers in one write ahead of the payload, rather than one write per part.
+
+Round trips per strategy (requests per run of one remote job; same host and
+method, median of seven epochs):
+
+| Transport, strategy | 1 job | 16 jobs | 256 jobs | Echo 1 MiB each way | Echo 16 MiB each way |
+|---|---|---|---|---|---|
+| Loopback, `stream` | 67 us | 95 us | 696 us | 0.87 ms | 9.9 ms |
+| Pipe, `stream` | 49 us | 82 us | 655 us | 0.87 ms | 11.8 ms |
+| Pipe, `store` | 47 us | 85 us | 609 us | 1.44 ms | 15.9 ms |
+
+The echo job copies its input into a fresh output buffer, so each echo includes
+two payload transfers and one job-side copy.
+
 ## Alternatives considered
 
 - **Blocking proxy job.** A plain job that sends a request and waits for the
@@ -528,6 +734,15 @@ request amortises it.
 - **Waiting for the work to acknowledge cancellation.** Rejected: a stuck worker
   would stall the run; finishing at once and tracking the work as an orphan
   reuses the existing timed-out-job contract.
+- **Shared memory as the transport.** Rejected: control frames need ordering,
+  wake-ups and close detection, which a pipe or socket gives for free. Shared
+  memory only for payload bytes keeps one transport model for every deployment.
+- **One payload mechanism for all deployments.** Rejected: a store suits shared
+  or remote storage, shared memory only the same machine, and streaming every
+  deployment but at the transport's speed. Negotiation picks per connection.
+- **Allocator bookkeeping inside the shared region.** Rejected: a crashed peer
+  could leave it inconsistent and would need a cross-process lock. Each side
+  allocates only in its own region, from private bookkeeping.
 - **Coroutines (`co_await`).** Not chosen for the core: they add a frame
   allocation per job and a language-level dependency on all targets. A
   `Completion` can be wrapped by an awaiter in user code.
@@ -555,7 +770,11 @@ request amortises it.
 | `req-determinism` | Error model (optional worker jobs, index order); no ids in payloads; in-process equality test |
 | `req-overhead` | Tests and benchmarks (1, 16, 256 jobs over loopback) |
 | `req-tests` | `tests/test_deferred.cpp`; `tests/test_remote.cpp` |
-| `req-docs` | README sections for both features |
+| `req-docs` | README sections for each feature |
+| `req-payload-strategy` | Part 3, strategy abstraction |
+| `req-payload-negotiation` | Part 3, negotiation |
+| `req-payload-zero-copy` | Part 3, zero-copy views; shared-memory ownership; pipe transport |
+| `req-payload-baseline` | Part 3, benchmarks |
 
 ## Open questions
 

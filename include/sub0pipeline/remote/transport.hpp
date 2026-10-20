@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -33,6 +34,19 @@ public:
      * @param frame  The frame, header included. Valid only during the call.
      */
     virtual void onFrame(std::span<const std::byte> frame) = 0;
+
+    /**
+     * Called instead of onFrame() by transports that hand over each frame's
+     * buffer, so a sink can keep the bytes without copying them.
+     * @param owner  Keeps @p frame's bytes alive; a sink may retain it.
+     * @param frame  The frame, header included.
+     * @note The default calls onFrame(@p frame).
+     */
+    virtual void onFrameBuffer(std::shared_ptr<const void> owner, std::span<const std::byte> frame)
+    {
+        (void)owner;
+        onFrame(frame);
+    }
 
     /**
      * Called exactly once, after the last onFrame(), when the transport closes.
@@ -73,6 +87,25 @@ public:
      * @return Empty on success, or why the frame could not be sent.
      */
     [[nodiscard]] virtual std::expected<void, TransportError> send(std::span<const std::byte> frame) = 0;
+
+    /**
+     * Sends one whole frame given as consecutive parts, such as a header and
+     * a payload, so large payloads need not be concatenated first.
+     * @param parts  The frame's bytes, in order; copied before return.
+     * @return Empty on success, or why the frame could not be sent.
+     * @note Thread-safe; frames are never interleaved. The default
+     *       concatenates the parts and calls send(); transports that can
+     *       write parts directly override it.
+     */
+    [[nodiscard]] virtual std::expected<void, TransportError> sendParts(std::span<const std::span<const std::byte>> parts)
+    {
+        std::vector<std::byte> frame;
+        std::size_t total = 0U;
+        for (auto part : parts) total += part.size();
+        frame.reserve(total);
+        for (auto part : parts) frame.insert(frame.end(), part.begin(), part.end());
+        return send(frame);
+    }
 
     /** Closes the connection; the sink then receives onClosed(). */
     virtual void close() noexcept = 0;
