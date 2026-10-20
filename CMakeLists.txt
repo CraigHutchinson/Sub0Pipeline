@@ -17,6 +17,7 @@ option(SUB0PIPELINE_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(SUB0PIPELINE_PLATFORM_DESKTOP  "Build DesktopExecutor (std::thread)" ON)
 option(SUB0PIPELINE_PLATFORM_PRIORITY "Build PriorityExecutor (bounded pool, priority queue)" ON)
 option(SUB0PIPELINE_EXCEPTIONS "Throw std::runtime_error on hard errors (disable for -fno-exceptions builds)" ON)
+option(SUB0PIPELINE_BUILD_REMOTE "Build Sub0Pipeline::Remote (sub-graphs run in worker processes)" ON)
 
 if(SUB0PIPELINE_BUILD_TESTING AND NOT IS_SUBPROJECT)
     enable_testing()
@@ -63,6 +64,26 @@ if(SUB0PIPELINE_PLATFORM_PRIORITY)
     add_subdirectory(platform/priority)
 endif()
 
+# ── Optional remote sub-graphs ────────────────────────────────────────────────
+# A separate target: consumers that do not link it see no change.
+
+if(SUB0PIPELINE_BUILD_REMOTE)
+    add_library(Sub0Pipeline_Remote STATIC
+        src/remote/channel.cpp
+        src/remote/loopback_transport.cpp
+        src/remote/registry.cpp
+        src/remote/wire.cpp
+        src/remote/worker_host.cpp
+    )
+    add_library(Sub0Pipeline::Remote ALIAS Sub0Pipeline_Remote)
+    target_compile_features(Sub0Pipeline_Remote PUBLIC cxx_std_23)
+    target_link_libraries(Sub0Pipeline_Remote PUBLIC Sub0Pipeline::Sub0Pipeline)
+    target_compile_options(Sub0Pipeline_Remote PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/W4 /Zc:preprocessor>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
+    )
+endif()
+
 # DefaultExecutor: the bundled executor for this platform, plus what it links.
 # The header picks by platform; this target keeps the libraries in step with it.
 add_library(Sub0Pipeline_Default INTERFACE)
@@ -96,9 +117,13 @@ if(NOT IS_SUBPROJECT)
             SameMajorVersion
     )
 
+    set(SUB0PIPELINE_INSTALL_TARGETS Sub0Pipeline)
+    if(SUB0PIPELINE_BUILD_REMOTE)
+        list(APPEND SUB0PIPELINE_INSTALL_TARGETS Sub0Pipeline_Remote)
+    endif()
     install(
         TARGETS
-            Sub0Pipeline
+            ${SUB0PIPELINE_INSTALL_TARGETS}
         EXPORT
             Sub0PipelineTargets
         DESTINATION

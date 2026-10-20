@@ -1,8 +1,7 @@
 # Cross-process orchestration: deferred completion and remote sub-graphs
 
-Status: deferred completion is implemented in the core library. Remote
-sub-graphs are a proposal for a separate optional target; nothing in this
-document's "Remote sub-graphs" part is implemented yet.
+Status: both parts are implemented. Deferred completion is in the core
+library; remote sub-graphs are the optional `Sub0Pipeline::Remote` target.
 
 This document is the single source of truth for both features. Each design
 element names the requirement it satisfies with a stable handle in backticks,
@@ -288,23 +287,27 @@ demand it; one implementation is kept for maintainability.
 - The core uses standard threads for the fallback timer, as it already does for
   native timeouts. Builds without exceptions are supported: no new path throws.
 
-## Part 2: Remote sub-graphs (optional target, proposed)
+## Part 2: Remote sub-graphs (optional target)
 
 ### Target layout (`req-optional-build`)
 
-A separate CMake target `Sub0Pipeline::Remote`, enabled with
-`SUB0PIPELINE_BUILD_REMOTE`, headers under `include/sub0pipeline/remote/`. It
-depends on the core only through public API (`emplaceDeferred`, `Completion`,
-`Pipeline`, `ScopedExecutor`). A consumer that does not link it sees no change.
+A separate CMake target `Sub0Pipeline::Remote`, built when
+`SUB0PIPELINE_BUILD_REMOTE` is on (the default), with headers under
+`include/sub0pipeline/remote/`. It uses the core only through public API
+(`emplaceDeferred`, `Completion`, `Pipeline`, `ScopedExecutor`). A consumer that
+does not link it sees no change; the only core addition it needed is the
+`PipelineError::kUnavailable` enumerator. Its sources compile with
+`-fno-exceptions`.
 
 | Header | Contents |
 |---|---|
-| `remote/transport.hpp` | `ITransport`, `IFrameSink`, `TransportError` |
-| `remote/loopback_transport.hpp` | `LoopbackTransport::pair()` for tests and in-process use |
-| `remote/registry.hpp` | `JobKindId`, `JobRegistry`, `registryFingerprint()` |
-| `remote/payload.hpp` | `Payload` (inline bytes or opaque handle), `IPayloadStore` |
-| `remote/subgraph.hpp` | `SubGraphRequest`, `SubGraphReply` |
-| `remote/channel.hpp` | `RemoteChannel` (coordinator side) |
+| `remote/payload.hpp` | `Payload`, `PayloadKind`, `kMaxHandleBytes`, `IPayloadStore` |
+| `remote/registry.hpp` | `JobKindId`, `JobContext`, `JobKindFn`, `JobRegistry`, `registryFingerprint()` |
+| `remote/subgraph.hpp` | `SubGraphRequest`, `JobResult`, `SubGraphReply` |
+| `remote/transport.hpp` | `ITransport`, `IFrameSink`, `TransportError`, `FrameReader` |
+| `remote/loopback_transport.hpp` | `LoopbackTransport::pair()` |
+| `remote/wire.hpp` | Frame types, `Hello`, `HelloReject`, `wire::` encoders and decoders |
+| `remote/channel.hpp` | `RemoteChannel`, `ConnectError`, `ReplyHandler` (coordinator side) |
 | `remote/worker_host.hpp` | `WorkerHost` (worker side) |
 
 ### Sub-graph request (`req-remote-subgraph`, `req-remote-node`)
@@ -312,177 +315,194 @@ depends on the core only through public API (`emplaceDeferred`, `Completion`,
 ```cpp
 SubGraphRequest request;
 auto a = request.add({"decode", 1}, Payload::handle(sourceKey));
-auto b = request.add({"resize", 2}, Payload::inlineBytes(settings));
-request.edge(a, b);               // b receives a's output
-request.exportOutput(b);          // only exported outputs travel back
+auto b = request.add({"resize", 2}, Payload::inlineBytes(settings), /*exported=*/true);
+request.edge(a, b);               // b runs after a and receives a's output
 
-Job remote = channel.emplace(pipe, std::move(request),
-    [&](const SubGraphReply& reply) { results.take(reply); });
+Job remote = channel.emplace(pipe, request,
+    [&](const SubGraphReply& reply) { results.take(reply.results[b].output); });
 remote.name("remote-resize").succeed(prepare);
 ```
 
 `RemoteChannel::emplace` adds one deferred job whose body sends the request and
 moves its `Completion` into the channel's in-flight table. A single remote job
 is a one-node request; there is one format and one worker loop. The caller
-decides the batch size by how many nodes it puts in one request.
+decides the batch size by how many jobs it puts into one request. The reply
+handler runs on the transport's thread before the job completes, so the
+dependants of the remote job see what it stored.
 
 Inside a request, an edge both orders jobs and passes data: each job receives
-its own input payload plus the outputs of its predecessors, in edge order.
-Only outputs marked exported are sent back, so intermediates never cross the
-boundary.
+its own input and the outputs of its predecessors, in edge order
+(`JobContext::predecessor(i)`). Only outputs marked exported are sent back.
 
 ### Registry (`req-job-registry`)
 
 ```cpp
-struct JobKindId { std::string name; uint32_t version; };
-
-using JobKindFn = std::function<std::expected<void, PipelineError>(JobContext&)>;
 JobRegistry registry;
-registry.add({"decode", 1}, decodeFn);
+registry.add({"decode", 1}, [](JobContext& ctx) -> std::expected<void, PipelineError> {
+    auto bytes = ctx.store()->get(ctx.input().bytes());   // resolve a handle input
+    ...
+    ctx.setOutput(Payload::inlineBytes(std::move(decoded)));
+    return {};
+});
 ```
 
-`JobContext` gives the job its input `Payload`, its predecessors' outputs, an
-output sink, the store and its stop token. No code travels: a request names
-kinds, and a worker runs only kinds it registered. An unknown name or version
-fails that job with `kJobFailed` and the message "unknown job kind decode@1";
-the rest of the request is skipped as a required failure would be.
+`JobContext` gives the job its input, its predecessors' outputs, an output
+slot, `setError()` for diagnostic text, the store and a stop token. No code
+travels: a request names kinds, and a worker runs only kinds it registered. An
+unknown name or version fails that job with `kJobFailed` and the message
+"unknown job kind name@version".
 
-`registryFingerprint()` is FNV-1a 64 over the kinds sorted by name then version,
-each encoded as in the wire format. The coordinator computes it from the kind
-list it was built against, without factories.
+`registryFingerprint()` is FNV-1a 64 over the kinds sorted by name, then
+version, each encoded as on the wire (u16 length, name, u32 version). The
+coordinator computes it from the kind list it was built against.
 
 ### Payloads and the store (`req-payload-handles`)
 
-```cpp
-class Payload { /* kind: inline bytes or handle bytes; at most one owner */ };
+A `Payload` is nothing, inline bytes, or an opaque handle of at most 64 bytes
+(a content hash fits). `IPayloadStore` has `get(handle) -> bytes` and
+`put(bytes) -> handle`, supplied by the consumer on both sides over a shared
+store. The library never interprets handles and never resolves an input
+handle itself: a job calls `ctx.store()->get()` only when it needs the bytes.
 
-class IPayloadStore
-{
-public:
-    virtual ~IPayloadStore() = default;
-    // Resolve a handle to readable bytes; the view stays valid until release().
-    [[nodiscard]] virtual std::expected<PayloadView, PipelineError>
-        resolve(std::span<const std::byte> handle) = 0;
-    virtual void release(PayloadView view) noexcept = 0;
-    // Store bytes and return a handle for them.
-    [[nodiscard]] virtual std::expected<std::vector<std::byte>, PipelineError>
-        put(std::span<const std::byte> bytes) = 0;
-};
-```
-
-Handles are opaque byte strings of at most 64 bytes (a content hash fits). The
-library never inspects them. Inline payloads are limited to a size agreed in
-the handshake (default 64 KiB); a larger output is put into the store and sent
-as a handle. A large payload therefore never travels through the transport.
+Inline payloads are limited to the smaller of both sides' `maxInlineBytes`
+(default 64 KiB). The coordinator refuses a request with a larger inline input
+(`kJobFailed`). The worker turns a larger exported output into a handle through
+its store. Successors inside the request still received the inline bytes in
+memory. Without a store, that job fails with a message saying so. A large
+payload therefore never travels through the transport.
 
 ### Wire format (`req-transport-interface`, `req-handshake`)
 
-All integers little-endian, fixed width. Strings are `u16 length + bytes`
-(UTF-8, not terminated). Byte blobs are `u32 length + bytes`.
+All integers little-endian, fixed width. Strings are `u16 length + bytes`;
+blobs are `u32 length + bytes`.
 
 ```
 frame   := u32 bodyLength | u8 type | body
-type    := 1 Hello | 2 HelloAck | 3 HelloReject | 4 Request | 5 Reply
-         | 6 Cancel | 7 Goodbye
+type    := 1 Hello | 2 HelloAck | 3 HelloReject | 4 Request | 5 Reply | 6 Cancel
 
 Hello       := u32 magic "S0PL" | u16 protocolMajor | u16 protocolMinor
              | u64 registryFingerprint | u32 maxInFlight | u32 maxInlineBytes
 HelloAck    := same fields, the worker's values
 HelloReject := u8 reason (1 version, 2 fingerprint) | string detail
 Request     := u64 requestId | u32 jobCount | job* | u32 edgeCount | edge*
-job         := string kindName | u32 kindVersion | u8 flags(bit0 exported)
-             | payload
-edge        := u32 from | u32 to            (indices into job*)
+job         := string kindName | u32 kindVersion | u8 flags(bit0 exported) | payload
+edge        := u32 from | u32 to            (indices into job*, checked on decode)
 payload     := u8 kind (0 none, 1 inline, 2 handle) | blob
 Reply       := u64 requestId | u32 jobCount | result*
 result      := u8 JobStatus | u8 PipelineError | string message | payload
 Cancel      := u64 requestId
-Goodbye     := u8 reason
 ```
 
-Versioning: a different `protocolMajor` is incompatible; a higher
-`protocolMinor` may append fields to a frame body, which an older reader skips
-by `bodyLength`. Unknown frame types close the connection.
+Versioning: a different `protocolMajor` is incompatible. A higher
+`protocolMinor` may append fields to a hello, which an older reader skips.
+A malformed frame or an unknown type closes the connection.
 
-Handshake: the coordinator sends `Hello`; the worker answers `HelloAck` or
-`HelloReject`. A major-version or fingerprint mismatch fails the connection
-before any request is sent; `RemoteChannel::connect()` returns the reason. Both
-sides then use `min(maxInFlight)` and `min(maxInlineBytes)`.
+Handshake: `RemoteChannel::connect()` sends `Hello` with the fingerprint it
+expects; the worker answers `HelloAck` or `HelloReject` and then closes. A
+major-version or fingerprint mismatch fails `connect()` with
+`kVersionMismatch` / `kFingerprintMismatch` before any request is sent. Both
+sides then use the smaller `maxInFlight` and `maxInlineBytes`.
 
-The library owns framing and encoding. `ITransport` moves whole frames:
+The library owns framing and encoding; `ITransport` moves whole frames
+(`start(sink)`, `send(frame)`, `close()`, with `onFrame` / `onClosed(reason)`
+delivered one at a time, `onClosed` exactly once and last). `FrameReader`
+reassembles frames from a byte stream for pipe or socket transports.
+`LoopbackTransport` is an in-memory pair with one delivery thread per end;
+closing either end delivers frames already sent and then closes both. A desktop
+pipe or socket transport is not shipped yet.
 
-```cpp
-class ITransport
-{
-public:
-    virtual ~ITransport() = default;
-    virtual void start(IFrameSink& sink) = 0;   // sink.onFrame / sink.onClosed
-    [[nodiscard]] virtual std::expected<void, TransportError>
-        send(std::span<const std::byte> frame) = 0;   // thread-safe
-    virtual void close() noexcept = 0;
-};
-```
-
-A byte-stream transport (pipe, socket) reassembles frames with the shipped
-`FrameReader` helper using `bodyLength`. The loopback transport is a pair of
-in-memory queues, each with one delivery thread. A desktop pipe or socket
-transport may ship later as its own target.
-
-### Error model (`req-error-propagation`, `req-worker-failure`)
+### Error model (`req-error-propagation`, `req-worker-failure`, `req-determinism`)
 
 | Failure | Coordinator job result | Detail |
 |---|---|---|
-| One or more jobs in the sub-graph fail | `kJobFailed` (or the job's own error) | Message names the first failed job and its text |
+| Jobs in the sub-graph fail | The lowest failed index's error (`kCancelled` / `kTimeout` for those statuses) | Message: "job 1 (fail@1) failed: text"; the reply handler sees every result |
 | Unknown kind or version | `kJobFailed` | "unknown job kind name@version" |
-| Worker cancelled the request after a `Cancel` | ignored (coordinator already cancelled) | late reply dropped |
-| Transport closed or worker stopped | `kUnavailable` (proposed new core enumerator) | every in-flight and queued request fails |
-| Handshake mismatch | `connect()` fails; no job is created | reason and detail |
+| Inline input over the limit, or a request the format cannot carry | `kJobFailed` | Refused before sending |
+| Coordinator cancels | `kCancelled` (core rules) | The worker stops the request; its late reply is dropped |
+| Transport closed or worker stopped | `kUnavailable` | Every in-flight and queued request; later submissions too |
+| Channel full | `kBusy` | See back-pressure |
+| Handshake mismatch | `connect()` fails; jobs on the channel fail `kUnavailable` | |
 
-"First failure in a defined order" means the lowest job index among failed
-jobs in the request, not the order failures happened in, so the result does not
-depend on worker scheduling (`req-determinism`). `firstFailureName()` on the
-coordinator names the remote job; the reply handler receives every job's result.
+On the worker every job runs as optional and skips itself when a predecessor
+did not succeed. A required failure would stop independent branches at
+whatever point scheduling had reached; with optional jobs, which jobs run and
+which fail depends only on the inputs. The remote job then takes the failure
+with the lowest job index (`SubGraphReply::firstFailure()`), so its result does
+not depend on worker scheduling. `firstFailureName()` on the coordinator names
+the remote job.
 
 ### Back-pressure (`req-backpressure`)
 
-Each channel has an in-flight limit (the handshake minimum) and a bounded wait
-queue with a configured capacity. A remote job that starts while the channel is
-full waits in the queue holding only its `Completion`, no thread. When the queue
-is full too, the job fails immediately with `kBusy`. `freeCapacity()` returns
-free in-flight slots plus free queue slots, so a graph builder can size batches.
+Each channel allows the negotiated in-flight limit (the smaller of
+`Options::maxInFlight` and the worker's `maxConcurrentRequests`). Beyond it, a
+request waits in a queue of `Options::queueCapacity`, holding only its
+`Completion` and no thread; a queued request whose job is cancelled is never
+sent. When the queue is full -- immediately, with the default capacity 0 -- the
+job fails with `kBusy`. `freeCapacity()` returns free in-flight slots plus free
+queue slots. A worker answers a request beyond its own limit with every job
+failed `kBusy`, which a coordinator that honours the handshake never sees.
 
 ### Cancellation across the boundary
 
-The deferred job's stop callback sends `Cancel{requestId}`. The worker requests
-stop on that request's run. The coordinator job finishes as cancelled at once
-(core behaviour); when the worker's reply arrives the channel drops it and
-releases the `Completion`, which releases the orphan.
+The channel registers a stop callback on the job's stop token after the
+request is sent, so a cancel never overtakes its request. The callback sends
+`Cancel{id}`. The worker requests stop on that request's run, whether it is
+running or still queued, and replies; the reply frees the coordinator's slot
+and releases the orphan. The coordinator's job already finished as cancelled
+(core rules); the reply handler is not called for it.
 
 ### Worker loop (`req-worker-runtime`)
 
 ```cpp
-WorkerHost host{registry, store, transport,
-                {.executor = &pool, .maxConcurrentRequests = 4, .queueCapacity = 16}};
-host.serve(stopToken);   // returns after Goodbye, close or stop
+WorkerHost host{registry, transport,
+                {.executor = &pool, .maxConcurrentRequests = 4, .store = &store}};
+host.serve(stopToken);   // returns after the transport closes or stop is requested
 ```
 
-The receive thread decodes a request and pushes it to a bounded queue. Each of
-`maxConcurrentRequests` runner threads pops one, builds a fresh `Pipeline` from
-the registry, and runs it on a `ScopedExecutor` over the shared pool, so jobs of
-one request run in parallel and one request's `waitAll()` does not wait for
-another's jobs. The runner encodes the reply and sends it. The worker never
-starts processes; the consumer starts workers and hands each side its transport.
+The transport's thread decodes each request into a bounded queue (bounded by
+`maxConcurrentRequests`). `maxConcurrentRequests` runner threads each take one,
+build a fresh `Pipeline` from the registry, and run it on a `ScopedExecutor`
+over the shared pool. The jobs of one request run in parallel, and one
+request's run never waits for another's jobs. The runner encodes and sends the
+reply. `serve()` stops running requests and joins its runners before it
+returns. The library never starts processes; the consumer starts workers and
+gives each side its transport.
 
-### Tests (`req-tests`) and benchmarks (`req-overhead`)
+### Current choices (revisit if needs change)
 
-Loopback end-to-end runs of 1-job and multi-job sub-graphs with data passed
-along edges; registry mismatch and fingerprint mismatch at handshake; unknown
-kind; per-job error propagation and its defined order; worker loss with
-requests in flight and queued; back-pressure at limit and at queue capacity;
-cancel round trip with late reply; more pending remote jobs than coordinator
-pool threads while CPU jobs finish; equal outputs remote and in process.
-Benchmarks: round trip per request and per job over loopback for sub-graphs of
-1, 16 and 256 jobs; targets are set after the first measurement.
+| Topic | Current choice | Reason | What would change it |
+|---|---|---|---|
+| Worker-loss error | New core `PipelineError::kUnavailable` | Generic retry logic recognises it without the remote target's types, and it reads correctly for other resources that go away | A consumer needing the transport's close reason in the job result; then add it to the reply handler or a channel query, keeping the code |
+| Reply payloads | Inline up to the smaller limit both ways; larger exported outputs as store handles | Small outputs avoid a store round trip; large ones never cross the transport | A store-only consumer (always handles), or a measured cost of inline copies for mid-sized outputs |
+| Worker limits | One per-request concurrency limit, no per-kind limits | Kinds share one executor pool, which already bounds CPU; nothing yet needs per-kind isolation | A kind with an exclusive resource (a device, a licence, a large memory footprint) that must run alone; add a per-kind semaphore in the worker |
+| Full channel | Fail fast with `kBusy`; opt-in bounded queue (`queueCapacity`) | The caller decides retry and back-off; the queue keeps large graphs simple without unbounded growth | Graph builders consistently wanting automatic waiting; make a non-zero queue the default |
+
+### Tests and benchmarks (`req-tests`, `req-overhead`)
+
+`tests/test_remote.cpp` (16 cases) runs over the loopback transport: registry
+duplicates, lookup and order-free fingerprints; wire round-trips and refusal of
+truncated frames and oversized handles; frame reassembly from single bytes; one-job
+and multi-job requests with outputs along edges and only exported outputs
+returned; outputs equal to running the same kinds in process; fingerprint and
+protocol-major mismatches; unknown kinds; per-job errors and the lowest-index
+rule; worker loss with requests in flight; fail-fast `kBusy` and the bounded
+queue; cancellation reaching the worker; more awaiting remote jobs than
+coordinator threads while CPU jobs finish; large outputs as store handles;
+re-runs.
+
+Round trip over loopback, no-op jobs, worker pool of four threads, MSVC 19.51
+Release, i7-11800H, pinned at high priority, medians of five (`req-overhead`).
+These are the first measurements; later changes should hold them.
+
+| Sub-graph | Per request | Per job |
+|---|---|---|
+| 1 job | 51.8 us | 51.8 us |
+| 16 jobs | 72.5 us | 4.5 us |
+| 256 jobs | 555 us | 2.2 us |
+
+The fixed cost is dominated by two thread hand-offs per direction (loopback
+delivery thread, runner thread, executor, continuation); batching jobs into one
+request amortises it.
 
 ## Alternatives considered
 
@@ -532,17 +552,17 @@ Benchmarks: round trip per request and per job over loopback for sub-graphs of
 | `req-backpressure` | Back-pressure |
 | `req-handshake` | Wire format, handshake |
 | `req-transport-interface` | Wire format, `ITransport`, loopback |
-| `req-determinism` | Error model (index order); no ids in payloads |
-| `req-overhead` | Tests and benchmarks |
-| `req-tests` | Part 1 tests in `tests/test_deferred.cpp`; Part 2 test plan |
+| `req-determinism` | Error model (optional worker jobs, index order); no ids in payloads; in-process equality test |
+| `req-overhead` | Tests and benchmarks (1, 16, 256 jobs over loopback) |
+| `req-tests` | `tests/test_deferred.cpp`; `tests/test_remote.cpp` |
 | `req-docs` | README sections for both features |
 
 ## Open questions
 
-- Add `PipelineError::kUnavailable` to the core for worker loss, or report it
-  through the reply handler only? A distinct core code lets generic retry logic
-  work without the remote target's types.
-- Should exported outputs be returned as handles always (store-only), removing
-  the inline path on the reply side?
-- Does the worker need per-kind concurrency limits in addition to the
-  per-request limit?
+Each topic below has a current choice, recorded with its reason in "Current
+choices (revisit if needs change)": the worker-loss error code, reply-side
+handles versus inline payloads, per-kind worker limits, and fail-fast `kBusy`
+versus waiting. Still open beyond those:
+
+- A shipped desktop transport (named pipe / Unix socket) as its own target.
+- A DSL form for deferred and remote jobs.

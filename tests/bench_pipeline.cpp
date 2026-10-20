@@ -19,6 +19,11 @@
 #include <vector>
 
 #include "sub0pipeline/sub0pipeline.hpp"
+#if SUB0PIPELINE_BENCH_REMOTE
+#include "sub0pipeline/remote/channel.hpp"
+#include "sub0pipeline/remote/loopback_transport.hpp"
+#include "sub0pipeline/remote/worker_host.hpp"
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -549,6 +554,44 @@ int main(int argc, char** argv)
             (void)deferredChain.run(pool);
         });
     }
+
+#if SUB0PIPELINE_BENCH_REMOTE
+    {
+        // req-overhead: round trip of one request over the loopback transport,
+        // including encode, two delivery-thread hand-offs, the worker's
+        // Pipeline run on a 4-thread pool, and the reply. No-op jobs.
+        using namespace sub0pipeline::remote;
+        runner.group("Remote sub-graphs over loopback (no-op jobs)", Cost::kThreaded);
+        JobRegistry registry;
+        registry.add({"noop", 1}, [](JobContext&) -> std::expected<void, PipelineError> { return {}; });
+        auto [coordinatorEnd, workerEnd] = LoopbackTransport::pair();
+        PriorityExecutor workerPool{{.threadCount = 4}};
+        WorkerHost host{registry, *workerEnd, {.executor = &workerPool, .maxConcurrentRequests = 1}};
+        std::jthread serving{[&](std::stop_token stop) { host.serve(stop); }};
+        {
+            RemoteChannel channel{*coordinatorEnd, {.expectedFingerprint = registry.fingerprint()}};
+            if (channel.connect())
+            {
+                SequentialExecutor sequential;
+                struct Size { int jobs; const char* name; };
+                for (auto size : {Size{1, "remote loopback: 1-job sub-graph round trip"},
+                                  Size{16, "remote loopback: 16-job sub-graph round trip"},
+                                  Size{256, "remote loopback: 256-job sub-graph round trip"}})
+                {
+                    SubGraphRequest request;
+                    for (int i = 0; i < size.jobs; ++i) request.add({"noop", 1});
+                    Pipeline pipeline;
+                    (void)channel.emplace(pipeline, request);
+                    runner.run(size.name, [&]
+                    {
+                        (void)pipeline.run(sequential);
+                    });
+                }
+            }
+        }
+        serving.request_stop();
+    }
+#endif
 
     if (features)
     {

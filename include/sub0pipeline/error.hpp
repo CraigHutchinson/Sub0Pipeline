@@ -22,6 +22,7 @@ enum class PipelineError : uint8_t
     kCancelled,         ///< Job was cancelled externally via Job::cancel() or a stop token.
     kBusy,              ///< Another run or invocation is already active.
     kDeadlineUnavailable, ///< Injected deadline service has no free registration.
+    kUnavailable,       ///< The resource that would complete the job went away; retry elsewhere.
 };
 
 } // namespace sub0pipeline
