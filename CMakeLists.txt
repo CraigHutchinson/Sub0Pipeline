@@ -71,6 +71,9 @@ if(SUB0PIPELINE_BUILD_REMOTE)
     add_library(Sub0Pipeline_Remote STATIC
         src/remote/channel.cpp
         src/remote/loopback_transport.cpp
+        src/remote/pipe_transport.cpp
+        src/remote/store_strategy.cpp
+        src/remote/stream_strategy.cpp
         src/remote/registry.cpp
         src/remote/wire.cpp
         src/remote/worker_host.cpp

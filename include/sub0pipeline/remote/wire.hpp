@@ -9,6 +9,7 @@
 // type and the body. See docs/design/cross-process-orchestration.md, "Wire format".
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -25,7 +26,7 @@ namespace sub0pipeline::remote
 /** Incompatible protocol changes bump this; peers with different values do not connect. */
 inline constexpr uint16_t kProtocolMajor = 1U;
 /** Compatible additions bump this; readers skip fields they do not know. */
-inline constexpr uint16_t kProtocolMinor = 0U;
+inline constexpr uint16_t kProtocolMinor = 1U;
 /** "S0PL" as a little-endian u32, the first field of a hello. */
 inline constexpr uint32_t kProtocolMagic = 0x4C503053U;
 
@@ -38,6 +39,14 @@ enum class FrameType : uint8_t
     kRequest     = 4U, ///< A request id and a SubGraphRequest.
     kReply       = 5U, ///< A request id and a SubGraphReply.
     kCancel      = 6U, ///< A request id to stop.
+    kPayload     = 7U, ///< A payload strategy's own frame; the body is strategy-defined.
+};
+
+/** A payload strategy as offered or chosen in the handshake. */
+struct StrategyOffer
+{
+    std::string            name;  ///< The strategy's name().
+    std::vector<std::byte> setup; ///< Its offer() or accept() bytes.
 };
 
 /** Handshake values, sent by both sides. */
@@ -48,6 +57,9 @@ struct Hello
     uint64_t fingerprint{0U};           ///< Coordinator: the registry it expects. Worker: its registry.
     uint32_t maxInFlight{0U};           ///< Requests this side accepts at once.
     uint32_t maxInlineBytes{0U};        ///< Largest inline payload this side accepts.
+    /// Protocol minor 1. Coordinator: its offers, in preference order. Worker:
+    /// the chosen strategy, or none. Empty when the peer speaks minor 0.
+    std::vector<StrategyOffer> strategies;
 };
 
 /** Why a worker refused a connection. Values are part of the wire format. */
@@ -93,12 +105,41 @@ namespace wire
 [[nodiscard]] std::optional<std::vector<std::byte>> encodeRequest(uint64_t id, const SubGraphRequest& request);
 
 /**
+ * Encodes a request frame, replacing some job inputs.
+ * @param id         The request id.
+ * @param request    The sub-graph.
+ * @param overrides  One entry per job, or empty; a non-null entry is encoded
+ *                   instead of that job's input, typically a strategy reference.
+ * @return The frame, or nothing as for encodeRequest(id, request).
+ */
+[[nodiscard]] std::optional<std::vector<std::byte>> encodeRequest(uint64_t id, const SubGraphRequest& request,
+                                                                  std::span<const Payload* const> overrides);
+
+/**
  * Encodes a reply frame.
  * @param id     The request id.
  * @param reply  The results.
  * @return The frame.
  */
 [[nodiscard]] std::vector<std::byte> encodeReply(uint64_t id, const SubGraphReply& reply);
+
+/**
+ * Encodes a reply frame, replacing some job outputs.
+ * @param id         The request id.
+ * @param reply      The results.
+ * @param overrides  One entry per result, or empty; a non-null entry is
+ *                   encoded instead of that result's output.
+ * @return The frame.
+ */
+[[nodiscard]] std::vector<std::byte> encodeReply(uint64_t id, const SubGraphReply& reply,
+                                                 std::span<const Payload* const> overrides);
+
+/**
+ * Returns the header of a payload frame with a body of @p bodyBytes.
+ * @param bodyBytes  The body's size.
+ * @return The five header bytes.
+ */
+[[nodiscard]] std::array<std::byte, 5> payloadFrameHeader(uint32_t bodyBytes) noexcept;
 
 /**
  * Encodes a cancel frame.

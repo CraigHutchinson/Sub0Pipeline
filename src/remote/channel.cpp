@@ -348,3 +348,10 @@ void RemoteChannel::onClosed(TransportError) noexcept
 }
 
 } // namespace sub0pipeline::remote
+
+namespace sub0pipeline::remote
+{
+// Placeholders so the payload tests build before the implementation.
+WritablePayload RemoteChannel::allocatePayload(std::size_t size) { return makeWritablePayload(size); }
+std::string RemoteChannel::payloadStrategy() const { return {}; }
+} // namespace sub0pipeline::remote

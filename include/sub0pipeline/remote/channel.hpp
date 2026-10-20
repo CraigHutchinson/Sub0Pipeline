@@ -13,11 +13,14 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <vector>
 #include <span>
 #include <unordered_map>
 
 #include "sub0pipeline/completion.hpp"
 #include "sub0pipeline/pipeline.hpp"
+#include "sub0pipeline/remote/strategy.hpp"
 #include "sub0pipeline/remote/subgraph.hpp"
 #include "sub0pipeline/remote/transport.hpp"
 #include "sub0pipeline/remote/wire.hpp"
@@ -71,6 +74,9 @@ public:
         uint32_t                  queueCapacity{0U};                  ///< Requests waiting for a slot; 0 fails fast with kBusy.
         uint32_t                  maxInlineBytes{64U * 1024U};        ///< Largest inline payload either way.
         std::chrono::milliseconds handshakeTimeout{std::chrono::seconds{5}}; ///< How long connect() waits.
+        /// Payload strategies to offer, most preferred first; streamStrategy() is
+        /// always appended, so a worker that supports none of these still connects.
+        std::vector<PayloadStrategyFactory> strategies{};
     };
 
     /**
@@ -119,6 +125,21 @@ public:
     [[nodiscard]] uint32_t freeCapacity() const;
 
     /**
+     * Allocates an input payload to write in place before submitting it. With
+     * a shared-memory strategy the bytes lie in the mapped region and are
+     * never copied by the library.
+     * @param size  Bytes to allocate.
+     * @return The payload and its writable bytes; ordinary memory before connect().
+     */
+    [[nodiscard]] WritablePayload allocatePayload(std::size_t size);
+
+    /**
+     * Reports the payload strategy the handshake chose.
+     * @return Its name, or empty before connecting or with a minor-0 worker.
+     */
+    [[nodiscard]] std::string payloadStrategy() const;
+
+    /**
      * Returns the worker's handshake values.
      * @return The values; meaningful after a successful connect().
      */
@@ -149,6 +170,8 @@ private:
     uint32_t                                            inlineLimit_{0U};
     uint64_t                                            nextId_{1U};
     std::unordered_map<uint64_t, std::unique_ptr<Pending>> pending_;
+    std::unique_ptr<IPayloadStrategy>                   strategy_;   ///< Chosen at the handshake; null for none.
+    std::unique_ptr<IPayloadSender>                     sender_;
     std::deque<std::unique_ptr<Queued>>                 queued_;
 };
 

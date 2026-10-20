@@ -77,3 +77,9 @@ uint64_t JobRegistry::fingerprint() const
 }
 
 } // namespace sub0pipeline::remote
+
+namespace sub0pipeline::remote
+{
+// Placeholder so the payload tests build before the implementation.
+std::span<std::byte> JobContext::allocateOutput(std::size_t) { return {}; }
+} // namespace sub0pipeline::remote

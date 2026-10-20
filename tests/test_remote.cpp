@@ -558,29 +558,28 @@ TEST_CASE("Remote: more awaiting remote jobs than coordinator threads while CPU 
     CHECK(cpuFinishedWhileWaiting.load());
 }
 
-TEST_CASE("Remote payloads: large outputs come back as store handles; oversized inline inputs are refused")
+TEST_CASE("Remote payloads: payloads above the inline limit stream both ways instead of failing")
 {
     Rig rig;
     rig.startWorker({.maxInlineBytes = 1024});
     REQUIRE(rig.connect().has_value());
+    CHECK(rig.channel->payloadStrategy() == "stream");
 
     Pipeline pipe;
     Payload output;
     (void)rig.channel->emplace(pipe, single("big", ""), [&](const SubGraphReply& r) { output = r.results[0].output; });
     REQUIRE(pipe.runInline().has_value());
-    REQUIRE(output.kind() == PayloadKind::kHandle);
-    auto resolved = rig.store.get(output.bytes());
-    REQUIRE(resolved.has_value());
-    CHECK(resolved->size() == 4096U);
+    CHECK(output.kind() == PayloadKind::kInline);
+    CHECK(output.bytes().size() == 4096U);
 
-    Pipeline tooLarge;
+    Pipeline large;
     SubGraphRequest request;
-    request.add({"upper", 1}, Payload::inlineBytes(std::vector<std::byte>(2048U)));
-    auto remote = rig.channel->emplace(tooLarge, request);
-    auto result = tooLarge.runInline();
-    REQUIRE_FALSE(result.has_value());
-    CHECK(result.error() == PipelineError::kJobFailed);
-    CHECK(tooLarge.status(remote) == JobStatus::kFailed);
+    request.add({"upper", 1}, Payload::inlineBytes(std::vector<std::byte>(2048U, std::byte{'a'})), true);
+    Payload upper;
+    auto remote = rig.channel->emplace(large, request, [&](const SubGraphReply& r) { upper = r.results[0].output; });
+    REQUIRE(large.runInline().has_value());
+    CHECK(large.status(remote) == JobStatus::kDone);
+    CHECK(upper == Payload::inlineBytes(std::vector<std::byte>(2048U, std::byte{'A'})));
 }
 
 TEST_CASE("Remote: a pipeline with remote jobs re-runs")

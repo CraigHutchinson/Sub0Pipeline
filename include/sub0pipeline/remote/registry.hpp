@@ -23,6 +23,8 @@
 namespace sub0pipeline::remote
 {
 
+class IPayloadStrategy;
+
 /** Names one job kind. A request names kinds; no code travels. */
 struct JobKindId
 {
@@ -50,11 +52,13 @@ public:
      * @param error         Receives diagnostic text for a failure.
      * @param store         The worker's payload store, or nullptr.
      * @param stop          Stops when the request is cancelled.
+     * @param strategy      The connection's payload strategy, for allocateOutput(); may be nullptr.
      */
     JobContext(const Payload& input, std::span<const Payload* const> predecessors, Payload& output,
-               std::string& error, IPayloadStore* store, std::stop_token stop) noexcept
+               std::string& error, IPayloadStore* store, std::stop_token stop,
+               IPayloadStrategy* strategy = nullptr) noexcept
         : input_{input}, predecessors_{predecessors}, output_{output}, error_{error}, store_{store},
-          stop_{std::move(stop)} {}
+          stop_{std::move(stop)}, strategy_{strategy} {}
 
     /**
      * Returns the job's own input.
@@ -83,6 +87,15 @@ public:
     void setOutput(Payload output) noexcept { output_ = std::move(output); }
 
     /**
+     * Allocates the job's output for writing in place and makes it the output.
+     * With a shared-memory strategy the buffer lies in the mapped region, so
+     * the reply needs no copy; otherwise it is ordinary memory.
+     * @param size  The output's size in bytes.
+     * @return The writable bytes, valid until the request's reply is sent.
+     */
+    [[nodiscard]] std::span<std::byte> allocateOutput(std::size_t size);
+
+    /**
      * Sets diagnostic text reported with a failure.
      * @param message  The text. Copied.
      */
@@ -107,6 +120,7 @@ private:
     std::string&                   error_;
     IPayloadStore*                 store_; // non-owning
     std::stop_token                stop_;
+    IPayloadStrategy*              strategy_; // non-owning
 };
 
 /** A job kind's function. Must be thread-safe and must not throw. */

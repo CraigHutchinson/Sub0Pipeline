@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
+#include <array>
 #include <limits>
 #include <optional>
 #include <span>
@@ -113,6 +115,7 @@ public:
             case PayloadKind::kHandle:
                 if (data.size() > kMaxHandleBytes) return std::nullopt;
                 return Payload::handle(data);
+            case PayloadKind::kReference: return Payload::reference(data);
         }
         return std::nullopt;
     }
@@ -167,6 +170,23 @@ std::vector<std::byte> encodeHello(FrameType type, const Hello& hello)
     w.u64(hello.fingerprint);
     w.u32(hello.maxInFlight);
     w.u32(hello.maxInlineBytes);
+    // Protocol minor 1. A hello-ack carries exactly the chosen strategy, or an empty name.
+    if (type == FrameType::kHello)
+    {
+        const auto count = std::min<std::size_t>(hello.strategies.size(), UINT8_MAX);
+        w.u8(static_cast<uint8_t>(count));
+        for (std::size_t i = 0U; i < count; ++i)
+        {
+            w.string(std::string_view{hello.strategies[i].name}.substr(0U, UINT16_MAX));
+            w.blob(hello.strategies[i].setup);
+        }
+    }
+    else
+    {
+        const bool chosen = !hello.strategies.empty();
+        w.string(chosen ? std::string_view{hello.strategies[0].name}.substr(0U, UINT16_MAX) : std::string_view{});
+        w.blob(chosen ? std::span<const std::byte>{hello.strategies[0].setup} : std::span<const std::byte>{});
+    }
     return w.finish();
 }
 
@@ -180,17 +200,26 @@ std::vector<std::byte> encodeReject(const HelloReject& reject)
 
 std::optional<std::vector<std::byte>> encodeRequest(uint64_t id, const SubGraphRequest& request)
 {
+    return encodeRequest(id, request, {});
+}
+
+std::optional<std::vector<std::byte>> encodeRequest(uint64_t id, const SubGraphRequest& request,
+                                                    std::span<const Payload* const> overrides)
+{
     if (request.jobs().size() > kMaxJobs) return std::nullopt;
+    if (!overrides.empty() && overrides.size() != request.jobs().size()) return std::nullopt;
     Writer w{FrameType::kRequest};
     w.u64(id);
     w.u32(static_cast<uint32_t>(request.jobs().size()));
-    for (const auto& job : request.jobs())
+    for (std::size_t i = 0U; i < request.jobs().size(); ++i)
     {
-        if (job.kind.name.size() > UINT16_MAX || !fits(job.input)) return std::nullopt;
+        const auto& job = request.jobs()[i];
+        const Payload& input = !overrides.empty() && overrides[i] ? *overrides[i] : job.input;
+        if (job.kind.name.size() > UINT16_MAX || !fits(input)) return std::nullopt;
         w.string(job.kind.name);
         w.u32(job.kind.version);
         w.u8(job.exported ? 1U : 0U);
-        w.payload(job.input);
+        w.payload(input);
     }
     w.u32(static_cast<uint32_t>(request.edges().size()));
     for (const auto& edge : request.edges())
@@ -203,17 +232,31 @@ std::optional<std::vector<std::byte>> encodeRequest(uint64_t id, const SubGraphR
 
 std::vector<std::byte> encodeReply(uint64_t id, const SubGraphReply& reply)
 {
+    return encodeReply(id, reply, {});
+}
+
+std::vector<std::byte> encodeReply(uint64_t id, const SubGraphReply& reply, std::span<const Payload* const> overrides)
+{
     Writer w{FrameType::kReply};
     w.u64(id);
     w.u32(static_cast<uint32_t>(reply.results.size()));
-    for (const auto& result : reply.results)
+    for (std::size_t i = 0U; i < reply.results.size(); ++i)
     {
+        const auto& result = reply.results[i];
         w.u8(static_cast<uint8_t>(result.status));
         w.u8(static_cast<uint8_t>(result.error));
         w.string(std::string_view{result.message}.substr(0U, UINT16_MAX));
-        w.payload(result.output);
+        w.payload(i < overrides.size() && overrides[i] ? *overrides[i] : result.output);
     }
     return w.finish();
+}
+
+std::array<std::byte, 5> payloadFrameHeader(uint32_t bodyBytes) noexcept
+{
+    std::array<std::byte, 5> header{};
+    for (std::size_t i = 0U; i < 4U; ++i) header[i] = static_cast<std::byte>((bodyBytes >> (8U * i)) & 0xFFU);
+    header[4] = static_cast<std::byte>(FrameType::kPayload);
+    return header;
 }
 
 std::vector<std::byte> encodeCancel(uint64_t id)
@@ -230,7 +273,7 @@ std::optional<FrameType> frameType(std::span<const std::byte> frame) noexcept
     for (std::size_t i = 0U; i < 4U; ++i) body |= static_cast<uint32_t>(std::to_integer<uint8_t>(frame[i])) << (8U * i);
     if (body != frame.size() - FrameReader::kHeaderBytes) return std::nullopt;
     const auto type = std::to_integer<uint8_t>(frame[4]);
-    if (type < static_cast<uint8_t>(FrameType::kHello) || type > static_cast<uint8_t>(FrameType::kCancel))
+    if (type < static_cast<uint8_t>(FrameType::kHello) || type > static_cast<uint8_t>(FrameType::kPayload))
         return std::nullopt;
     return static_cast<FrameType>(type);
 }
@@ -247,8 +290,30 @@ std::optional<Hello> decodeHello(std::span<const std::byte> frame)
     hello.fingerprint = r.u64();
     hello.maxInFlight = r.u32();
     hello.maxInlineBytes = r.u32();
-    // A newer minor version may append fields, which are skipped.
     if (!r.ok()) return std::nullopt;
+    if (hello.minor >= 1U && r.remaining() > 0U)
+    {
+        if (type == FrameType::kHello)
+        {
+            const auto count = r.u8();
+            for (uint32_t i = 0U; i < count; ++i)
+            {
+                StrategyOffer offer;
+                offer.name = r.string();
+                offer.setup = r.blob();
+                hello.strategies.push_back(std::move(offer));
+            }
+        }
+        else
+        {
+            StrategyOffer chosen;
+            chosen.name = r.string();
+            chosen.setup = r.blob();
+            if (!chosen.name.empty()) hello.strategies.push_back(std::move(chosen));
+        }
+        if (!r.ok()) return std::nullopt;
+    }
+    // A newer minor version may append further fields, which are skipped.
     return hello;
 }
 
