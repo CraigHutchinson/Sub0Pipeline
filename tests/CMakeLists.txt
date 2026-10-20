@@ -136,4 +136,8 @@ if(SUB0PIPELINE_BUILD_BENCHMARKS)
         PRIVATE "${VENDOR_DIR}"
     )
     target_compile_features(Sub0Pipeline_Bench PRIVATE cxx_std_23)
+    if(SUB0PIPELINE_BUILD_REMOTE)
+        target_link_libraries(Sub0Pipeline_Bench PRIVATE Sub0Pipeline::Remote)
+        target_compile_definitions(Sub0Pipeline_Bench PRIVATE SUB0PIPELINE_BENCH_REMOTE=1)
+    endif()
 endif()
