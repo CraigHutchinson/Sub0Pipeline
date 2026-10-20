@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <utility>
+#include <vector>
 
 #include "sub0pipeline/remote/pipe_transport.hpp"
 
@@ -32,6 +33,65 @@ namespace
 
 // Rejects a corrupt length before it becomes a huge allocation.
 constexpr uint32_t kMaxBodyBytes = 0x7FFFFFFFU;
+
+// Recycles frame buffers once every view of a frame is gone. A fresh buffer
+// costs a page fault per page on first touch (about 1 ms for 16 MiB), which
+// the reused buffer avoids. Shared with the buffers' deleters, so a payload
+// may outlive the transport.
+class BufferPool : public std::enable_shared_from_this<BufferPool>
+{
+public:
+    std::shared_ptr<std::byte[]> take(std::size_t size)
+    {
+        std::unique_ptr<std::byte[]> buffer;
+        std::size_t capacity = 0U;
+        {
+            std::lock_guard lock{mtx_};
+            for (auto it = free_.begin(); it != free_.end(); ++it)
+            {
+                if (it->capacity < size) continue;
+                buffer = std::move(it->buffer);
+                capacity = it->capacity;
+                pooledBytes_ -= capacity;
+                free_.erase(it);
+                break;
+            }
+        }
+        if (!buffer)
+        {
+            capacity = size;
+            buffer.reset(new std::byte[capacity == 0U ? 1U : capacity]);
+        }
+        auto* raw = buffer.release();
+        return std::shared_ptr<std::byte[]>{raw, [pool = weak_from_this(), capacity](std::byte* p) {
+            std::unique_ptr<std::byte[]> owned{p};
+            if (auto alive = pool.lock()) alive->give(std::move(owned), capacity);
+        }};
+    }
+
+private:
+    // Bounded, so a burst of large frames does not pin memory for good.
+    static constexpr std::size_t kMaxBuffers = 8U;
+    static constexpr std::size_t kMaxPooledBytes = 256U * 1024U * 1024U;
+
+    struct Free
+    {
+        std::unique_ptr<std::byte[]> buffer;
+        std::size_t                  capacity;
+    };
+
+    void give(std::unique_ptr<std::byte[]> buffer, std::size_t capacity)
+    {
+        std::lock_guard lock{mtx_};
+        if (free_.size() >= kMaxBuffers || pooledBytes_ + capacity > kMaxPooledBytes) return;
+        pooledBytes_ += capacity;
+        free_.push_back({std::move(buffer), capacity});
+    }
+
+    std::mutex        mtx_;
+    std::vector<Free> free_;
+    std::size_t       pooledBytes_{0U};
+};
 
 #if defined(_WIN32)
 
@@ -200,6 +260,7 @@ void PipeTransport::start(IFrameSink& sink)
 
 void PipeTransport::read(IFrameSink& sink)
 {
+    const auto pool = std::make_shared<BufferPool>();
     for (;;)
     {
         std::byte header[FrameReader::kHeaderBytes];
@@ -214,7 +275,7 @@ void PipeTransport::read(IFrameSink& sink)
         }
         // One buffer per frame, read into directly, so the sink can keep it.
         const std::size_t size = FrameReader::kHeaderBytes + body;
-        std::shared_ptr<std::byte[]> frame{new std::byte[size]};
+        auto frame = pool->take(size);
         std::memcpy(frame.get(), header, FrameReader::kHeaderBytes);
         if (!readAll(readHandle_, wakeRead_, {frame.get() + FrameReader::kHeaderBytes, body})) break;
         const std::span<const std::byte> bytes{frame.get(), size};
@@ -235,9 +296,20 @@ std::expected<void, TransportError> PipeTransport::sendParts(std::span<const std
 {
     std::lock_guard lock{writeMtx_};
     if (writeClosed_) return std::unexpected(TransportError::kClosed);
-    for (auto part : parts)
+    // Small leading parts (frame and strategy headers) go out with one write.
+    std::byte staging[256];
+    std::size_t gathered = 0U;
+    std::size_t next = 0U;
+    while (next < parts.size() && gathered + parts[next].size() <= sizeof(staging) && next + 1U < parts.size())
     {
-        if (!writeAll(writeHandle_, part)) return std::unexpected(TransportError::kClosed);
+        std::memcpy(staging + gathered, parts[next].data(), parts[next].size());
+        gathered += parts[next].size();
+        ++next;
+    }
+    if (gathered != 0U && !writeAll(writeHandle_, {staging, gathered})) return std::unexpected(TransportError::kClosed);
+    for (; next < parts.size(); ++next)
+    {
+        if (!writeAll(writeHandle_, parts[next])) return std::unexpected(TransportError::kClosed);
     }
     return {};
 }
