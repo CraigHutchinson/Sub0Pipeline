@@ -172,11 +172,8 @@ TEST_CASE("Shared memory: a worker that dies frees the coordinator's inputs; its
 
     link.reset(); // the worker host, its strategy and its region are gone
     CHECK(kept == Payload::inlineBytes(pattern(100000)));
-#if !defined(_WIN32)
-    CHECK_FALSE(regionNameExists(name)); // unlinked at the handshake
-#else
-    CHECK_FALSE(regionNameExists(name)); // freed with the last handle
-#endif
+    // POSIX: unlinked at the handshake. Windows: freed with the last handle.
+    CHECK_FALSE(regionNameExists(name));
 }
 
 TEST_CASE("Shared memory: a coordinator that goes away frees the worker's unreleased outputs")
