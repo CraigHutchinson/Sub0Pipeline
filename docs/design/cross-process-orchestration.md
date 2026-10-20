@@ -249,13 +249,31 @@ are no-op job figures from one host, not application throughput.
 
 | Case | Result |
 |---|---|
-| Plain jobs, library change only (same benchmark source), 10-job chain / 1000-job layered DAG | about +3.5% per job versus the previous core |
+| Plain jobs, library change only (same benchmark source), 10-job chain / 1000-job layered DAG | about +3.5% per job versus the previous core with a duplicated finish; see the performance note for the single finish path now used |
 | 10 deferred jobs completed before the body returns, inline executor | 2.3 us per run, about 170 ns more per job than a plain job |
 | 10-job deferred chain completed on a separate thread, `PriorityExecutor` with 4 threads | 230 us per run (median), about 23 us per hand-off including two thread wake-ups |
 
-Routing plain jobs through the shared deferred finish measured 5-15% slower per
-job, because MSVC does not inline a function that holds a try block; plain jobs
-therefore keep their own inlined finish.
+#### Performance note: one finish path
+
+Every job, plain or deferred, finishes through one function, `finishJob()`. It
+holds no try block -- the executor-rejection boundary lives in `submitReady()` --
+so it can carry `SUB0PIPELINE_FORCEINLINE`. Measured against a hand-inlined copy
+of the finish in `dispatchJob()` (pinned, high priority, medians of seven):
+
+| Case | Copy | Shared, force-inlined | Shared, no force-inline |
+|---|---|---|---|
+| 10-job chain, nested dispatch | 448 ns | 503 ns (+12%) | 590 ns (+32%) |
+| 1000-job layered DAG, nested dispatch | 50.9 us | 55.5 us (+9%) | 62.2 us (+22%) |
+| `runInline`, 1000-job layered DAG | 43.2 us | 42.1 us (within noise) | -- |
+| `PriorityExecutor` (4), 10-job chain | 17.7 us | 16.7 us (within noise) | 18.2 us |
+
+Also tried and not better than the force-inlined shared function: keeping the
+try block in a wrapper around the shared function, and moving the failure
+branch into a separate non-inlined function. The cost shows only where an
+executor nests one dispatch inside another; threaded executors and inline runs
+are within noise. Duplicating the finish into `dispatchJob()` is therefore a
+known lever, to pull only if the library's overall performance targets later
+demand it; one implementation is kept for maintainability.
 
 ### Scope limits
 

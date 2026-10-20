@@ -40,6 +40,15 @@
 #include "sub0pipeline/deadline.hpp"
 #include "sub0pipeline/sub0pipeline.hpp"
 
+// Forces inlining where the compiler's own heuristic declines and the cost was measured.
+#if defined(_MSC_VER)
+#define SUB0PIPELINE_FORCEINLINE [[msvc::forceinline]]
+#elif defined(__GNUC__) || defined(__clang__)
+#define SUB0PIPELINE_FORCEINLINE [[gnu::always_inline]] inline
+#else
+#define SUB0PIPELINE_FORCEINLINE inline
+#endif
+
 namespace sub0pipeline
 {
 
@@ -1243,81 +1252,21 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 return;
             }
             auto result = impl.invoke(nd);
-
-            const auto jobStatus = statusOf(result);
-            nd.jobStatus_.store(jobStatus, std::memory_order_release);
-
             // Consume the thread-local error context set by the job (failure branch only).
             // Move clears t_jobError so it does not leak into the next job on this thread.
             // On the success path t_jobError is empty and this move is a no-op.
             std::string jobErrorCtx = std::move(t_jobError);
-
-            const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
-            const auto progress = static_cast<float>(done) / static_cast<float>(total);
-            if (observer)
-            {
-                observer->onJobFinish(runId, idx, nd.nameStr_, jobStatus, progress);
-                notifyDependencies(*observer, pipeline, runId, idx, nd.nameStr_);
-            }
-
-            if (!result && (!nd.isOptional() || result.error() == PipelineError::kCancelled))
-            {
-                // Report failure detail through the dedicated hook -- zero cost when
-                // no observer is attached.
-                if (observer)
-                    observer->onJobFailure(runId, idx, nd.nameStr_, result.error(), jobErrorCtx);
-
-                recordFailure(idx, result.error());
-                for (auto succIdx : nd.successors_.range(impl.succPool_)) skipNode(succIdx);
-                return;
-            }
-
-            for (auto succIdx : nd.successors_.range(impl.succPool_))
-            {
-                if (hasFatalFailure.load(std::memory_order_acquire))
-                {
-                    skipNode(succIdx);
-                    continue;
-                }
-                auto& succ = impl.nodes_[succIdx];
-                const auto remaining = succ.unmetDeps_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
-                if (remaining == 0U)
-                {
-                    auto pending = JobStatus::kPending;
-                    if (!succ.jobStatus_.compare_exchange_strong(pending, JobStatus::kReady,
-                                                                std::memory_order_acq_rel)) continue;
-                    if (inlineReady)
-                    {
-                        inlineReady->push_back(succIdx);
-                        continue;
-                    }
-#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
-                    try
-                    {
-#endif
-                        executor.dispatch(
-                            succ.nameStr_,
-                            [this, si = succIdx]{ dispatchJob(si); },
-                            [] {},
-                            succ.coreAffinity_, succ.priority_, succ.stackBytes_);
-#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
-                    }
-                    catch (...)
-                    {
-                        submissionFailed(succIdx);
-                        return;
-                    }
-#endif
-                }
-            }
+            finishJob(idx, nd, result, jobErrorCtx);
         }
 
-        // Finishes a deferred job, or one that failed before its body started.
-        // The same steps are inlined at the end of dispatchJob(): routing plain
-        // jobs through this function measured 5-15% slower per job on MSVC (an
-        // extra frame on every nested dispatch), so change both together.
-        void finishJob(uint32_t idx, Node& nd, const std::expected<void, PipelineError>& result,
-                       std::string_view errorText)
+        // The one finish path for every job. It holds no try block (submitReady
+        // owns that) so it can be force-inlined: MSVC Release, nested dispatch,
+        // measured +9-12% per job against a hand-inlined copy in dispatchJob(),
+        // and +22-32% without the force-inline. Duplicating it is a lever to pull
+        // only if overall KPIs demand it; see docs/design/cross-process-orchestration.md.
+        SUB0PIPELINE_FORCEINLINE void finishJob(uint32_t idx, Node& nd,
+                                                const std::expected<void, PipelineError>& result,
+                                                std::string_view errorText)
         {
             const auto jobStatus = statusOf(result);
             nd.jobStatus_.store(jobStatus, std::memory_order_release);
