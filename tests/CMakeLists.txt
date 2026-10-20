@@ -70,6 +70,18 @@ if(SUB0PIPELINE_EXCEPTIONS)
     set_tests_properties(Sub0Pipeline_QtSubmissionHostTests PROPERTIES TIMEOUT 30)
 endif()
 
+# ── Remote sub-graph tests ────────────────────────────────────────────────────
+
+if(SUB0PIPELINE_BUILD_REMOTE)
+    add_executable(Sub0Pipeline_RemoteTests test_main.cpp test_remote.cpp)
+    target_link_libraries(Sub0Pipeline_RemoteTests PRIVATE
+        Sub0Pipeline::Remote Sub0Pipeline::Default Sub0Pipeline::Priority)
+    target_include_directories(Sub0Pipeline_RemoteTests PRIVATE "${VENDOR_DIR}")
+    target_compile_features(Sub0Pipeline_RemoteTests PRIVATE cxx_std_23)
+    add_test(NAME Sub0Pipeline_RemoteTests COMMAND Sub0Pipeline_RemoteTests)
+    set_tests_properties(Sub0Pipeline_RemoteTests PROPERTIES TIMEOUT 120)
+endif()
+
 # ── DSL tests ─────────────────────────────────────────────────────────────────
 
 add_executable(Sub0Pipeline_DslTests test_dsl.cpp)
