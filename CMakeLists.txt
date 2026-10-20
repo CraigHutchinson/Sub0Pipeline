@@ -75,12 +75,18 @@ if(SUB0PIPELINE_BUILD_REMOTE)
         src/remote/store_strategy.cpp
         src/remote/stream_strategy.cpp
         src/remote/registry.cpp
+        src/remote/shared_memory.cpp
+        src/remote/shared_region.cpp
         src/remote/wire.cpp
         src/remote/worker_host.cpp
     )
     add_library(Sub0Pipeline::Remote ALIAS Sub0Pipeline_Remote)
     target_compile_features(Sub0Pipeline_Remote PUBLIC cxx_std_23)
     target_link_libraries(Sub0Pipeline_Remote PUBLIC Sub0Pipeline::Sub0Pipeline)
+    # shm_open lives in librt before glibc 2.34; a stub library afterwards.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(Sub0Pipeline_Remote PRIVATE rt)
+    endif()
     target_compile_options(Sub0Pipeline_Remote PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:/W4 /Zc:preprocessor>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
