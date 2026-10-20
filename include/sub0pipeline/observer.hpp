@@ -57,6 +57,19 @@ public:
                             [[maybe_unused]] std::string_view jobName) {}
 
     /**
+     * Called when a deferred job's body returns before its Completion is
+     * completed: the job is now kAwaiting and holds no thread. Always between
+     * that job's onJobStart and onJobFinish; not called when the Completion was
+     * completed before the body returned.
+     * @param runId    Observer-defined identifier for this run.
+     * @param jobId    Stable node index within the Pipeline.
+     * @param jobName  The job's name.
+     */
+    virtual void onJobAwaiting([[maybe_unused]] RunId runId,
+                               [[maybe_unused]] JobId jobId,
+                               [[maybe_unused]] std::string_view jobName) {}
+
+    /**
      * Called when a job completes, including skipped jobs with no start event.
      * @param runId    Observer-defined identifier for this run or trigger.
      * @param jobId    Stable node index within the Pipeline.

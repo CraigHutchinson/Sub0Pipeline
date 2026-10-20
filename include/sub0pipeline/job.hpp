@@ -244,6 +244,7 @@ enum class JobStatus : uint8_t
     kSkipped,   ///< Skipped because a required predecessor failed.
     kTimedOut,   ///< Exceeded the declared timeout.
     kCancelled,  ///< Cancelled externally via Job::cancel() or a stop token.
+    kAwaiting,   ///< Deferred job whose body returned; waits for its Completion.
 };
 
 } // namespace sub0pipeline

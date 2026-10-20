@@ -14,7 +14,7 @@
 //   - Zero-overhead when jobs are constexpr-declared
 //
 // This is the umbrella header: it includes the whole core API. Each part is also
-// available on its own (pipeline.hpp, job.hpp, job_group.hpp, observer.hpp,
+// available on its own (pipeline.hpp, completion.hpp, job.hpp, job_group.hpp, observer.hpp,
 // dependency_range.hpp, tick_loop.hpp, error.hpp, config.hpp, and one header per
 // executor under executor/, gathered by executors.hpp). Optional layers stay opt-in: dsl.hpp,
 // deadline.hpp, run_scope.hpp.
@@ -31,6 +31,7 @@
 //
 #pragma once
 
+#include "sub0pipeline/completion.hpp"
 #include "sub0pipeline/config.hpp"
 #include "sub0pipeline/dependency_range.hpp"
 #include "sub0pipeline/error.hpp"

@@ -693,6 +693,24 @@ Job Pipeline::emplacePlain(std::function<std::expected<void, PipelineError>(std:
     return Job{Impl::ensure(impl_, this).addNode(std::move(fn), "job_", 0U), impl_.get()};
 }
 
+Job Pipeline::emplaceDeferred(std::function<void(Completion)> start)
+{
+    return emplacePlain([start = std::move(start)](std::stop_token)
+        -> std::expected<void, PipelineError> { start(Completion{}); return {}; });
+}
+
+Completion& Completion::operator=(Completion&& other) noexcept
+{
+    slot_ = std::exchange(other.slot_, nullptr);
+    return *this;
+}
+
+Completion::~Completion() = default;
+
+void Completion::complete(std::expected<void, PipelineError>, std::string_view) noexcept {}
+
+std::stop_token Completion::stopToken() const noexcept { return {}; }
+
 void Pipeline::reserve(std::size_t jobCount)
 {
     Impl::ensure(impl_, this).nodes_.reserve(jobCount);
