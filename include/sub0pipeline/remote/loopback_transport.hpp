@@ -19,8 +19,10 @@ namespace sub0pipeline::remote
 
 /**
  * One end of an in-memory connection. Each end delivers its received frames
- * on its own thread, in order. Closing either end closes both: frames already
- * sent are delivered, then each sink receives onClosed(kClosed).
+ * on its own thread, in order, handing each frame's buffer to the sink
+ * (IFrameSink::onFrameBuffer); the copy into the peer's queue is the only
+ * one. Closing either end closes both: frames already sent are delivered,
+ * then each sink receives onClosed(kClosed).
  */
 class LoopbackTransport final : public ITransport
 {
@@ -39,6 +41,7 @@ public:
 
     void start(IFrameSink& sink) override;
     [[nodiscard]] std::expected<void, TransportError> send(std::span<const std::byte> frame) override;
+    [[nodiscard]] std::expected<void, TransportError> sendParts(std::span<const std::span<const std::byte>> parts) override;
     void close() noexcept override;
 
 private:

@@ -78,6 +78,7 @@ private:
     struct Work;
 
     void onFrame(std::span<const std::byte> frame) override;
+    void onFrameBuffer(std::shared_ptr<const void> owner, std::span<const std::byte> frame) override;
     void onClosed(TransportError reason) noexcept override;
 
     void runner(std::stop_token stop);

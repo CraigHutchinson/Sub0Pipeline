@@ -151,11 +151,16 @@ private:
     enum class State : uint8_t { kIdle, kHandshaking, kConnected, kClosed };
 
     void onFrame(std::span<const std::byte> frame) override;
+    void onFrameBuffer(std::shared_ptr<const void> owner, std::span<const std::byte> frame) override;
     void onClosed(TransportError reason) noexcept override;
 
     void send(std::shared_ptr<const SubGraphRequest> request, Completion done, ReplyHandler onReply);
+    void failPending(uint64_t id, PipelineError error, const std::string& message);
+    std::unique_ptr<Queued> takeQueued(); // with mtx_ held
+    void launch(std::unique_ptr<Queued> next);
     void sendCancel(uint64_t id) noexcept;
     void handleReply(std::span<const std::byte> frame);
+    bool selectStrategy(const Hello& ack); // with mtx_ held
 
     ITransport&                                         transport_;
     Options                                             options_;
@@ -170,6 +175,7 @@ private:
     uint32_t                                            inlineLimit_{0U};
     uint64_t                                            nextId_{1U};
     std::unordered_map<uint64_t, std::unique_ptr<Pending>> pending_;
+    std::vector<std::unique_ptr<IPayloadStrategy>>      candidates_; ///< Offered, until the handshake chooses.
     std::unique_ptr<IPayloadStrategy>                   strategy_;   ///< Chosen at the handshake; null for none.
     std::unique_ptr<IPayloadSender>                     sender_;
     std::deque<std::unique_ptr<Queued>>                 queued_;

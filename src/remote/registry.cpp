@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "sub0pipeline/remote/registry.hpp"
+#include "sub0pipeline/remote/strategy.hpp"
 
 namespace sub0pipeline::remote
 {
@@ -80,6 +81,20 @@ uint64_t JobRegistry::fingerprint() const
 
 namespace sub0pipeline::remote
 {
-// Placeholder so the payload tests build before the implementation.
-std::span<std::byte> JobContext::allocateOutput(std::size_t) { return {}; }
+
+std::span<std::byte> JobContext::allocateOutput(std::size_t size)
+{
+    if (strategy_)
+    {
+        if (auto writable = strategy_->allocate(size))
+        {
+            output_ = std::move(writable->payload);
+            return writable->bytes;
+        }
+    }
+    auto writable = makeWritablePayload(size);
+    output_ = std::move(writable.payload);
+    return writable.bytes;
+}
+
 } // namespace sub0pipeline::remote

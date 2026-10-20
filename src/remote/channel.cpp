@@ -1,7 +1,7 @@
 // src/remote/channel.cpp
 //
-// RemoteChannel: handshake, request submission with back-pressure, replies,
-// cancellation and connection loss on the coordinator side.
+// RemoteChannel: handshake and strategy negotiation, request submission with
+// back-pressure, replies, cancellation and connection loss on the coordinator side.
 
 #include <algorithm>
 #include <memory>
@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "payload_sender.hpp"
 #include "sub0pipeline/remote/channel.hpp"
 
 namespace sub0pipeline::remote
@@ -41,13 +42,6 @@ struct RemoteChannel::Queued
 
 namespace
 {
-constexpr std::size_t kIdOffset = FrameReader::kHeaderBytes; // a request body starts with its u64 id
-
-void patchId(std::vector<std::byte>& frame, uint64_t id) noexcept
-{
-    for (std::size_t i = 0U; i < 8U; ++i) frame[kIdOffset + i] = static_cast<std::byte>((id >> (8U * i)) & 0xFFU);
-}
-
 std::string kindLabel(const SubGraphRequest& request, uint32_t index)
 {
     if (index >= request.jobs().size()) return "job " + std::to_string(index);
@@ -56,7 +50,7 @@ std::string kindLabel(const SubGraphRequest& request, uint32_t index)
 }
 } // namespace
 
-RemoteChannel::RemoteChannel(ITransport& transport, Options options) : transport_{transport}, options_{options} {}
+RemoteChannel::RemoteChannel(ITransport& transport, Options options) : transport_{transport}, options_{std::move(options)} {}
 
 RemoteChannel::~RemoteChannel()
 {
@@ -67,18 +61,31 @@ RemoteChannel::~RemoteChannel()
 
 std::expected<void, ConnectError> RemoteChannel::connect()
 {
+    Hello hello;
+    hello.fingerprint = options_.expectedFingerprint;
+    hello.maxInFlight = options_.maxInFlight;
+    hello.maxInlineBytes = options_.maxInlineBytes;
     {
         std::lock_guard lock{mtx_};
         if (state_ != State::kIdle) return std::unexpected(ConnectError::kProtocol);
         state_ = State::kHandshaking;
         started_ = true;
+        // Streaming is always offered last, so any minor-1 worker can connect.
+        auto factories = options_.strategies;
+        factories.push_back(streamStrategy());
+        for (auto& factory : factories)
+        {
+            auto candidate = factory ? factory() : nullptr;
+            if (!candidate) continue;
+            const auto name = candidate->name();
+            const bool duplicate = std::any_of(candidates_.begin(), candidates_.end(),
+                [&](const auto& c) { return c->name() == name; });
+            if (duplicate) continue;
+            hello.strategies.push_back({std::string{name}, candidate->offer()});
+            candidates_.push_back(std::move(candidate));
+        }
     }
     transport_.start(*this);
-
-    Hello hello;
-    hello.fingerprint = options_.expectedFingerprint;
-    hello.maxInFlight = options_.maxInFlight;
-    hello.maxInlineBytes = options_.maxInlineBytes;
     (void)transport_.send(wire::encodeHello(FrameType::kHello, hello)); // a failed send surfaces as onClosed
 
     std::unique_lock lock{mtx_};
@@ -122,16 +129,28 @@ Hello RemoteChannel::peer() const
     return peer_;
 }
 
+WritablePayload RemoteChannel::allocatePayload(std::size_t size)
+{
+    IPayloadStrategy* strategy;
+    {
+        std::lock_guard lock{mtx_};
+        strategy = state_ == State::kConnected ? strategy_.get() : nullptr;
+    }
+    if (strategy)
+    {
+        if (auto writable = strategy->allocate(size)) return std::move(*writable);
+    }
+    return makeWritablePayload(size);
+}
+
+std::string RemoteChannel::payloadStrategy() const
+{
+    std::lock_guard lock{mtx_};
+    return strategy_ && state_ != State::kHandshaking ? std::string{strategy_->name()} : std::string{};
+}
+
 void RemoteChannel::send(std::shared_ptr<const SubGraphRequest> request, Completion done, ReplyHandler onReply)
 {
-    // Encode before taking a slot, so a request that cannot be sent never holds one.
-    auto frame = wire::encodeRequest(0U, *request);
-    if (!frame)
-    {
-        done.fail(PipelineError::kJobFailed, "request does not fit the wire format");
-        return;
-    }
-
     std::unique_lock lock{mtx_};
     if (state_ != State::kConnected)
     {
@@ -140,14 +159,18 @@ void RemoteChannel::send(std::shared_ptr<const SubGraphRequest> request, Complet
         done.fail(PipelineError::kUnavailable, lost ? "worker connection closed" : "not connected");
         return;
     }
-    for (uint32_t i = 0U; i < request->jobs().size(); ++i)
+    // Without a negotiated strategy (a minor-0 worker) large inline payloads cannot travel.
+    if (!strategy_)
     {
-        const auto& input = request->jobs()[i].input;
-        if (input.kind() == PayloadKind::kInline && input.bytes().size() > inlineLimit_)
+        for (uint32_t i = 0U; i < request->jobs().size(); ++i)
         {
-            lock.unlock();
-            done.fail(PipelineError::kJobFailed, kindLabel(*request, i) + ": inline input exceeds the inline limit");
-            return;
+            const auto& input = request->jobs()[i].input;
+            if (input.kind() == PayloadKind::kInline && input.bytes().size() > inlineLimit_)
+            {
+                lock.unlock();
+                done.fail(PipelineError::kJobFailed, kindLabel(*request, i) + ": inline input exceeds the inline limit");
+                return;
+            }
         }
     }
     if (pending_.size() >= inFlightLimit_)
@@ -162,27 +185,46 @@ void RemoteChannel::send(std::shared_ptr<const SubGraphRequest> request, Complet
         return;
     }
     const auto id = nextId_++;
+    auto* strategy = strategy_.get();
+    const auto inlineLimit = inlineLimit_;
     auto entry = std::make_unique<Pending>();
-    entry->request = std::move(request);
+    entry->request = request;
     entry->done = std::move(done);
     entry->onReply = std::move(onReply);
     pending_.emplace(id, std::move(entry));
     lock.unlock();
 
-    patchId(*frame, id);
+    // Strategy payloads first: their frames must precede the control frame.
+    const auto& jobs = request->jobs();
+    std::vector<Payload> references;
+    std::vector<const Payload*> overrides;
+    if (strategy)
+    {
+        references.reserve(jobs.size());
+        overrides.assign(jobs.size(), nullptr);
+        for (std::size_t i = 0U; i < jobs.size(); ++i)
+        {
+            const auto& input = jobs[i].input;
+            if (input.kind() != PayloadKind::kInline || input.bytes().size() <= inlineLimit) continue;
+            auto reference = strategy->send(input, id);
+            if (!reference)
+            {
+                failPending(id, reference.error(), kindLabel(*request, static_cast<uint32_t>(i)) + ": payload transfer failed");
+                return;
+            }
+            references.push_back(Payload::reference(*reference));
+            overrides[i] = &references.back();
+        }
+    }
+    auto frame = wire::encodeRequest(id, *request, overrides);
+    if (!frame)
+    {
+        failPending(id, PipelineError::kJobFailed, "request does not fit the wire format");
+        return;
+    }
     if (!transport_.send(*frame))
     {
-        // onClosed may already have failed it; otherwise fail it here.
-        std::unique_ptr<Pending> failed;
-        {
-            std::lock_guard relock{mtx_};
-            if (auto found = pending_.find(id); found != pending_.end())
-            {
-                failed = std::move(found->second);
-                pending_.erase(found);
-            }
-        }
-        if (failed) failed->done.fail(PipelineError::kUnavailable, "worker connection lost");
+        failPending(id, PipelineError::kUnavailable, "worker connection lost");
         return;
     }
 
@@ -195,6 +237,47 @@ void RemoteChannel::send(std::shared_ptr<const SubGraphRequest> request, Complet
     }
 }
 
+void RemoteChannel::failPending(uint64_t id, PipelineError error, const std::string& message)
+{
+    std::unique_ptr<Pending> failed;
+    std::unique_ptr<Queued>  next;
+    {
+        std::lock_guard lock{mtx_};
+        auto found = pending_.find(id);
+        if (found == pending_.end()) return; // onClosed already failed it
+        failed = std::move(found->second);
+        pending_.erase(found);
+        next = takeQueued();
+    }
+    if (strategy_) strategy_->endScope(id);
+    failed->done.fail(error, message);
+    launch(std::move(next));
+}
+
+std::unique_ptr<RemoteChannel::Queued> RemoteChannel::takeQueued()
+{
+    if (queued_.empty()) return nullptr;
+    auto next = std::move(queued_.front());
+    queued_.pop_front();
+    return next;
+}
+
+void RemoteChannel::launch(std::unique_ptr<Queued> next)
+{
+    // A queued request whose job was cancelled while it waited is not sent.
+    while (next)
+    {
+        if (!next->done.stopToken().stop_requested())
+        {
+            send(std::move(next->request), std::move(next->done), std::move(next->onReply));
+            return;
+        }
+        next->done.succeed();
+        std::lock_guard lock{mtx_};
+        next = takeQueued();
+    }
+}
+
 void RemoteChannel::sendCancel(uint64_t id) noexcept
 {
     (void)transport_.send(wire::encodeCancel(id));
@@ -202,10 +285,20 @@ void RemoteChannel::sendCancel(uint64_t id) noexcept
 
 void RemoteChannel::onFrame(std::span<const std::byte> frame)
 {
+    onFrameBuffer(nullptr, frame);
+}
+
+void RemoteChannel::onFrameBuffer(std::shared_ptr<const void> owner, std::span<const std::byte> frame)
+{
     const auto type = wire::frameType(frame);
     if (type == FrameType::kReply)
     {
         handleReply(frame);
+        return;
+    }
+    if (type == FrameType::kPayload && strategy_)
+    {
+        strategy_->onPayloadFrame({frame.subspan(FrameReader::kHeaderBytes), std::move(owner)});
         return;
     }
 
@@ -223,13 +316,17 @@ void RemoteChannel::onFrame(std::span<const std::byte> frame)
             {
                 rejected_ = ConnectError::kFingerprintMismatch;
             }
-            else
+            else if (selectStrategy(*hello))
             {
                 inFlightLimit_ = std::min(options_.maxInFlight, hello->maxInFlight);
                 inlineLimit_ = std::min(options_.maxInlineBytes, hello->maxInlineBytes);
                 state_ = State::kConnected;
                 changed_.notify_all();
                 return;
+            }
+            else
+            {
+                rejected_ = ConnectError::kProtocol;
             }
         }
     }
@@ -251,6 +348,24 @@ void RemoteChannel::onFrame(std::span<const std::byte> frame)
     transport_.close();
 }
 
+bool RemoteChannel::selectStrategy(const Hello& ack)
+{
+    auto candidates = std::move(candidates_);
+    candidates_.clear();
+    if (ack.strategies.empty()) return true; // a minor-0 worker: no strategy, Part 2 behaviour
+    const auto& chosen = ack.strategies.front();
+    for (auto& candidate : candidates)
+    {
+        if (candidate->name() != chosen.name) continue;
+        if (!candidate->complete(chosen.setup)) return false;
+        sender_ = std::make_unique<TransportPayloadSender>(transport_);
+        candidate->attach(*sender_);
+        strategy_ = std::move(candidate);
+        return true;
+    }
+    return false; // the worker chose something not offered
+}
+
 void RemoteChannel::handleReply(std::span<const std::byte> frame)
 {
     auto decoded = wire::decodeReply(frame);
@@ -261,6 +376,25 @@ void RemoteChannel::handleReply(std::span<const std::byte> frame)
     }
     auto& [id, reply] = *decoded;
 
+    // Strategy outputs are collected before anything else, so the payload
+    // state for this reply is released whatever happens to the request.
+    for (auto& result : reply.results)
+    {
+        if (result.output.kind() != PayloadKind::kReference) continue;
+        auto payload = strategy_ ? strategy_->receive(result.output.bytes()) : std::unexpected(PipelineError::kJobFailed);
+        if (payload)
+        {
+            result.output = std::move(*payload);
+        }
+        else
+        {
+            result.output = {};
+            result.status = JobStatus::kFailed;
+            result.error = payload.error();
+            result.message = "output payload unavailable";
+        }
+    }
+
     std::unique_ptr<Pending> entry;
     std::unique_ptr<Queued>  next;
     {
@@ -269,12 +403,10 @@ void RemoteChannel::handleReply(std::span<const std::byte> frame)
         if (found == pending_.end()) return;
         entry = std::move(found->second);
         pending_.erase(found);
-        if (!queued_.empty())
-        {
-            next = std::move(queued_.front());
-            queued_.pop_front();
-        }
+        next = takeQueued();
     }
+    // The worker has finished reading this request's inputs.
+    if (strategy_) strategy_->endScope(id);
     // Waits for a cancel being sent on another thread; no lock is held.
     entry->cancel.reset();
 
@@ -304,24 +436,7 @@ void RemoteChannel::handleReply(std::span<const std::byte> frame)
             entry->done.succeed();
         }
     }
-
-    // A queued request whose job was cancelled while it waited is not sent.
-    while (next)
-    {
-        if (!next->done.stopToken().stop_requested())
-        {
-            send(std::move(next->request), std::move(next->done), std::move(next->onReply));
-            return;
-        }
-        next->done.succeed();
-        std::lock_guard lock{mtx_};
-        next.reset();
-        if (!queued_.empty())
-        {
-            next = std::move(queued_.front());
-            queued_.pop_front();
-        }
-    }
+    launch(std::move(next));
 }
 
 void RemoteChannel::onClosed(TransportError) noexcept
@@ -341,17 +456,11 @@ void RemoteChannel::onClosed(TransportError) noexcept
         entry->done.fail(PipelineError::kUnavailable, "worker connection lost");
     }
     for (auto& entry : queued) entry->done.fail(PipelineError::kUnavailable, "worker connection lost");
+    if (strategy_) strategy_->onClosed();
     // Last: the destructor may return, and destroy this object, once it sees closed_.
     std::lock_guard lock{mtx_};
     closed_ = true;
     changed_.notify_all();
 }
 
-} // namespace sub0pipeline::remote
-
-namespace sub0pipeline::remote
-{
-// Placeholders so the payload tests build before the implementation.
-WritablePayload RemoteChannel::allocatePayload(std::size_t size) { return makeWritablePayload(size); }
-std::string RemoteChannel::payloadStrategy() const { return {}; }
 } // namespace sub0pipeline::remote

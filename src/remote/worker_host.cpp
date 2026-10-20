@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "payload_sender.hpp"
 #include "sub0pipeline/executor/scoped_executor.hpp"
 #include "sub0pipeline/executor/sequential_executor.hpp"
 #include "sub0pipeline/pipeline.hpp"
@@ -24,9 +25,10 @@ namespace sub0pipeline::remote
 
 struct WorkerHost::Work
 {
-    uint64_t         id{0U};
-    SubGraphRequest  request;
-    std::stop_source stop;
+    uint64_t             id{0U};
+    SubGraphRequest      request;
+    std::vector<Payload> inputs; ///< Job inputs with strategy references resolved; views live until the reply is sent.
+    std::stop_source     stop;
 };
 
 WorkerHost::WorkerHost(const JobRegistry& registry, ITransport& transport, Options options)
@@ -122,7 +124,8 @@ void WorkerHost::run(Work& work)
                 errors[i] = "unknown job kind " + jobs[i].kind.name + "@" + std::to_string(jobs[i].kind.version);
                 return std::unexpected(PipelineError::kJobFailed);
             }
-            JobContext context{jobs[i].input, predecessors[i], outputs[i], errors[i], options_.store, std::move(stop)};
+            JobContext context{work.inputs[i], predecessors[i], outputs[i], errors[i], options_.store, std::move(stop),
+                               strategy_.get()};
             auto result = (*fn)(context);
             if (!result) codes[i] = result.error();
             return result;
@@ -147,6 +150,9 @@ void WorkerHost::run(Work& work)
 
     SubGraphReply reply;
     reply.results.resize(count);
+    std::vector<Payload> references;
+    references.reserve(count);
+    std::vector<const Payload*> overrides(count, nullptr);
     for (std::size_t i = 0U; i < count; ++i)
     {
         auto& result = reply.results[i];
@@ -166,7 +172,22 @@ void WorkerHost::run(Work& work)
 
         result.output = std::move(outputs[i]);
         if (result.output.kind() != PayloadKind::kInline || result.output.bytes().size() <= inlineLimit_) continue;
-        // Successors used the inline bytes; only the reply needs the handle.
+        if (strategy_)
+        {
+            auto reference = strategy_->send(result.output, work.id);
+            if (reference)
+            {
+                references.push_back(Payload::reference(*reference));
+                overrides[i] = &references.back();
+                continue;
+            }
+            result.output = {};
+            result.status = JobStatus::kFailed;
+            result.error = reference.error();
+            result.message = "output payload transfer failed";
+            continue;
+        }
+        // A minor-0 coordinator: only a store handle can carry a large output.
         auto stored = options_.store ? options_.store->put(result.output.bytes())
                                      : std::unexpected(PipelineError::kJobFailed);
         if (stored && stored->size() <= kMaxHandleBytes)
@@ -182,12 +203,22 @@ void WorkerHost::run(Work& work)
                                             : "output exceeds the inline limit and the worker has no store";
         }
     }
-    (void)transport_.send(wire::encodeReply(work.id, reply)); // a closed transport drops it
+    (void)transport_.send(wire::encodeReply(work.id, reply, overrides)); // a closed transport drops it
 }
 
 void WorkerHost::onFrame(std::span<const std::byte> frame)
 {
+    onFrameBuffer(nullptr, frame);
+}
+
+void WorkerHost::onFrameBuffer(std::shared_ptr<const void> owner, std::span<const std::byte> frame)
+{
     const auto type = wire::frameType(frame);
+    if (type == FrameType::kPayload && strategy_)
+    {
+        strategy_->onPayloadFrame({frame.subspan(FrameReader::kHeaderBytes), std::move(owner)});
+        return;
+    }
     if (type == FrameType::kHello)
     {
         const auto hello = wire::decodeHello(frame);
@@ -218,6 +249,25 @@ void WorkerHost::onFrame(std::span<const std::byte> frame)
         ack.fingerprint = fingerprint;
         ack.maxInFlight = options_.maxConcurrentRequests;
         ack.maxInlineBytes = options_.maxInlineBytes;
+        // The coordinator's order decides; a strategy this worker cannot accept is skipped.
+        auto factories = options_.strategies;
+        factories.push_back(streamStrategy());
+        for (const auto& offer : hello->strategies)
+        {
+            for (auto& factory : factories)
+            {
+                auto candidate = factory ? factory() : nullptr;
+                if (!candidate || candidate->name() != offer.name) continue;
+                auto accepted = candidate->accept(offer.setup);
+                if (!accepted) break;
+                sender_ = std::make_unique<TransportPayloadSender>(transport_);
+                candidate->attach(*sender_);
+                ack.strategies.push_back({offer.name, std::move(*accepted)});
+                strategy_ = std::move(candidate);
+                break;
+            }
+            if (strategy_) break;
+        }
         {
             std::lock_guard lock{mtx_};
             handshaken_ = true;
@@ -230,6 +280,25 @@ void WorkerHost::onFrame(std::span<const std::byte> frame)
     if (type == FrameType::kRequest)
     {
         auto decoded = wire::decodeRequest(frame);
+        // Resolve strategy references first, so their payload state is taken
+        // even if the request is then refused.
+        std::vector<Payload> inputs;
+        bool resolved = true;
+        if (decoded)
+        {
+            inputs.reserve(decoded->second.jobs().size());
+            for (const auto& job : decoded->second.jobs())
+            {
+                if (job.input.kind() != PayloadKind::kReference)
+                {
+                    inputs.push_back(job.input);
+                    continue;
+                }
+                auto payload = strategy_ ? strategy_->receive(job.input.bytes()) : std::unexpected(PipelineError::kJobFailed);
+                resolved = resolved && payload.has_value();
+                inputs.push_back(payload ? std::move(*payload) : Payload{});
+            }
+        }
         std::unique_lock lock{mtx_};
         if (!handshaken_ || !decoded)
         {
@@ -237,7 +306,7 @@ void WorkerHost::onFrame(std::span<const std::byte> frame)
             transport_.close();
             return;
         }
-        if (admitted_ >= options_.maxConcurrentRequests)
+        if (admitted_ >= options_.maxConcurrentRequests || !resolved)
         {
             lock.unlock();
             SubGraphReply busy;
@@ -245,8 +314,8 @@ void WorkerHost::onFrame(std::span<const std::byte> frame)
             for (auto& result : busy.results)
             {
                 result.status = JobStatus::kFailed;
-                result.error = PipelineError::kBusy;
-                result.message = "worker at capacity";
+                result.error = resolved ? PipelineError::kBusy : PipelineError::kJobFailed;
+                result.message = resolved ? "worker at capacity" : "input payload unavailable";
             }
             (void)transport_.send(wire::encodeReply(decoded->first, busy));
             return;
@@ -255,6 +324,7 @@ void WorkerHost::onFrame(std::span<const std::byte> frame)
         auto work = std::make_shared<Work>();
         work->id = decoded->first;
         work->request = std::move(decoded->second);
+        work->inputs = std::move(inputs);
         queue_.push_back(std::move(work));
         lock.unlock();
         changed_.notify_all();
@@ -286,6 +356,7 @@ void WorkerHost::onFrame(std::span<const std::byte> frame)
 
 void WorkerHost::onClosed(TransportError) noexcept
 {
+    if (strategy_) strategy_->onClosed();
     std::lock_guard lock{mtx_};
     closed_ = true;
     changed_.notify_all();
