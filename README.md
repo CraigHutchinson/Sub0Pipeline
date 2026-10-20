@@ -20,6 +20,7 @@ through `std::expected`.
 | Job results | `std::expected<void, PipelineError>`; void jobs are wrapped as successful jobs |
 | Failure propagation | Required failures skip successors; optional ordinary failures allow them to continue; cancellation and rejected submissions remain fatal |
 | Deferred completion | `emplaceDeferred` hands the body a move-only `Completion`; the job completes when it is signalled from any thread and holds no executor thread while `kAwaiting`. Cancellation and timeouts finish it at once; the outstanding work is tracked as an orphan |
+| Remote sub-graphs | Optional `Sub0Pipeline::Remote` target: a sub-graph of registered job kinds runs on a worker over an `ITransport` and is one deferred job on the coordinator; handshake, payload handles, per-job errors, worker-loss failure and back-pressure |
 | Cancellation | Per-job `cancel()` and external stop tokens for `run`, `runInline` and `runUntil`; queued plain jobs are also suppressible |
 | Timeouts | Native helpers or an injected deadline service with caller-owned registrations; expiry reports `kTimeout`; owned plain workers require reaping |
 | Structured completion | Opt-in `RunScope` requests stop and joins executor callbacks, deadline callbacks and orphan workers before teardown |
@@ -45,7 +46,9 @@ bodies; playback speed does not represent measured scheduler performance.
 
 **Not current guarantees:** allocation-free execution, custom graph allocators,
 ISR-safe scheduling, hard real-time deadlines, forced interruption of arbitrary
-I/O, work stealing, distributed jobs, or automatic idempotency of external writes.
+I/O, work stealing, cluster-wide scheduling or worker discovery (remote sub-graphs
+run on workers the consumer starts and connects), or automatic idempotency of
+external writes.
 Runtime trace storage, serialization and visualization are caller-owned; no
 recorder or trace dependency is installed in the scheduler. Bounded Qt/Zephyr
 examples and injected deadline services are available; hardware validation and
@@ -62,10 +65,9 @@ fixed-capacity execution remain separate work. See
   measured, explicit bounded-allocation profiles. The current implementation
   retains some reusable scratch but still uses dynamic allocation; it does not
   promise heap-free execution or a caller-selected total memory budget.
-- Remote sub-graphs -- sending a sub-graph of registered job kinds to a worker
-  process, which appears on the coordinator as one deferred job -- are designed
-  but not implemented. See
-  [cross-process orchestration](docs/design/cross-process-orchestration.md).
+- Remote sub-graphs ship with an in-memory loopback transport only; a pipe or
+  socket transport is consumer-supplied for now (`FrameReader` handles the
+  framing). See [cross-process orchestration](docs/design/cross-process-orchestration.md).
 - `TickLoop::run(std::stop_token)` returns after the current tick pass;
   callbacks in that pass are not interrupted, and the platform yield may delay
   return by one interval.
@@ -224,6 +226,56 @@ auto result = pipe.run(pool);   // returns once every deferred job has finished
 See the [deferred_completion example](examples/deferred_completion/main.cpp) and
 the [design](docs/design/cross-process-orchestration.md).
 
+## Remote sub-graphs
+
+Link `Sub0Pipeline::Remote` (built by default; `SUB0PIPELINE_BUILD_REMOTE=OFF`
+leaves it out) to run work in another process, for example one hosting a
+runtime the coordinator does not have. The worker registers job kinds by name
+and version; the coordinator sends a sub-graph of those kinds as one request,
+which is one deferred job in its own graph.
+
+```cpp
+// Worker process
+JobRegistry registry;
+registry.add({"resize", 2}, [](JobContext& ctx) -> std::expected<void, PipelineError> {
+    ctx.setOutput(resize(ctx.input(), ctx.predecessor(0)));
+    return {};
+});
+WorkerHost host{registry, transport, {.executor = &pool, .maxConcurrentRequests = 4, .store = &store}};
+host.serve(stopToken);
+
+// Coordinator process
+RemoteChannel channel{transport, {.expectedFingerprint = registryFingerprint(kinds)}};
+if (!channel.connect()) return;                       // version or registry mismatch
+SubGraphRequest request;
+auto d = request.add({"decode", 1}, Payload::handle(sourceKey));
+auto r = request.add({"resize", 2}, Payload::inlineBytes(settings), /*exported=*/true);
+request.edge(d, r);
+Job remote = channel.emplace(pipe, request, [&](const SubGraphReply& reply) {
+    output = reply.results[r].output;                 // inline bytes or a store handle
+});
+```
+
+- One request runs as its own `Pipeline` on the worker, in parallel on its
+  executor; up to `maxConcurrentRequests` requests run at once.
+- Payloads travel inline up to the smaller of both sides' limits (64 KiB by
+  default). Larger outputs come back as `IPayloadStore` handles, so large data
+  never crosses the transport.
+- The remote job fails with the lowest-index failed job of the sub-graph
+  (`kJobFailed`, `kCancelled` or `kTimeout`, message naming the kind). The
+  reply handler sees every job's result. Losing the connection fails every
+  outstanding request with `kUnavailable`, so the caller can retry on another
+  worker.
+- A full channel fails the job with `kBusy`; `queueCapacity` opts into a
+  bounded wait queue, and `freeCapacity()` reports room left.
+- Cancelling the remote job finishes it at once and stops the request on the
+  worker. The library never starts processes: the consumer starts workers and
+  gives each side an `ITransport` (`LoopbackTransport` ships for tests).
+
+See the [remote_subgraph example](examples/remote_subgraph/main.cpp) and the
+[design](docs/design/cross-process-orchestration.md), which records the wire
+format and the current choices on error codes, payloads and limits.
+
 ## Costs and opt-in behavior
 
 | Path or feature | Selection | Cost / limit |
@@ -235,6 +287,7 @@ the [design](docs/design/cross-process-orchestration.md).
 | Observer callbacks and tracing | Supply an `IObserver*` | Absent when no observer is supplied; an attached observer receives concurrent callbacks and pays its own capture/formatting costs |
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
 | Deferred jobs | Use `emplaceDeferred` | One heap slot per deferred job at construction; per run a stop-callback registration, two short mutex sections and, when completed on another thread, one executor dispatch. Graphs without deferred jobs only test a flag. Timed deferred jobs without an injected service start one timer thread per pipeline |
+| Remote sub-graphs | Link `Sub0Pipeline::Remote` | Not linked: no change. Per request: encode/decode, two thread hand-offs each way and one deferred job; loopback round trip about 52 us for 1 job, 4.5 us per job at 16 and 2.2 us per job at 256 jobs per request. Worker: one runner thread per concurrent request |
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |
 | Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
 | Priority worker pool | Construct `PriorityExecutor` with `Options::threadCount` and optional `queueCapacity` | Fixed worker count; zero capacity keeps the dynamic queue; positive capacity reserves queued storage at startup and rejects overflow; callable and platform allocations remain |
@@ -363,11 +416,12 @@ also be included on its own:
 | `observer.hpp`, `dependency_range.hpp` | `IObserver`, `RunId`; `DependencyRange` |
 | `error.hpp`, `tick_loop.hpp`, `config.hpp` | `PipelineError`; `TickLoop`, `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
 | `dsl.hpp`, `deadline.hpp`, `run_scope.hpp` | Opt-in layers, not part of the umbrella |
+| `remote/*.hpp` | `Sub0Pipeline::Remote`: `RemoteChannel`, `WorkerHost`, `JobRegistry`, `SubGraphRequest`, `Payload`, `IPayloadStore`, `ITransport`, `LoopbackTransport`, `wire::` |
 
 Job statuses distinguish pending, ready, running, awaiting (a deferred job
 waiting for its `Completion`), done, failed, skipped, timed out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
-`kCyclicDependency`, `kUnknownJob`, `kNotArmed`, `kNotOnDemand`, `kBusy` and
-`kDeadlineUnavailable`. A job skipped because a predecessor failed has status
+`kCyclicDependency`, `kUnknownJob`, `kNotArmed`, `kNotOnDemand`, `kBusy`,
+`kDeadlineUnavailable` and `kUnavailable`. A job skipped because a predecessor failed has status
 `kSkipped`; `run()` returns the error of the job that caused it.
 
 `Job::id()` gives the `JobId` that observers receive and that `name(JobId)`,
@@ -446,6 +500,7 @@ and manually triggered CI workflow retain machine-readable evidence, and
 | [trace_capture](examples/trace_capture/main.cpp) | Bounded concurrent event capture, Chrome Trace JSON and live snapshot polling |
 | [job_options](examples/job_options/main.cpp) | Job builder methods, `precede()`/`succeed()` and optional chains |
 | [tick_loop](examples/tick_loop/main.cpp) | Recurring ticks with joinable `std::jthread` shutdown |
+| [remote_subgraph](examples/remote_subgraph/main.cpp) | A three-job sub-graph run on a worker over loopback, exported output used locally, a failing job reported by name |
 | [deferred_completion](examples/deferred_completion/main.cpp) | Deferred jobs completed by an asynchronous device, more pending than pool threads, timeout and late completion |
 
 The suites include core and DSL regression tests plus optional Qt and Zephyr
