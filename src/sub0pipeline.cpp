@@ -24,6 +24,7 @@
 #include <functional>
 #include <future>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -32,11 +33,21 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "sub0pipeline/deadline.hpp"
 #include "sub0pipeline/sub0pipeline.hpp"
+
+// Forces inlining where the compiler's own heuristic declines and the cost was measured.
+#if defined(_MSC_VER)
+#define SUB0PIPELINE_FORCEINLINE [[msvc::forceinline]]
+#elif defined(__GNUC__) || defined(__clang__)
+#define SUB0PIPELINE_FORCEINLINE [[gnu::always_inline]] inline
+#else
+#define SUB0PIPELINE_FORCEINLINE inline
+#endif
 
 namespace sub0pipeline
 {
@@ -199,6 +210,251 @@ private:
 static_assert(sizeof(PoolSuccessors) == 12,
     "PoolSuccessors must be exactly 12 bytes");
 
+// ── Deferred jobs ─────────────────────────────────────────────────────────────
+
+namespace detail
+{
+
+// Completions still held by deferred jobs that finished as cancelled or timed
+// out. Owned by Pipeline::Impl, which joins them before it is destroyed.
+struct DeferredOrphans
+{
+    std::mutex              mtx;
+    std::condition_variable released;
+    std::atomic<std::size_t> count{0U}; ///< Written under mtx; read lock-free.
+
+    void release() noexcept
+    {
+        std::lock_guard lock{mtx};
+        count.fetch_sub(1U, std::memory_order_release);
+        released.notify_all();
+    }
+
+    bool wait() noexcept
+    {
+        std::unique_lock lock{mtx};
+        if (count.load(std::memory_order_acquire) == 0U) return false;
+        released.wait(lock, [this] { return count.load(std::memory_order_acquire) == 0U; });
+        return true;
+    }
+};
+
+// Per-job state of a deferred job. Three parties act on one run: the body
+// returning, the Completion being signalled, and the stop source firing.
+// Signal and stop race for the outcome; the body and the outcome winner
+// each arrive once, and the second arrival finishes the job.
+struct DeferredSlot
+{
+    static constexpr uint8_t kNone      = 0U;
+    static constexpr uint8_t kSignalled = 1U;
+    static constexpr uint8_t kStopped   = 2U;
+    static constexpr uint8_t kReleased  = 0x01U; ///< The Completion was completed or destroyed.
+    static constexpr uint8_t kOrphaned  = 0x02U; ///< Counted in DeferredOrphans until released.
+
+    using Deliver = void (*)(void* run, uint32_t idx) noexcept;
+
+    struct StopForward
+    {
+        DeferredSlot* slot;
+        void operator()() const noexcept { slot->stop(); }
+    };
+
+    std::function<void(Completion)> start;
+    DeferredOrphans*                orphans{nullptr}; ///< non-owning; Pipeline::Impl's ledger
+
+    // Reset by the thread that runs the body, before the Completion exists.
+    std::atomic<uint8_t>               outcome{kNone};
+    std::atomic<uint8_t>               parties{0U};
+    std::atomic<uint8_t>               handleFlags{0U};
+    std::expected<void, PipelineError> result;
+    std::string                        message;
+    std::stop_token                    token;
+    std::optional<std::stop_callback<StopForward>> stopCallback;
+    std::optional<Deadline>            deadline;
+    IDeadlineService*                  deadlineService{nullptr}; ///< Set while a registration may be live.
+    void*                              run{nullptr};             ///< non-owning; the active run
+    Deliver                            deliver{nullptr};
+    uint32_t                           idx{0U};
+
+    Completion handle() noexcept { return Completion{this}; }
+
+    void signal(const std::expected<void, PipelineError>& value, std::string_view text) noexcept
+    {
+        auto none = kNone;
+        if (!outcome.compare_exchange_strong(none, kSignalled, std::memory_order_acq_rel))
+        {
+            releaseLate();
+            return;
+        }
+        // An expiry that came first owns the result, as for cooperative jobs.
+        if (deadline && deadline->expired()) result = std::unexpected(PipelineError::kTimeout);
+        else result = value;
+        if (!value && !text.empty()) message.assign(text);
+        arrive();
+    }
+
+    void stop() noexcept
+    {
+        auto none = kNone;
+        if (!outcome.compare_exchange_strong(none, kStopped, std::memory_order_acq_rel)) return;
+        result = std::unexpected(deadline && deadline->expired() ? PipelineError::kTimeout
+                                                                 : PipelineError::kCancelled);
+        arrive();
+    }
+
+    // The outcome winner's arrival. Nothing here may touch the slot afterwards:
+    // the finisher can complete the run and a new run can reset the slot.
+    void arrive() noexcept
+    {
+        if (parties.fetch_sub(1U, std::memory_order_acq_rel) == 1U) deliver(run, idx);
+    }
+
+    void releaseLate() noexcept
+    {
+        if ((handleFlags.fetch_or(kReleased, std::memory_order_acq_rel) & kOrphaned) != 0U)
+            orphans->release();
+    }
+
+    // Called by the finisher of a stopped job. The count rises before the flag
+    // is visible, so a releasing Completion never decrements below zero.
+    void orphanIfHeld() noexcept
+    {
+        std::lock_guard lock{orphans->mtx};
+        auto flags = handleFlags.load(std::memory_order_acquire);
+        while ((flags & kReleased) == 0U)
+        {
+            if (handleFlags.compare_exchange_weak(flags, flags | kOrphaned, std::memory_order_acq_rel))
+            {
+                orphans->count.fetch_add(1U, std::memory_order_release);
+                return;
+            }
+        }
+    }
+
+    // Never call from inside this job's stop callback or deadline expiry:
+    // both destructors wait for those to return.
+    void releaseRegistrations() noexcept
+    {
+        stopCallback.reset();
+        if (auto* service = std::exchange(deadlineService, nullptr)) service->cancelAndWait(*deadline);
+    }
+};
+
+} // namespace detail
+
+Completion& Completion::operator=(Completion&& other) noexcept
+{
+    if (this != &other)
+    {
+        if (auto* held = std::exchange(slot_, nullptr))
+            held->signal(std::unexpected(PipelineError::kJobFailed), "completion abandoned");
+        slot_ = std::exchange(other.slot_, nullptr);
+    }
+    return *this;
+}
+
+Completion::~Completion()
+{
+    if (slot_) slot_->signal(std::unexpected(PipelineError::kJobFailed), "completion abandoned");
+}
+
+void Completion::complete(std::expected<void, PipelineError> result, std::string_view message) noexcept
+{
+    if (auto* held = std::exchange(slot_, nullptr)) held->signal(result, message);
+}
+
+std::stop_token Completion::stopToken() const noexcept
+{
+    return slot_ ? slot_->token : std::stop_token{};
+}
+
+namespace
+{
+// Serves deferred-job timeouts when no IDeadlineService is injected: one
+// thread per Pipeline, started on first use, instead of one per pending job.
+class TimerService final : public IDeadlineService
+{
+public:
+    TimerService() : thread_{[this](std::stop_token stop) { loop(stop); }} {}
+
+    bool arm(Deadline& deadline, std::chrono::milliseconds delay) noexcept override
+    {
+        using Clock = std::chrono::steady_clock;
+        const auto now = Clock::now();
+        const auto headroom = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::time_point::max() - now);
+        const auto at = delay >= headroom ? Clock::time_point::max() : now + delay;
+        {
+            std::lock_guard lock{mtx_};
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            try
+            {
+#endif
+                index_.emplace(&deadline, queue_.emplace(at, &deadline));
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            }
+            catch (...)
+            {
+                return false;
+            }
+#endif
+        }
+        wake_.notify_all();
+        return true;
+    }
+
+    void cancelAndWait(Deadline& deadline) noexcept override
+    {
+        std::unique_lock lock{mtx_};
+        if (auto found = index_.find(&deadline); found != index_.end())
+        {
+            queue_.erase(found->second);
+            index_.erase(found);
+        }
+        fired_.wait(lock, [&] { return firing_ != &deadline; });
+    }
+
+private:
+    using Queue = std::multimap<std::chrono::steady_clock::time_point, Deadline*>;
+
+    void loop(std::stop_token stop)
+    {
+        std::unique_lock lock{mtx_};
+        while (!stop.stop_requested())
+        {
+            if (queue_.empty())
+            {
+                wake_.wait(lock, stop, [&] { return !queue_.empty(); });
+                continue;
+            }
+            const auto at = queue_.begin()->first;
+            if (std::chrono::steady_clock::now() < at)
+            {
+                wake_.wait_until(lock, stop, at, [&] { return queue_.empty() || queue_.begin()->first < at; });
+                continue;
+            }
+            Deadline* due = queue_.begin()->second;
+            index_.erase(due);
+            queue_.erase(queue_.begin());
+            firing_ = due;
+            // expire() runs stop callbacks, which may call arm() or cancelAndWait().
+            lock.unlock();
+            due->expire();
+            lock.lock();
+            firing_ = nullptr;
+            fired_.notify_all();
+        }
+    }
+
+    std::mutex                                    mtx_;
+    std::condition_variable_any                   wake_;
+    std::condition_variable_any                   fired_;
+    Queue                                         queue_;
+    std::unordered_map<Deadline*, Queue::iterator> index_;
+    Deadline*                                     firing_{nullptr};
+    std::jthread                                  thread_; // last: stops before the state it uses
+};
+} // namespace
+
 // ── Internal node ─────────────────────────────────────────────────────────────
 
 struct Pipeline::Node
@@ -225,15 +481,18 @@ struct Pipeline::Node
     // ── Cold section: build-time only ────────────────────────────────────
     std::string             nameStr_;
     const char*             statusText_{nullptr}; ///< non-owning; borrowed from the caller
+    std::unique_ptr<detail::DeferredSlot> deferred_; ///< Set for emplaceDeferred() jobs only.
 
     // ── Flag constants ────────────────────────────────────────────────────
     static constexpr uint8_t kFlagOptional    = 0x01; ///< Failure does not block dependents.
     static constexpr uint8_t kFlagOnDemand    = 0x02; ///< Excluded from run() root set.
     static constexpr uint8_t kFlagCancellable = 0x04; ///< fn_ checks stop_token cooperatively.
+    static constexpr uint8_t kFlagDeferred    = 0x08; ///< Completes through deferred_, not fn_.
 
     bool isOptional()    const noexcept { return (flags_ & kFlagOptional)    != 0U; }
     bool isOnDemand()    const noexcept { return (flags_ & kFlagOnDemand)    != 0U; }
     bool isCancellable() const noexcept { return (flags_ & kFlagCancellable) != 0U; }
+    bool isDeferred()    const noexcept { return (flags_ & kFlagDeferred)    != 0U; }
 
     Node() = default;
 
@@ -254,6 +513,7 @@ struct Pipeline::Node
         , stopSource_{std::move(o.stopSource_)}
         , nameStr_{std::move(o.nameStr_)}
         , statusText_{o.statusText_}
+        , deferred_{std::move(o.deferred_)}
     {}
 
     Node& operator=(Node&&)      = delete;
@@ -311,6 +571,18 @@ struct Pipeline::Impl : detail::PipelineAnchor
     std::mutex               joinMtx_;
     std::atomic<std::size_t>  pendingOrphans_{0};
 
+    std::vector<uint32_t>     deferredNodes_;
+    // Deferred jobs finished on another thread, for the run thread of an
+    // inline run; sized to the deferred job count and retained across runs.
+    std::vector<uint32_t>     deferredFinished_, deferredDrain_;
+    detail::DeferredOrphans   deferredOrphans_;
+    // Wakes the run thread as deferred jobs finish; owned here rather than by
+    // the run so that runs without deferred jobs do not construct them.
+    std::mutex                deferredMtx_;
+    std::condition_variable   deferredCv_;
+    std::mutex                timerMtx_;
+    std::unique_ptr<TimerService> timer_;
+
     ~Impl() { joinOrphans(); }
 
     // A moved-from Pipeline has no Impl; mutating calls recreate it.
@@ -346,6 +618,38 @@ struct Pipeline::Impl : detail::PipelineAnchor
     }
 
     bool joinOrphans()
+    {
+        const bool reaped = joinOrphanThreads();
+        return deferredOrphans_.wait() || reaped;
+    }
+
+    [[nodiscard]] bool hasOrphans() const noexcept
+    {
+        return pendingOrphans_.load(std::memory_order_acquire) != 0U
+            || deferredOrphans_.count.load(std::memory_order_acquire) != 0U;
+    }
+
+    // Returns nullptr if the fallback timer cannot be started.
+    IDeadlineService* deferredDeadlines() noexcept
+    {
+        if (deadlines_) return deadlines_;
+        std::lock_guard lock{timerMtx_};
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+        try
+        {
+#endif
+            if (!timer_) timer_ = std::make_unique<TimerService>();
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
+#endif
+        return timer_.get();
+    }
+
+    bool joinOrphanThreads()
     {
         if (pendingOrphans_.load(std::memory_order_acquire) == 0) return false;
         // Serialize joiners, but never hold the registry lock while waiting.
@@ -453,12 +757,13 @@ struct Pipeline::Impl : detail::PipelineAnchor
     }
 
     // Give the node cancellation state no earlier run can reach. A cancellable
-    // job was handed a token and may have kept it, so it always gets new state.
+    // or deferred job was handed a token and may have kept it, so it always
+    // gets new state.
     // A plain job never sees one: its state is only reachable from inside the
     // library, so it is kept until a stop has actually been requested on it.
     static void renewStopState(Node& node)
     {
-        if (node.isCancellable() || node.stopSource_.stop_requested())
+        if (node.isCancellable() || node.isDeferred() || node.stopSource_.stop_requested())
             node.stopSource_ = std::stop_source{};
     }
 
@@ -693,6 +998,20 @@ Job Pipeline::emplacePlain(std::function<std::expected<void, PipelineError>(std:
     return Job{Impl::ensure(impl_, this).addNode(std::move(fn), "job_", 0U), impl_.get()};
 }
 
+Job Pipeline::emplaceDeferred(std::function<void(Completion)> start)
+{
+    auto& impl = Impl::ensure(impl_, this);
+    auto slot = std::make_unique<detail::DeferredSlot>();
+    slot->start = std::move(start);
+    slot->orphans = &impl.deferredOrphans_;
+    // Reserve first: once the node exists, recording it must not fail.
+    impl.deferredNodes_.reserve(impl.deferredNodes_.size() + 1U);
+    const auto idx = impl.addNode({}, "job_", Node::kFlagDeferred);
+    impl.nodes_[idx].deferred_ = std::move(slot);
+    impl.deferredNodes_.push_back(idx);
+    return Job{idx, impl_.get()};
+}
+
 void Pipeline::reserve(std::size_t jobCount)
 {
     Impl::ensure(impl_, this).nodes_.reserve(jobCount);
@@ -805,6 +1124,10 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     // Failure containment must still work when a submission ran out of memory.
     impl_->skipped_.reserve(total);
     impl_->failedJobName_.reserve(failureNameCapacity);
+    // Each deferred job finishes once per run, so these never grow mid-run.
+    impl_->deferredFinished_.clear();
+    impl_->deferredFinished_.reserve(impl_->deferredNodes_.size());
+    impl_->deferredDrain_.reserve(impl_->deferredNodes_.size());
 
     std::atomic<bool> hasFatalFailure{false};
     PipelineError     fatalError{PipelineError::kJobFailed};
@@ -827,7 +1150,13 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         std::mutex&         fatalMtx;
         std::vector<uint32_t>* inlineReady; ///< Set when the run calls jobs itself; else nullptr.
 
-        std::mutex skipMutex;
+        // Deferred jobs started and not yet finished, guarded by
+        // impl.deferredMtx_. A finish decrements it last, after dispatching
+        // successors, so zero means the executor has already accounted for
+        // every dispatch those jobs caused.
+        uint32_t deferredInFlight = 0U;
+
+        std::mutex skipMutex{};
         std::size_t skipRead = 0;
         bool drainingSkips = false;
 
@@ -917,15 +1246,30 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                                                        std::memory_order_acq_rel)) return;
             if (observer) observer->onJobStart(runId, idx, nd.nameStr_);
 
+            if (nd.isDeferred())
+            {
+                startDeferred(idx, nd);
+                return;
+            }
             auto result = impl.invoke(nd);
-
-            const auto jobStatus = statusOf(result);
-            nd.jobStatus_.store(jobStatus, std::memory_order_release);
-
             // Consume the thread-local error context set by the job (failure branch only).
             // Move clears t_jobError so it does not leak into the next job on this thread.
             // On the success path t_jobError is empty and this move is a no-op.
             std::string jobErrorCtx = std::move(t_jobError);
+            finishJob(idx, nd, result, jobErrorCtx);
+        }
+
+        // The one finish path for every job. It holds no try block (submitReady
+        // owns that) so it can be force-inlined: MSVC Release, nested dispatch,
+        // measured +9-12% per job against a hand-inlined copy in dispatchJob(),
+        // and +22-32% without the force-inline. Duplicating it is a lever to pull
+        // only if overall KPIs demand it; see docs/design/cross-process-orchestration.md.
+        SUB0PIPELINE_FORCEINLINE void finishJob(uint32_t idx, Node& nd,
+                                                const std::expected<void, PipelineError>& result,
+                                                std::string_view errorText)
+        {
+            const auto jobStatus = statusOf(result);
+            nd.jobStatus_.store(jobStatus, std::memory_order_release);
 
             const auto done     = impl.completedCount_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
             const auto progress = static_cast<float>(done) / static_cast<float>(total);
@@ -940,7 +1284,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 // Report failure detail through the dedicated hook -- zero cost when
                 // no observer is attached.
                 if (observer)
-                    observer->onJobFailure(runId, idx, nd.nameStr_, result.error(), jobErrorCtx);
+                    observer->onJobFailure(runId, idx, nd.nameStr_, result.error(), errorText);
 
                 recordFailure(idx, result.error());
                 for (auto succIdx : nd.successors_.range(impl.succPool_)) skipNode(succIdx);
@@ -966,24 +1310,161 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                         inlineReady->push_back(succIdx);
                         continue;
                     }
-#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
-                    try
-                    {
-#endif
-                        executor.dispatch(
-                            succ.nameStr_,
-                            [this, si = succIdx]{ dispatchJob(si); },
-                            [] {},
-                            succ.coreAffinity_, succ.priority_, succ.stackBytes_);
-#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
-                    }
-                    catch (...)
-                    {
-                        submissionFailed(succIdx);
-                        return;
-                    }
-#endif
+                    if (!submitReady(succIdx, succ)) return;
                 }
+            }
+        }
+
+        // Returns false if the executor rejected the job; the run then fails.
+        bool submitReady(uint32_t idx, Node& nd)
+        {
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            try
+            {
+#endif
+                executor.dispatch(
+                    nd.nameStr_,
+                    [this, idx]{ dispatchJob(idx); },
+                    [] {},
+                    nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            }
+            catch (...)
+            {
+                submissionFailed(idx);
+                return false;
+            }
+#endif
+            return true;
+        }
+
+
+        static void deliverThunk(void* run, uint32_t idx) noexcept
+        {
+            static_cast<DispatchContext*>(run)->deliverDeferred(idx);
+        }
+
+        void startDeferred(uint32_t idx, Node& nd)
+        {
+            auto& slot = *nd.deferred_;
+            if (nd.stopSource_.stop_requested())
+            {
+                finishJob(idx, nd, std::unexpected(PipelineError::kCancelled), {});
+                return;
+            }
+            slot.outcome.store(detail::DeferredSlot::kNone, std::memory_order_relaxed);
+            slot.parties.store(2U, std::memory_order_relaxed);
+            slot.handleFlags.store(0U, std::memory_order_relaxed);
+            slot.result = {};
+            slot.message.clear();
+            slot.token = nd.stopSource_.get_token();
+            slot.run = this;
+            slot.deliver = &deliverThunk;
+            slot.idx = idx;
+            slot.deadline.reset();
+            if (nd.timeout_ != std::chrono::milliseconds::max())
+            {
+                auto* service = impl.deferredDeadlines();
+                slot.deadline.emplace(nd.stopSource_);
+                if (!service || !service->arm(*slot.deadline, nd.timeout_))
+                {
+                    slot.deadline.reset();
+                    finishJob(idx, nd, std::unexpected(PipelineError::kDeadlineUnavailable), {});
+                    return;
+                }
+                slot.deadlineService = service;
+            }
+            {
+                std::lock_guard lock{impl.deferredMtx_};
+                ++deferredInFlight;
+            }
+            // Runs stop() at once if a stop, or a synchronous expiry, came first.
+            slot.stopCallback.emplace(slot.token, detail::DeferredSlot::StopForward{&slot});
+            slot.start(slot.handle());
+
+            // The finisher cannot run before this party arrives, so awaiting
+            // always precedes the finish.
+            if (slot.outcome.load(std::memory_order_acquire) == detail::DeferredSlot::kNone)
+            {
+                nd.jobStatus_.store(JobStatus::kAwaiting, std::memory_order_release);
+                if (observer) observer->onJobAwaiting(runId, idx, nd.nameStr_);
+            }
+            if (slot.parties.fetch_sub(1U, std::memory_order_acq_rel) == 1U) finishDeferred(idx, true);
+        }
+
+        // Called by the signal or stop party when it arrives last: possibly a
+        // transport, timer or stop-requesting thread the library does not own.
+        void deliverDeferred(uint32_t idx) noexcept
+        {
+            if (inlineReady)
+            {
+                std::lock_guard lock{impl.deferredMtx_};
+                impl.deferredFinished_.push_back(idx);
+                impl.deferredCv_.notify_all();
+                return;
+            }
+            auto& nd = impl.nodes_[idx];
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            try
+            {
+#endif
+                executor.dispatch(nd.nameStr_, [this, idx] { finishDeferred(idx, true); }, [] {},
+                                  nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            }
+            catch (...)
+            {
+                // This thread may be inside the stop callback or the expiry
+                // that releasing would wait for; the run end releases them.
+                finishDeferred(idx, false);
+            }
+#endif
+        }
+
+        void finishDeferred(uint32_t idx, bool releaseRegistrations) noexcept
+        {
+            auto& nd = impl.nodes_[idx];
+            auto& slot = *nd.deferred_;
+            if (releaseRegistrations) slot.releaseRegistrations();
+            if (slot.outcome.load(std::memory_order_acquire) == detail::DeferredSlot::kStopped)
+                slot.orphanIfHeld();
+            finishJob(idx, nd, slot.result, slot.message);
+            std::lock_guard lock{impl.deferredMtx_};
+            --deferredInFlight;
+            impl.deferredCv_.notify_all();
+        }
+
+        // Runs on the run thread of an inline run once its ready list is empty.
+        // Returns false when no deferred job remains in flight.
+        bool finishAwaitedInline()
+        {
+            auto& drain = impl.deferredDrain_;
+            {
+                std::unique_lock lock{impl.deferredMtx_};
+                impl.deferredCv_.wait(lock, [&] {
+                    return !impl.deferredFinished_.empty() || deferredInFlight == 0U;
+                });
+                if (impl.deferredFinished_.empty()) return false;
+                drain.swap(impl.deferredFinished_);
+            }
+            for (auto idx : drain) finishDeferred(idx, true);
+            drain.clear();
+            return true;
+        }
+
+        // Threaded runs: continuations and their successors are dispatched
+        // while the executor may already look idle, so wait for both together.
+        void awaitDeferredThreaded()
+        {
+            for (;;)
+            {
+                {
+                    std::unique_lock lock{impl.deferredMtx_};
+                    impl.deferredCv_.wait(lock, [&] { return deferredInFlight == 0U; });
+                }
+                executor.waitAll();
+                std::lock_guard lock{impl.deferredMtx_};
+                if (deferredInFlight == 0U) return;
             }
         }
     };
@@ -1019,8 +1500,11 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         auto& ready = *ctx.inlineReady;
         ready.reserve(total);
         ready.assign(impl_->roots_.begin(), impl_->roots_.end());
-        for (std::size_t next = 0; next < ready.size(); ++next)
-            ctx.dispatchJob(ready[next]);
+        std::size_t next = 0;
+        do
+        {
+            for (; next < ready.size(); ++next) ctx.dispatchJob(ready[next]);
+        } while (!impl_->deferredNodes_.empty() && ctx.finishAwaitedInline());
     }
     else
     {
@@ -1053,6 +1537,11 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     }
 
     executor.waitAll();
+    if (!impl_->deferredNodes_.empty())
+    {
+        if (!ctx.inlineReady) ctx.awaitDeferredThreaded();
+        for (auto idx : impl_->deferredNodes_) impl_->nodes_[idx].deferred_->releaseRegistrations();
+    }
 
     if (hasFatalFailure.load(std::memory_order_acquire))
     {
@@ -1165,7 +1654,7 @@ bool Pipeline::joinOrphans()
 
 bool Pipeline::hasPendingOrphans() const noexcept
 {
-    return impl_ && impl_->pendingOrphans_.load(std::memory_order_acquire) != 0;
+    return impl_ && impl_->hasOrphans();
 }
 
 void Pipeline::runUntil(IExecutor& executor, std::stop_token stop,

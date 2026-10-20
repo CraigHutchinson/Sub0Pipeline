@@ -1,5 +1,6 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -9,6 +10,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <nanobench.h>
 #include <stop_token>
 #include <string>
@@ -117,8 +119,46 @@ public:
 
 // ── Graph shapes ─────────────────────────────────────────────────────────────
 
+using sub0pipeline::Completion;
 using sub0pipeline::Job;
 using sub0pipeline::Pipeline;
+
+// Completes deferred jobs on its own thread, in the order they were posted.
+class Completer
+{
+public:
+    Completer() : thread_{[this](std::stop_token stop) { loop(stop); }} {}
+
+    void post(Completion done)
+    {
+        {
+            std::lock_guard lock{mtx_};
+            pending_.push_back(std::move(done));
+        }
+        wake_.notify_one();
+    }
+
+private:
+    void loop(std::stop_token stop)
+    {
+        std::vector<Completion> batch;
+        while (!stop.stop_requested())
+        {
+            {
+                std::unique_lock lock{mtx_};
+                wake_.wait(lock, stop, [this] { return !pending_.empty(); });
+                batch.swap(pending_);
+            }
+            for (auto& done : batch) done.succeed();
+            batch.clear();
+        }
+    }
+
+    std::mutex                  mtx_;
+    std::condition_variable_any wake_;
+    std::vector<Completion>     pending_;
+    std::jthread                thread_; // last: stops before the state it uses
+};
 
 void buildChain(Pipeline& pipeline, int jobs)
 {
@@ -491,6 +531,23 @@ int main(int argc, char** argv)
             (void)onDemand.trigger(job);
             pool.waitAll();
         });
+
+        // One persistent completer thread stands in for an I/O or transport
+        // thread, so the case measures the hand-off and continuation, not
+        // thread creation.
+        Completer completer;
+        Pipeline deferredChain;
+        Job previous;
+        for (int i = 0; i < 10; ++i)
+        {
+            auto next = deferredChain.emplaceDeferred([&](Completion done) { completer.post(std::move(done)); });
+            if (previous.valid()) next.succeed(previous);
+            previous = next;
+        }
+        runner.run("priority(4): 10-job deferred chain, completed on another thread", [&]
+        {
+            (void)deferredChain.run(pool);
+        });
     }
 
     if (features)
@@ -517,6 +574,17 @@ int main(int argc, char** argv)
         runner.run("observer callbacks, no external token", [&] {
             (void)pipeline.run(exec, &observer);
             ankerl::nanobench::doNotOptimizeAway(observer.calls);
+        });
+        Pipeline deferred;
+        Job previousDeferred;
+        for (int i = 0; i < 10; ++i)
+        {
+            auto job = deferred.emplaceDeferred([](Completion done) { done.succeed(); });
+            if (previousDeferred.valid()) job.succeed(previousDeferred);
+            previousDeferred = job;
+        }
+        runner.run("deferred jobs, completed before the body returns", [&] {
+            (void)deferred.run(exec);
         });
 
         // Helper-thread startup dominates these opt-in timeout measurements.

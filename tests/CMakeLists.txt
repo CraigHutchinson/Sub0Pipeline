@@ -10,6 +10,7 @@ add_executable(Sub0Pipeline_Tests
     test_ondemand.cpp
     test_cancel.cpp
     test_deadline.cpp
+    test_deferred.cpp
     test_pool.cpp
     test_validation.cpp
     test_observer.cpp

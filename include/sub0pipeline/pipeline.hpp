@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "sub0pipeline/completion.hpp"
 #include "sub0pipeline/dependency_range.hpp"
 #include "sub0pipeline/error.hpp"
 #include "sub0pipeline/executor/executor.hpp"
@@ -155,6 +156,37 @@ public:
     }
 
     /**
+     * Add a deferred job: its body starts work and returns, and the job
+     * completes later, when the Completion it received is completed.
+     *
+     * Until then the job is kAwaiting, holds no executor thread, and its
+     * dependants wait. The Completion may be completed from any thread, or
+     * before @p start returns. Cancellation and .timeout() finish a pending job
+     * at once as kCancelled / kTimedOut, without waiting for the work; the work
+     * reaches the stop request through Completion::stopToken() and remains an
+     * orphan until its Completion is completed or destroyed.
+     *
+     * When a Completion is completed from another thread, the job's finish
+     * (observer callbacks, successor release) is dispatched to the run's
+     * executor; an executor that runsInline() finishes it on the run thread.
+     * run() returns only after every deferred job has finished.
+     *
+     * @code
+     *   auto read = pipe.emplaceDeferred([&io](Completion done) {
+     *       io.readAsync([done = std::move(done)](bool ok) mutable {
+     *           if (ok) done.succeed();
+     *           else    done.fail(PipelineError::kJobFailed, "read failed");
+     *       });
+     *   }).name("read").timeout(5s);
+     * @endcode
+     *
+     * @param start  Starts the work and hands the Completion on. Must not throw.
+     * @return       A Job handle for setting name, timeouts, and dependencies.
+     * @note Not available for on-demand jobs: trigger() has no run to wait in.
+     */
+    [[nodiscard]] Job emplaceDeferred(std::function<void(Completion)> start);
+
+    /**
      * Reserve storage for at least @p jobCount jobs.
      *
      * Optional. Avoids moving existing jobs as the graph grows; it does not
@@ -263,18 +295,21 @@ public:
     [[nodiscard]] auto runInline(std::stop_token external, IObserver* observer = nullptr)
         -> std::expected<void, PipelineError>;
 
-    /** Join timed-out non-cooperative jobs after run() or executor.waitAll().
+    /** Join timed-out non-cooperative jobs after run() or executor.waitAll(),
+     * and wait for the Completion of every cancelled or timed-out deferred job
+     * to be completed or destroyed.
      * May block indefinitely if a job never returns. Concurrent joiners are
      * serialized. Do not call from a job, or start new work during teardown.
      *
-     * @return true if this call reaped any threads.
+     * @return true if this call reaped any threads or waited for deferred work.
      */
     bool joinOrphans();
 
     /**
-     * Reports whether timed-out threads remain unreaped, including during a join.
+     * Reports whether timed-out threads remain unreaped, including during a
+     * join, or cancelled deferred jobs still hold a live Completion.
      * Thread-safe query, not a substitute for joining or synchronizing producers.
-     * @return true while unreaped threads remain.
+     * @return true while unreaped threads or orphaned deferred work remain.
      */
     [[nodiscard]] bool hasPendingOrphans() const noexcept;
 

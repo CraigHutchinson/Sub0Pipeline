@@ -1,0 +1,5 @@
+add_executable(Sub0Pipeline_DeferredCompletion main.cpp)
+target_link_libraries(Sub0Pipeline_DeferredCompletion
+    PRIVATE Sub0Pipeline::Sub0Pipeline Sub0Pipeline::Priority
+)
+target_compile_features(Sub0Pipeline_DeferredCompletion PRIVATE cxx_std_23)
