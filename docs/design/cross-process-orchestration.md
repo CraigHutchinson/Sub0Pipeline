@@ -241,6 +241,22 @@ stop token or `Job::cancel()` to abandon it.
 - Graphs without deferred jobs: one branch on the deferred flag in dispatch and
   an empty-list check at the end of `run()`.
 
+### Measurements
+
+Release build, MSVC 19.51, i7-11800H, Windows 11, `Sub0Pipeline_Bench`, process
+pinned and at high priority, medians of five to nine alternating samples. These
+are no-op job figures from one host, not application throughput.
+
+| Case | Result |
+|---|---|
+| Plain jobs, library change only (same benchmark source), 10-job chain / 1000-job layered DAG | about +3.5% per job versus the previous core |
+| 10 deferred jobs completed before the body returns, inline executor | 2.3 us per run, about 170 ns more per job than a plain job |
+| 10-job deferred chain completed on a separate thread, `PriorityExecutor` with 4 threads | 230 us per run (median), about 23 us per hand-off including two thread wake-ups |
+
+Routing plain jobs through the shared deferred finish measured 5-15% slower per
+job, because MSVC does not inline a function that holds a try block; plain jobs
+therefore keep their own inlined finish.
+
 ### Scope limits
 
 - On-demand jobs (`addOnDemand`) cannot be deferred in this version: `trigger()`
