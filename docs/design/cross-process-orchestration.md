@@ -2,9 +2,9 @@
 
 Status: Parts 1 and 2 are implemented: deferred completion is in the core
 library, remote sub-graphs are the optional `Sub0Pipeline::Remote` target.
-Part 3, payload transfer strategies, is being implemented in two steps:
-streaming, negotiation, the pipe transport and the store strategy first, then
-shared memory.
+Part 3, payload transfer strategies, is implemented for streaming,
+negotiation, the pipe transport and the store strategy; the shared-memory
+strategy follows as a separate step.
 
 This document is the single source of truth for both features. Each design
 element names the requirement it satisfies with a stable handle in backticks,
@@ -367,12 +367,13 @@ A `Payload` is nothing, inline bytes, or an opaque handle of at most 64 bytes
 store. The library never interprets handles and never resolves an input
 handle itself: a job calls `ctx.store()->get()` only when it needs the bytes.
 
-Inline payloads are limited to the smaller of both sides' `maxInlineBytes`
-(default 64 KiB). The coordinator refuses a request with a larger inline input
-(`kJobFailed`). The worker turns a larger exported output into a handle through
-its store. Successors inside the request still received the inline bytes in
-memory. Without a store, that job fails with a message saying so. A large
-payload therefore never travels through the transport.
+Payloads up to the smaller of both sides' `maxInlineBytes` (default 64 KiB)
+travel inline in the control frame. Larger inline payloads go through the
+connection's payload strategy (Part 3), in both directions. Only with a peer
+that speaks protocol minor 0, which negotiates no strategy, does the earlier
+rule apply: the coordinator refuses a larger inline input (`kJobFailed`), and
+the worker turns a larger exported output into a handle through
+`WorkerHost::Options::store`, failing the job if there is none.
 
 ### Wire format (`req-transport-interface`, `req-handshake`)
 
@@ -476,7 +477,7 @@ gives each side its transport.
 | Topic | Current choice | Reason | What would change it |
 |---|---|---|---|
 | Worker-loss error | New core `PipelineError::kUnavailable` | Generic retry logic recognises it without the remote target's types, and it reads correctly for other resources that go away | A consumer needing the transport's close reason in the job result; then add it to the reply handler or a channel query, keeping the code |
-| Reply payloads | Inline up to the smaller limit both ways; larger exported outputs as store handles | Small outputs avoid a store round trip; large ones never cross the transport | A store-only consumer (always handles), or a measured cost of inline copies for mid-sized outputs |
+| Large payloads | Inline up to the smaller limit both ways; larger payloads through the negotiated payload strategy (Part 3) | Small payloads avoid a strategy round trip; how large ones move depends on the deployment | A strategy frame cheaper than inline bytes for mid-sized payloads; then lower the default limit |
 | Worker limits | One per-request concurrency limit, no per-kind limits | Kinds share one executor pool, which already bounds CPU; nothing yet needs per-kind isolation | A kind with an exclusive resource (a device, a licence, a large memory footprint) that must run alone; add a per-kind semaphore in the worker |
 | Full channel | Fail fast with `kBusy`; opt-in bounded queue (`queueCapacity`) | The caller decides retry and back-off; the queue keeps large graphs simple without unbounded growth | Graph builders consistently wanting automatic waiting; make a non-zero queue the default |
 
@@ -677,6 +678,37 @@ with no library code:
 The target is within 10% of the baseline at 1 MiB and above; the results table
 below reports any miss and its reason. The round-trip benchmark (1, 16, 256
 jobs) is repeated per strategy.
+
+Results (`Sub0Pipeline_PayloadBench`, MSVC 19.51 Release, i7-11800H, Windows
+11, pinned at high priority, median of three process runs of seven epochs):
+
+| Strategy | Size | Baseline | Strategy | vs baseline |
+|---|---|---|---|---|
+| `stream` over `PipeTransport` | 64 KiB | 22.9 us | 23.8 us | +4% |
+| | 1 MiB | 255 us | 257 us | +0.6% |
+| | 16 MiB | 4.60 ms | 4.25 ms | -8% |
+| `store` (in-memory store) | 64 KiB | 55.3 us | 21.3 us | the first case run; it absorbs allocator warm-up |
+| | 1 MiB | 505 us | 478 us | -5% |
+| | 16 MiB | 6.76 ms | 7.03 ms | +4% |
+
+The streaming numbers depend on `PipeTransport` recycling frame buffers. With a
+fresh buffer per frame, the first touch of each page costs a fault (about 1 ms
+for 16 MiB) that the baseline's warm buffer does not, and streaming measured
++51% at 1 MiB and +25% at 16 MiB. The transport now keeps up to eight released
+frame buffers (at most 256 MiB) and reuses them. It also sends the frame and
+chunk headers in one write ahead of the payload, rather than one write per part.
+
+Round trips per strategy (requests per run of one remote job; same host and
+method, median of seven epochs):
+
+| Transport, strategy | 1 job | 16 jobs | 256 jobs | Echo 1 MiB each way | Echo 16 MiB each way |
+|---|---|---|---|---|---|
+| Loopback, `stream` | 67 us | 95 us | 696 us | 0.87 ms | 9.9 ms |
+| Pipe, `stream` | 49 us | 82 us | 655 us | 0.87 ms | 11.8 ms |
+| Pipe, `store` | 47 us | 85 us | 609 us | 1.44 ms | 15.9 ms |
+
+The echo job copies its input into a fresh output buffer, so each echo includes
+two payload transfers and one job-side copy.
 
 ## Alternatives considered
 
