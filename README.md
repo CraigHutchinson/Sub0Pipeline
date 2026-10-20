@@ -67,8 +67,7 @@ fixed-capacity execution remain separate work. See
   promise heap-free execution or a caller-selected total memory budget.
 - Remote sub-graphs ship a pipe transport and an in-memory loopback transport;
   a socket transport is consumer-supplied (`FrameReader` handles the framing).
-  A shared-memory payload strategy for same-machine workers is designed but not
-  yet shipped. See [cross-process orchestration](docs/design/cross-process-orchestration.md).
+  See [cross-process orchestration](docs/design/cross-process-orchestration.md).
 - `TickLoop::run(std::stop_token)` returns after the current tick pass;
   callbacks in that pass are not interrupted, and the platform yield may delay
   return by one interval.
@@ -287,9 +286,10 @@ strategy the handshake agreed on.
 ```cpp
 MyStore store;                                         // an IPayloadStore over a shared cache
 RemoteChannel channel{transport, {.expectedFingerprint = fingerprint,
-                                  .strategies = {storeStrategy(store)}}};   // preferred first
-WorkerHost host{registry, transport, {.executor = &pool, .strategies = {storeStrategy(store)}}};
-// channel.payloadStrategy() == "store"; a worker without it falls back to "stream".
+                                  .strategies = {sharedMemoryStrategy(), storeStrategy(store)}}};
+WorkerHost host{registry, transport, {.executor = &pool, .strategies = {sharedMemoryStrategy()}}};
+// channel.payloadStrategy() == "shm"; a worker that cannot map the region gets the
+// next one it supports, and "stream" always closes both lists.
 
 auto input = channel.allocatePayload(size);            // write in place, then submit input.payload
 std::span<std::byte> out = ctx.allocateOutput(size);   // in a job: write the output in place
@@ -297,11 +297,16 @@ std::span<std::byte> out = ctx.allocateOutput(size);   // in a job: write the ou
 
 | Strategy | Use when | Cost against the medium alone (1 MiB / 16 MiB) |
 |---|---|---|
+| `sharedMemoryStrategy()` | The worker runs on the same machine and can map the coordinator's memory | +9% / +0.1% for one `memcpy` into the region against a raw `memcpy` into a shared mapping; an in-place buffer is not copied at all (about 0.6 us per payload) |
 | `streamStrategy()` | Only a byte stream: stdin and stdout, a socket, a container or function boundary | +0.6% / -8% over `PipeTransport` against a raw pipe write and read |
 | `storeStrategy(store)` | Both sides share a store, or the bytes are already in one | -5% / +4% against raw `put` and `get` |
 | Your own `IPayloadStrategy` | Another medium, such as a cloud object store | -- |
 
-Streaming is always available: the coordinator offers its strategies in order,
+Shared memory gives each side one region for the payloads it sends; the
+peer reads them in place. A coordinator's input is freed when its reply
+arrives, and a worker's output when the coordinator drops the last copy of
+the reply's `Payload`; both are freed if the connection closes, so a crashed
+peer leaks nothing. Streaming is always available: the coordinator offers its strategies in order,
 the worker takes the first it supports and can set up, and `stream` closes both
 lists. A payload that fits one stream chunk (16 MiB by default) arrives as a
 view of the frame buffer, with no copy; reply outputs stay valid as long as any
@@ -319,7 +324,7 @@ handles, such as a worker process's stdin and stdout.
 | Observer callbacks and tracing | Supply an `IObserver*` | Absent when no observer is supplied; an attached observer receives concurrent callbacks and pays its own capture/formatting costs |
 | Timeout enforcement | Set a finite `.timeout()` | Native helpers by default; injected cooperative deadlines avoid helper threads; plain bodies still use a worker |
 | Deferred jobs | Use `emplaceDeferred` | One heap slot per deferred job at construction; per run a stop-callback registration, two short mutex sections and, when completed on another thread, one executor dispatch. Graphs without deferred jobs only test a flag. Timed deferred jobs without an injected service start one timer thread per pipeline |
-| Payload strategies | `RemoteChannel::Options::strategies` / `WorkerHost::Options::strategies` | Payloads over the inline limit only. `stream`: no library copy for a payload within one chunk, one copy when reassembled; `PipeTransport` keeps up to eight released frame buffers (at most 256 MiB) for reuse. `store`: the store's own cost |
+| Payload strategies | `RemoteChannel::Options::strategies` / `WorkerHost::Options::strategies` | Payloads over the inline limit only. `stream`: no library copy for a payload within one chunk, one copy when reassembled; `PipeTransport` keeps up to eight released frame buffers (at most 256 MiB) for reuse. `shm`: one mapped region per side (64 MiB by default), one copy on send or none for in-place buffers. `store`: the store's own cost |
 | Remote sub-graphs | Link `Sub0Pipeline::Remote` | Not linked: no change. Per request: encode/decode, two thread hand-offs each way and one deferred job; loopback round trip about 52 us for 1 job, 4.5 us per job at 16 and 2.2 us per job at 256 jobs per request. Worker: one runner thread per concurrent request |
 | Owned run thread | Construct `RunScope` | One native run thread plus stop state; completion joins callbacks and orphan workers |
 | Timeout reaping | A plain timed job exceeds its deadline | Thread tracking and join; empty registry avoids join-lock work |
@@ -449,7 +454,7 @@ also be included on its own:
 | `observer.hpp`, `dependency_range.hpp` | `IObserver`, `RunId`; `DependencyRange` |
 | `error.hpp`, `tick_loop.hpp`, `config.hpp` | `PipelineError`; `TickLoop`, `TickJob`; `SUB0PIPELINE_EXCEPTIONS` |
 | `dsl.hpp`, `deadline.hpp`, `run_scope.hpp` | Opt-in layers, not part of the umbrella |
-| `remote/*.hpp` | `Sub0Pipeline::Remote`: `RemoteChannel`, `WorkerHost`, `JobRegistry`, `SubGraphRequest`, `Payload`, `IPayloadStore`, `IPayloadStrategy`, `streamStrategy`, `storeStrategy`, `ITransport`, `PipeTransport`, `LoopbackTransport`, `wire::` |
+| `remote/*.hpp` | `Sub0Pipeline::Remote`: `RemoteChannel`, `WorkerHost`, `JobRegistry`, `SubGraphRequest`, `Payload`, `IPayloadStore`, `IPayloadStrategy`, `streamStrategy`, `sharedMemoryStrategy`, `storeStrategy`, `ITransport`, `PipeTransport`, `LoopbackTransport`, `wire::` |
 
 Job statuses distinguish pending, ready, running, awaiting (a deferred job
 waiting for its `Completion`), done, failed, skipped, timed out and cancelled. Errors include `kJobFailed`, `kTimeout`, `kCancelled`,
@@ -533,7 +538,7 @@ and manually triggered CI workflow retain machine-readable evidence, and
 | [trace_capture](examples/trace_capture/main.cpp) | Bounded concurrent event capture, Chrome Trace JSON and live snapshot polling |
 | [job_options](examples/job_options/main.cpp) | Job builder methods, `precede()`/`succeed()` and optional chains |
 | [tick_loop](examples/tick_loop/main.cpp) | Recurring ticks with joinable `std::jthread` shutdown |
-| [remote_subgraph](examples/remote_subgraph/main.cpp) | A three-job sub-graph run on a worker over a pipe, exported output used locally, a failing job reported by name, and a 4 MiB payload streamed both ways with in-place output |
+| [remote_subgraph](examples/remote_subgraph/main.cpp) | A three-job sub-graph run on a worker over a pipe, exported output used locally, a failing job reported by name, and a 4 MiB payload through shared memory both ways, written in place |
 | [deferred_completion](examples/deferred_completion/main.cpp) | Deferred jobs completed by an asynchronous device, more pending than pool threads, timeout and late completion |
 
 The suites include core and DSL regression tests plus optional Qt and Zephyr

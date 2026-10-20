@@ -2,9 +2,8 @@
 
 Status: Parts 1 and 2 are implemented: deferred completion is in the core
 library, remote sub-graphs are the optional `Sub0Pipeline::Remote` target.
-Part 3, payload transfer strategies, is implemented for streaming,
-negotiation, the pipe transport and the store strategy; the shared-memory
-strategy follows as a separate step.
+Part 3, payload transfer strategies -- streaming, shared memory, the store,
+negotiation and the pipe transport -- is implemented.
 
 This document is the single source of truth for both features. Each design
 element names the requirement it satisfies with a stable handle in backticks,
@@ -680,7 +679,9 @@ below reports any miss and its reason. The round-trip benchmark (1, 16, 256
 jobs) is repeated per strategy.
 
 Results (`Sub0Pipeline_PayloadBench`, MSVC 19.51 Release, i7-11800H, Windows
-11, pinned at high priority, median of three process runs of seven epochs):
+11, pinned at high priority; median of three process runs of seven epochs, five
+for `shm`). The `shm` strategy copies from a view of the baseline's own source
+buffer, so both copy the same bytes:
 
 | Strategy | Size | Baseline | Strategy | vs baseline |
 |---|---|---|---|---|
@@ -690,6 +691,10 @@ Results (`Sub0Pipeline_PayloadBench`, MSVC 19.51 Release, i7-11800H, Windows
 | `store` (in-memory store) | 64 KiB | 55.3 us | 21.3 us | the first case run; it absorbs allocator warm-up |
 | | 1 MiB | 505 us | 478 us | -5% |
 | | 16 MiB | 6.76 ms | 7.03 ms | +4% |
+| `shm`, one `memcpy` into the region (baseline: raw `memcpy` into a shared mapping) | 64 KiB | 1.28 us | 2.20 us | +72%: about 0.6 us of allocation, lease and lock work per payload |
+| | 1 MiB | 48.0 us | 52.4 us | +9%; the ranges overlap (41.7-55.8 and 44.5-59.8 us) |
+| | 16 MiB | 840 us | 841 us | +0.1% |
+| `shm`, in-place buffer (`allocate()`): no copy | any | -- | 0.61-0.69 us | no copy at all, so it is independent of size |
 
 The streaming numbers depend on `PipeTransport` recycling frame buffers. With a
 fresh buffer per frame, the first touch of each page costs a fault (about 1 ms
@@ -698,17 +703,22 @@ for 16 MiB) that the baseline's warm buffer does not, and streaming measured
 frame buffers (at most 256 MiB) and reuses them. It also sends the frame and
 chunk headers in one write ahead of the payload, rather than one write per part.
 
-Round trips per strategy (requests per run of one remote job; same host and
-method, median of seven epochs):
+Round trips per strategy, all from one benchmark run (requests per run of one
+remote job; same host, not pinned, median of seven epochs):
 
 | Transport, strategy | 1 job | 16 jobs | 256 jobs | Echo 1 MiB each way | Echo 16 MiB each way |
 |---|---|---|---|---|---|
-| Loopback, `stream` | 67 us | 95 us | 696 us | 0.87 ms | 9.9 ms |
-| Pipe, `stream` | 49 us | 82 us | 655 us | 0.87 ms | 11.8 ms |
-| Pipe, `store` | 47 us | 85 us | 609 us | 1.44 ms | 15.9 ms |
+| Loopback, `stream` | 94 us | 143 us | 1.04 ms | 1.44 ms | 17.6 ms |
+| Pipe, `stream` | 63 us | 98 us | 832 us | 1.22 ms | 17.2 ms |
+| Pipe, `store` | 54 us | 92 us | 620 us | 1.42 ms | 17.0 ms |
+| Loopback, `shm` | 50 us | 78 us | 568 us | 0.18 ms | 2.34 ms |
+| Pipe, `shm` | 57 us | 84 us | 558 us | 0.18 ms | 2.43 ms |
 
-The echo job copies its input into a fresh output buffer, so each echo includes
-two payload transfers and one job-side copy.
+The echo job copies its input into an output from `allocateOutput()`, so each
+echo includes two payload transfers and one job-side copy. With `shm` the
+output is written straight into the worker's region and the coordinator's
+input is copied into its region once, so a 1 MiB echo costs about a seventh of
+streaming it over a pipe.
 
 ## Alternatives considered
 
