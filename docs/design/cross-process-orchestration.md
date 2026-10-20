@@ -267,6 +267,11 @@ of the finish in `dispatchJob()` (pinned, high priority, medians of seven):
 | `runInline`, 1000-job layered DAG | 43.2 us | 42.1 us (within noise) | -- |
 | `PriorityExecutor` (4), 10-job chain | 17.7 us | 16.7 us (within noise) | 18.2 us |
 
+Against the core before deferred jobs (same method): 10-job chain with nested
+dispatch 431 -> 508 ns (+18%), 1000-job layered DAG with nested dispatch 52.1 ->
+56.6 us (+9%), `runInline` 1000-job DAG +1.5%, `PriorityExecutor` cases +0.4% and
++3.6%.
+
 Also tried and not better than the force-inlined shared function: keeping the
 try block in a wrapper around the shared function, and moving the failure
 branch into a separate non-inlined function. The cost shows only where an
