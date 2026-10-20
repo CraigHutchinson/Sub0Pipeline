@@ -6,8 +6,9 @@
 //   third) as one request; in its own graph that request is one deferred job.
 // - The reply carries only the exported output, which a later local job uses.
 // - A failing job is reported by name.
-// - A 4 MiB payload streams to the worker and back over the pipe; the worker
-//   writes its output in place with JobContext::allocateOutput().
+// - A 4 MiB payload goes to the worker and back through shared memory, which
+//   both sides offer; a worker that could not map it would fall back to
+//   streaming over the pipe. Both sides write their payloads in place.
 //
 // Both ends run in this process over PipeTransport::pair(). In a real
 // deployment the worker is another process -- for example one hosting a
@@ -25,6 +26,7 @@
 
 #include "sub0pipeline/remote/channel.hpp"
 #include "sub0pipeline/remote/pipe_transport.hpp"
+#include "sub0pipeline/remote/shared_memory.hpp"
 #include "sub0pipeline/remote/worker_host.hpp"
 #include "sub0pipeline/sub0pipeline.hpp"
 
@@ -90,12 +92,14 @@ int main()
 
     // ── Worker side ──────────────────────────────────────────────────────────
     PriorityExecutor workerPool{{.threadCount = 2}};
-    WorkerHost host{registry, *workerEnd, {.executor = &workerPool, .maxConcurrentRequests = 2}};
+    WorkerHost host{registry, *workerEnd,
+                    {.executor = &workerPool, .maxConcurrentRequests = 2, .strategies = {sharedMemoryStrategy()}}};
     std::jthread serving{[&host](std::stop_token stop) { host.serve(stop); }};
 
     {
         // ── Coordinator side ─────────────────────────────────────────────────
-        RemoteChannel channel{*coordinatorEnd, {.expectedFingerprint = registry.fingerprint()}};
+        RemoteChannel channel{*coordinatorEnd, {.expectedFingerprint = registry.fingerprint(),
+                                                .strategies = {sharedMemoryStrategy()}}};
         if (auto connected = channel.connect(); !connected)
         {
             std::printf("connect failed (%d)\n", static_cast<int>(connected.error()));
@@ -137,7 +141,7 @@ int main()
         std::printf("Run 2: %s\n", failed ? "unexpected success" : "failed as expected");
 
         // Above the inline limit (64 KiB by default) payloads go through the
-        // negotiated strategy; with no other configured, that is streaming.
+        // negotiated strategy: here shared memory, so neither side copies them.
         constexpr std::size_t kImageBytes = 4U * 1024U * 1024U;
         auto image = channel.allocatePayload(kImageBytes);
         std::fill(image.bytes.begin(), image.bytes.end(), std::byte{0x0F});

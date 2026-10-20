@@ -26,6 +26,7 @@
 #include "sub0pipeline/remote/channel.hpp"
 #include "sub0pipeline/remote/loopback_transport.hpp"
 #include "sub0pipeline/remote/pipe_transport.hpp"
+#include "sub0pipeline/remote/shared_memory.hpp"
 #include "sub0pipeline/remote/strategy.hpp"
 #include "sub0pipeline/remote/worker_host.hpp"
 #include "sub0pipeline/sub0pipeline.hpp"
@@ -36,6 +37,7 @@
 #endif
 #include <windows.h>
 #else
+#include <sys/mman.h>
 #include <unistd.h>
 #endif
 
@@ -187,6 +189,46 @@ private:
     std::map<std::vector<std::byte>, std::vector<std::byte>> items_;
 };
 
+// ── Raw shared mapping baseline ─────────────────────────────────────────────
+
+class RawMapping
+{
+public:
+    explicit RawMapping(std::size_t size) : size_{size}
+    {
+#if defined(_WIN32)
+        mapping_ = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+                                      static_cast<DWORD>(static_cast<unsigned long long>(size) >> 32U),
+                                      static_cast<DWORD>(size & 0xFFFFFFFFULL), nullptr);
+        data_ = static_cast<std::byte*>(MapViewOfFile(mapping_, FILE_MAP_ALL_ACCESS, 0, 0, size));
+#else
+        data_ = static_cast<std::byte*>(::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+#endif
+    }
+    ~RawMapping()
+    {
+#if defined(_WIN32)
+        UnmapViewOfFile(data_);
+        CloseHandle(mapping_);
+#else
+        ::munmap(data_, size_);
+#endif
+    }
+    std::byte* data() const { return data_; }
+private:
+    std::size_t size_;
+    std::byte*  data_{nullptr};
+#if defined(_WIN32)
+    HANDLE mapping_{nullptr};
+#endif
+};
+
+class NullSender final : public IPayloadSender
+{
+public:
+    std::expected<void, TransportError> sendPayloadFrame(std::span<const std::span<const std::byte>>) override { return {}; }
+};
+
 void configure(ankerl::nanobench::Bench& bench, std::size_t size)
 {
     bench.warmup(3).minEpochIterations(size >= 16U * 1024U * 1024U ? 5U : 50U).epochs(7).relative(false);
@@ -252,6 +294,53 @@ void transferBenchmarks()
             });
             a->close();
         }
+    }
+
+    // Shared memory vs raw memcpy into a shared mapping of the same size.
+    for (auto size : kSizes)
+    {
+        ankerl::nanobench::Bench bench;
+        bench.title("shm, " + sizeLabel(size)).unit("transfer");
+        configure(bench, size);
+        std::vector<std::byte> source(size, std::byte{0x5A});
+        {
+            RawMapping mapping{size};
+            bench.run("baseline: raw memcpy into a shared mapping", [&] {
+                std::memcpy(mapping.data(), source.data(), size);
+                ankerl::nanobench::doNotOptimizeAway(mapping.data()[size - 1U]);
+            });
+        }
+        const SharedMemoryOptions options{.regionBytes = 2U * size};
+        SharedMemoryStrategy coordinator{options};
+        SharedMemoryStrategy worker{options};
+        auto accepted = worker.accept(coordinator.offer());
+        (void)coordinator.complete(*accepted);
+        NullSender sender;
+        coordinator.attach(sender);
+        worker.attach(sender);
+        // A view of the baseline's own source, so both copy from the same bytes.
+        const auto payload = Payload::view(source, std::shared_ptr<const void>{&source, [](const void*) {}});
+        uint64_t scope = 0U;
+        bench.run("strategy: shm send (one memcpy) + receive (view)", [&] {
+            ++scope;
+            auto reference = coordinator.send(payload, scope);
+            {
+                auto received = worker.receive(*reference);
+                ankerl::nanobench::doNotOptimizeAway(received->bytes().data());
+            }
+            coordinator.endScope(scope); // the reply would do this
+        });
+        auto inPlace = coordinator.allocate(size);
+        std::memcpy(inPlace->bytes.data(), source.data(), size);
+        bench.run("strategy: shm send of an in-place buffer (no copy) + receive", [&] {
+            ++scope;
+            auto reference = coordinator.send(inPlace->payload, scope);
+            {
+                auto received = worker.receive(*reference);
+                ankerl::nanobench::doNotOptimizeAway(received->bytes().data());
+            }
+            coordinator.endScope(scope);
+        });
     }
 
     // Store strategy vs raw put + get on the same store.
@@ -334,6 +423,8 @@ void roundTripBenchmarks()
         {"loopback, stream", false, {}},
         {"pipe, stream", true, {}},
         {"pipe, store", true, {storeStrategy(store)}},
+        {"loopback, shm", false, {sharedMemoryStrategy({.regionBytes = 64U * 1024U * 1024U})}},
+        {"pipe, shm", true, {sharedMemoryStrategy({.regionBytes = 64U * 1024U * 1024U})}},
     };
     for (const auto& variant : variants)
     {
