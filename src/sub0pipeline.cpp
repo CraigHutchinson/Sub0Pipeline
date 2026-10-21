@@ -622,6 +622,8 @@ struct Pipeline::Impl : detail::PipelineAnchor
 
     bool joinOrphans()
     {
+        // Every run starts here: with nothing orphaned, take no lock.
+        if (!hasOrphans()) return false;
         const bool reaped = joinOrphanThreads();
         return deferredOrphans_.wait() || reaped;
     }
@@ -1127,10 +1129,13 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     // Failure containment must still work when a submission ran out of memory.
     impl_->skipped_.reserve(total);
     impl_->failedJobName_.reserve(failureNameCapacity);
-    // Each deferred job finishes once per run, so these never grow mid-run.
-    impl_->deferredFinished_.clear();
-    impl_->deferredFinished_.reserve(impl_->deferredNodes_.size());
-    impl_->deferredDrain_.reserve(impl_->deferredNodes_.size());
+    if (!impl_->deferredNodes_.empty())
+    {
+        // Each deferred job finishes once per run, so these never grow mid-run.
+        impl_->deferredFinished_.clear();
+        impl_->deferredFinished_.reserve(impl_->deferredNodes_.size());
+        impl_->deferredDrain_.reserve(impl_->deferredNodes_.size());
+    }
 
     std::atomic<bool> hasFatalFailure{false};
     PipelineError     fatalError{PipelineError::kJobFailed};
