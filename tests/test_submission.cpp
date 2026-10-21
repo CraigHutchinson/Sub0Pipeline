@@ -537,3 +537,39 @@ TEST_CASE("Submission: rejected on-demand job fails without preventing retry")
     CHECK(ran == 1);
     CHECK(pipeline.status(job) == JobStatus::kDone);
 }
+
+TEST_CASE("Submission: a refusal inside nested dispatch fails only the refused successor")
+{
+    // Runs each job inside dispatch(), so every link of the chain nests one level deeper.
+    class NestingRefuser final : public IExecutor
+    {
+    public:
+        void dispatch(std::string_view name, std::function<void()> fn, std::function<void()> onComplete,
+                      int, uint8_t, uint32_t) override
+        {
+            if (name == "c") throw std::bad_alloc{};
+            fn();
+            if (onComplete) onComplete();
+        }
+        void waitAll() override {}
+        [[nodiscard]] int concurrency() const noexcept override { return 1; }
+    } executor;
+
+    Pipeline pipeline;
+    auto a = pipeline.emplace([] {}).name("a");
+    auto b = pipeline.emplace([] {}).name("b").succeed(a);
+    auto c = pipeline.emplace([] {}).name("c").succeed(b);
+    auto d = pipeline.emplace([] {}).name("d").succeed(c);
+    auto side = pipeline.emplace([] {}).name("side").succeed(a);
+    FailureObserver observer;
+    auto result = pipeline.run(executor, &observer);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == PipelineError::kJobFailed);
+    CHECK(pipeline.status(a) == JobStatus::kDone);
+    CHECK(pipeline.status(b) == JobStatus::kDone);
+    CHECK(pipeline.status(c) == JobStatus::kFailed);
+    CHECK(pipeline.status(d) == JobStatus::kSkipped);
+    CHECK(pipeline.status(side) == JobStatus::kSkipped);
+    CHECK(pipeline.firstFailureName() == "c");
+    CHECK(observer.finished_.load() == 5);
+}
