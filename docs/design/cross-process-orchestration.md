@@ -240,7 +240,9 @@ stop token or `Job::cancel()` to abandon it.
   lock/unlock pair at start and at finish, and for an asynchronous outcome one
   executor dispatch. A failure message allocates, as `setCurrentJobError` does.
 - Graphs without deferred jobs: one branch on the deferred flag in dispatch and
-  an empty-list check at the end of `run()`.
+  empty-list checks at the start and end of `run()`. The orphan join that
+  starts every run reads its counters lock-free and takes no lock when nothing
+  is orphaned.
 
 ### Measurements
 
@@ -250,36 +252,47 @@ are no-op job figures from one host, not application throughput.
 
 | Case | Result |
 |---|---|
-| Plain jobs, library change only (same benchmark source), 10-job chain / 1000-job layered DAG | about +3.5% per job versus the previous core with a duplicated finish; see the performance note for the single finish path now used |
-| 10 deferred jobs completed before the body returns, inline executor | 2.3 us per run, about 170 ns more per job than a plain job |
-| 10-job deferred chain completed on a separate thread, `PriorityExecutor` with 4 threads | 230 us per run (median), about 23 us per hand-off including two thread wake-ups |
+| Plain jobs, library change only (same benchmark source) | within about 3% of the core before deferred jobs; see the performance note |
+| 10 deferred jobs completed before the body returns, inline executor | 2.0-2.3 us per run, about 170 ns more per job than a plain job |
+| 10-job deferred chain completed on a separate thread, `PriorityExecutor` with 4 threads | 130-230 us per run (median, host-dependent), up to about 23 us per hand-off including two thread wake-ups |
 
 #### Performance note: one finish path
 
-Every job, plain or deferred, finishes through one function, `finishJob()`. It
-holds no try block -- the executor-rejection boundary lives in `submitReady()` --
-so it can carry `SUB0PIPELINE_FORCEINLINE`. Measured against a hand-inlined copy
-of the finish in `dispatchJob()` (pinned, high priority, medians of seven):
+Every job, plain or deferred, finishes through one function, `finishJob()`,
+force-inlined into `dispatchJob()`. MSVC never inlines a function that holds a
+try block, so `finishJob()` holds none: it records the successor it is
+submitting in a variable its caller owns, and the caller holds the
+executor-rejection try block. `dispatchJob()` holds it in its own frame;
+the deferred paths share `finishCold()`, which wraps the same `finishJob()`.
+An executor that nests one dispatch inside another therefore pays one frame
+per link, as before deferred jobs, and no copy of the finish exists.
 
-| Case | Copy | Shared, force-inlined | Shared, no force-inline |
+Plain jobs against the core before deferred jobs. Pinned to seven cores at high
+priority, minimum of eleven alternating per-case process medians; the host
+carried interactive load, base-against-base runs differ by up to 3%:
+
+| Case | Before deferred jobs | Shared finish behind `submitReady()` | Now |
 |---|---|---|---|
-| 10-job chain, nested dispatch | 448 ns | 503 ns (+12%) | 590 ns (+32%) |
-| 1000-job layered DAG, nested dispatch | 50.9 us | 55.5 us (+9%) | 62.2 us (+22%) |
-| `runInline`, 1000-job layered DAG | 43.2 us | 42.1 us (within noise) | -- |
-| `PriorityExecutor` (4), 10-job chain | 17.7 us | 16.7 us (within noise) | 18.2 us |
+| 10-job chain, nested dispatch | 456 ns | 531 ns (+16%) | 452 ns (-1%) |
+| 4-job diamond, nested dispatch | 168 ns | 189 ns (+13%) | 172 ns (+3%) |
+| 200-job chain, nested dispatch | 10.6 us | 11.6 us (+10%) | 10.6 us (0%) |
+| 1000-job layered DAG, nested dispatch | 52.7 us | 58.4 us (+11%) | 53.8 us (+2%) |
+| `runInline`, 10-job chain | 318 ns | 336 ns (+6%) | 320 ns (+1%) |
+| `runInline`, 1000-job layered DAG | 43.5 us | 43.5 us (0%) | 44.9 us (+3%) |
+| `PriorityExecutor` (4), 10-job chain / 1000-job DAG | 19.4 us / 545 us | -3% / -4% | -1% / -4% (within noise) |
 
-Against the core before deferred jobs (same method): 10-job chain with nested
-dispatch 431 -> 508 ns (+18%), 1000-job layered DAG with nested dispatch 52.1 ->
-56.6 us (+9%), `runInline` 1000-job DAG +1.5%, `PriorityExecutor` cases +0.4% and
-+3.6%.
+Opt-in features on a 10-job chain (external stop token, observer) are also
+14-17% faster than with the shared finish behind `submitReady()`; the deferred
+cases are unchanged within noise.
 
-Also tried and not better than the force-inlined shared function: keeping the
-try block in a wrapper around the shared function, and moving the failure
-branch into a separate non-inlined function. The cost shows only where an
-executor nests one dispatch inside another; threaded executors and inline runs
-are within noise. Duplicating the finish into `dispatchJob()` is therefore a
-known lever, to pull only if the library's overall performance targets later
-demand it; one implementation is kept for maintainability.
+Two changes closed most of the gap: moving the rejection boundary out of
+`submitReady()`, an out-of-line 208-byte frame per submitted successor, and
+skipping the orphan-ledger lock and the deferred list preparation in runs that
+need neither. Also measured and not kept: moving the deferred slot pointer out of
+the node to restore its earlier size (an 8-byte difference showed no
+measurable difference on these graphs), and marking the deferred start path
+non-inlined (MSVC already keeps it out of `dispatchJob()`). Duplicating the
+finish into `dispatchJob()` no longer has a gap to close.
 
 ### Scope limits
 

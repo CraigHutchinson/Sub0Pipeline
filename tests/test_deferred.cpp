@@ -9,9 +9,11 @@
 #include <doctest.h>
 #include <functional>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -140,6 +142,35 @@ private:
     std::mutex mtx_;
     std::array<Slot, 4> slots_{};
     std::chrono::milliseconds now_{};
+};
+
+// Refuses every dispatch of one job name after the first @p accepted of them.
+class RefusingExecutor final : public IExecutor
+{
+public:
+    RefusingExecutor(std::string_view name, int accepted) : name_{name}, accepted_{accepted} {}
+    ~RefusingExecutor() override { parent_.waitAll(); }
+
+    void dispatch(std::string_view name, std::function<void()> fn, std::function<void()> onComplete,
+                  int affinity, uint8_t priority, uint32_t stack) override
+    {
+        if (name == name_ && seen_.fetch_add(1) >= accepted_)
+        {
+            ++refused;
+            throw std::bad_alloc{};
+        }
+        parent_.dispatch(name, std::move(fn), std::move(onComplete), affinity, priority, stack);
+    }
+    void waitAll() override { parent_.waitAll(); }
+    [[nodiscard]] int concurrency() const noexcept override { return 2; }
+
+    std::atomic<int> refused{0};
+
+private:
+    DesktopExecutor  parent_;
+    std::string_view name_;
+    int              accepted_;
+    std::atomic<int> seen_{0};
 };
 
 } // namespace
@@ -499,4 +530,149 @@ TEST_CASE("Deferred: an empty Completion is inert")
     empty.fail(PipelineError::kJobFailed, "ignored");
     Completion moved{std::move(empty)};
     CHECK_FALSE(moved.valid());
+}
+
+TEST_CASE("Deferred: a job added after a plain run makes the next run wait for it")
+{
+    Pipeline pipe;
+    std::atomic<int> plainRuns{0};
+    auto first = pipe.emplace([&] { ++plainRuns; }).name("first");
+    DesktopExecutor desktop;
+    REQUIRE(pipe.run(desktop).has_value());
+    REQUIRE(pipe.runInline().has_value());
+
+    Parked parked;
+    std::atomic<bool> dependantRan{false};
+    auto fetch = pipe.emplaceDeferred([&](Completion done) { parked.park(std::move(done)); })
+                     .name("fetch").succeed(first);
+    auto use = pipe.emplace([&] { dependantRan = true; }).name("use").succeed(fetch);
+    auto complete = [&] {
+        if (waitUntil([&] { return parked.count() == 1U; }))
+            for (auto& done : parked.take()) done.succeed();
+    };
+
+    SUBCASE("threaded run")
+    {
+        std::jthread completer{complete};
+        REQUIRE(pipe.run(desktop).has_value());
+    }
+    SUBCASE("inline run")
+    {
+        std::jthread completer{complete};
+        REQUIRE(pipe.runInline().has_value());
+    }
+    CHECK(dependantRan.load());
+    CHECK(pipe.status(fetch) == JobStatus::kDone);
+    CHECK(pipe.status(use) == JobStatus::kDone);
+    CHECK(plainRuns.load() == 3);
+}
+
+TEST_CASE("Deferred: a refused continuation finishes the job on the completing thread")
+{
+    // The first dispatch of "fetch" starts it; the second, its continuation, is refused.
+    RefusingExecutor executor{"fetch", 1};
+    StepClock clock;
+    Pipeline pipe;
+    pipe.setDeadlineService(&clock);
+    Parked parked;
+    std::atomic<bool> dependantRan{false};
+    auto fetch = pipe.emplaceDeferred([&](Completion done) { parked.park(std::move(done)); })
+                     .name("fetch").timeout(10ms);
+    auto use = pipe.emplace([&] { dependantRan = true; }).name("use").succeed(fetch);
+    std::jthread completer{[&] {
+        if (waitUntil([&] { return parked.count() == 1U; }))
+            for (auto& done : parked.take()) done.succeed();
+    }};
+    REQUIRE(pipe.run(executor).has_value());
+    completer.join();
+    CHECK(executor.refused.load() == 1);
+    CHECK(dependantRan.load());
+    CHECK(pipe.status(fetch) == JobStatus::kDone);
+    CHECK(pipe.status(use) == JobStatus::kDone);
+    // The completing thread could not release the registration; the run end did.
+    CHECK(clock.used() == 0);
+}
+
+TEST_CASE("Deferred: a refused successor of a deferred job fails the run")
+{
+    RefusingExecutor executor{"use", 0};
+    Pipeline pipe;
+    Parked parked;
+    std::atomic<bool> dependantRan{false};
+    auto fetch = pipe.emplaceDeferred([&](Completion done) { parked.park(std::move(done)); }).name("fetch");
+    auto use = pipe.emplace([&] { dependantRan = true; }).name("use").succeed(fetch);
+    auto after = pipe.emplace([] {}).name("after").succeed(use);
+    std::jthread completer{[&] {
+        if (waitUntil([&] { return parked.count() == 1U; }))
+            for (auto& done : parked.take()) done.succeed();
+    }};
+    auto result = pipe.run(executor);
+    completer.join();
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == PipelineError::kJobFailed);
+    CHECK(executor.refused.load() == 1);
+    CHECK_FALSE(dependantRan.load());
+    CHECK(pipe.status(fetch) == JobStatus::kDone);
+    CHECK(pipe.status(use) == JobStatus::kFailed);
+    CHECK(pipe.status(after) == JobStatus::kSkipped);
+    CHECK(pipe.firstFailureName() == "use");
+}
+
+TEST_CASE("Deferred: destroying the pipeline waits for a late completion still releasing its orphan")
+{
+    // Repeated to widen the window between the release and the destructor.
+    for (int round = 0; round < 50; ++round)
+    {
+        std::optional<Pipeline> pipe{std::in_place};
+        Parked parked;
+        (void)pipe->emplaceDeferred([&](Completion done) { parked.park(std::move(done)); });
+        std::stop_source stop;
+        std::jthread canceller{[&] {
+            if (waitUntil([&] { return parked.count() == 1U; })) stop.request_stop();
+        }};
+        (void)pipe->runInline(stop.get_token());
+        canceller.join();
+        auto late = parked.take();
+        REQUIRE(late.size() == 1U);
+        std::jthread releaser{[done = std::move(late[0])]() mutable { done.succeed(); }};
+        while (pipe->hasPendingOrphans()) std::this_thread::yield();
+        pipe.reset(); // must not tear down the ledger under the releasing thread
+    }
+}
+
+TEST_CASE("Deferred: run does not return while a completing thread is still inside dispatch")
+{
+    // Lingers inside dispatch() after accepting the continuation, as an
+    // executor that notifies its workers after publishing the job does.
+    class LingeringExecutor final : public IExecutor
+    {
+    public:
+        ~LingeringExecutor() override { parent_.waitAll(); }
+        void dispatch(std::string_view name, std::function<void()> fn, std::function<void()> onComplete,
+                      int affinity, uint8_t priority, uint32_t stack) override
+        {
+            const bool continuation = name == "fetch" && seen_.fetch_add(1) == 1;
+            parent_.dispatch(name, std::move(fn), std::move(onComplete), affinity, priority, stack);
+            if (!continuation) return;
+            inside = true;
+            std::this_thread::sleep_for(50ms);
+            inside = false;
+        }
+        void waitAll() override { parent_.waitAll(); }
+        [[nodiscard]] int concurrency() const noexcept override { return 2; }
+        std::atomic<bool> inside{false};
+    private:
+        DesktopExecutor  parent_;
+        std::atomic<int> seen_{0};
+    } executor;
+
+    Pipeline pipe;
+    Parked parked;
+    (void)pipe.emplaceDeferred([&](Completion done) { parked.park(std::move(done)); }).name("fetch");
+    std::jthread completer{[&] {
+        if (waitUntil([&] { return parked.count() == 1U; }))
+            for (auto& done : parked.take()) done.succeed();
+    }};
+    REQUIRE(pipe.run(executor).has_value());
+    CHECK_FALSE(executor.inside.load());
 }

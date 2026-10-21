@@ -60,6 +60,9 @@ namespace
 // zero allocation, zero reads, branch-predictor-friendly empty check.
 thread_local std::string t_jobError;
 
+// No executor dispatch is in progress in the finishing job.
+constexpr uint32_t kNoSubmission = std::numeric_limits<uint32_t>::max();
+
 JobStatus statusOf(const std::expected<void, PipelineError>& result) noexcept
 {
     if (result) return JobStatus::kDone;
@@ -1091,7 +1094,9 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         ~RunGuard() { running.clear(std::memory_order_release); }
     } running{impl_->running_};
     // A new epoch must not reuse borrowed state while an old job still runs.
-    impl_->joinOrphans();
+    // Skipping the join's lock is safe only here: a releaser may still be
+    // leaving DeferredOrphans::release(), which teardown must wait out.
+    if (impl_->hasOrphans()) impl_->joinOrphans();
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
     impl_->skipped_.clear();
@@ -1124,10 +1129,13 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
     // Failure containment must still work when a submission ran out of memory.
     impl_->skipped_.reserve(total);
     impl_->failedJobName_.reserve(failureNameCapacity);
-    // Each deferred job finishes once per run, so these never grow mid-run.
-    impl_->deferredFinished_.clear();
-    impl_->deferredFinished_.reserve(impl_->deferredNodes_.size());
-    impl_->deferredDrain_.reserve(impl_->deferredNodes_.size());
+    if (!impl_->deferredNodes_.empty())
+    {
+        // Each deferred job finishes once per run, so these never grow mid-run.
+        impl_->deferredFinished_.clear();
+        impl_->deferredFinished_.reserve(impl_->deferredNodes_.size());
+        impl_->deferredDrain_.reserve(impl_->deferredNodes_.size());
+    }
 
     std::atomic<bool> hasFatalFailure{false};
     PipelineError     fatalError{PipelineError::kJobFailed};
@@ -1150,10 +1158,11 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         std::mutex&         fatalMtx;
         std::vector<uint32_t>* inlineReady; ///< Set when the run calls jobs itself; else nullptr.
 
-        // Deferred jobs started and not yet finished, guarded by
-        // impl.deferredMtx_. A finish decrements it last, after dispatching
-        // successors, so zero means the executor has already accounted for
-        // every dispatch those jobs caused.
+        // Deferred jobs started and not yet finished, plus continuation
+        // dispatches still inside executor.dispatch() on a foreign thread;
+        // guarded by impl.deferredMtx_. A finish decrements it last, after
+        // dispatching successors, so zero means the executor has already
+        // accounted for every dispatch those jobs caused.
         uint32_t deferredInFlight = 0U;
 
         std::mutex skipMutex{};
@@ -1256,17 +1265,28 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
             // Move clears t_jobError so it does not leak into the next job on this thread.
             // On the success path t_jobError is empty and this move is a no-op.
             std::string jobErrorCtx = std::move(t_jobError);
-            finishJob(idx, nd, result, jobErrorCtx);
+            uint32_t submitting = kNoSubmission;
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            try
+            {
+#endif
+                finishJob(idx, nd, result, jobErrorCtx, submitting);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            }
+            catch (...)
+            {
+                if (submitting == kNoSubmission) throw;
+                submissionFailed(submitting);
+            }
+#endif
         }
 
-        // The one finish path for every job. It holds no try block (submitReady
-        // owns that) so it can be force-inlined: MSVC Release, nested dispatch,
-        // measured +9-12% per job against a hand-inlined copy in dispatchJob(),
-        // and +22-32% without the force-inline. Duplicating it is a lever to pull
-        // only if overall KPIs demand it; see docs/design/cross-process-orchestration.md.
+        // The one finish path for every job. MSVC never inlines a function with
+        // a try block, so the caller owns the executor-rejection boundary: a
+        // dispatch that throws leaves its job index in @p submitting.
         SUB0PIPELINE_FORCEINLINE void finishJob(uint32_t idx, Node& nd,
                                                 const std::expected<void, PipelineError>& result,
-                                                std::string_view errorText)
+                                                std::string_view errorText, uint32_t& submitting)
         {
             const auto jobStatus = statusOf(result);
             nd.jobStatus_.store(jobStatus, std::memory_order_release);
@@ -1310,32 +1330,34 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                         inlineReady->push_back(succIdx);
                         continue;
                     }
-                    if (!submitReady(succIdx, succ)) return;
+                    submitting = succIdx;
+                    executor.dispatch(
+                        succ.nameStr_,
+                        [this, si = succIdx]{ dispatchJob(si); },
+                        [] {},
+                        succ.coreAffinity_, succ.priority_, succ.stackBytes_);
                 }
             }
         }
 
-        // Returns false if the executor rejected the job; the run then fails.
-        bool submitReady(uint32_t idx, Node& nd)
+        // finishJob with its own rejection boundary, for the deferred paths.
+        void finishCold(uint32_t idx, Node& nd, const std::expected<void, PipelineError>& result,
+                        std::string_view errorText)
         {
+            uint32_t submitting = kNoSubmission;
 #if defined(__cpp_exceptions) || defined(_CPPUNWIND)
             try
             {
 #endif
-                executor.dispatch(
-                    nd.nameStr_,
-                    [this, idx]{ dispatchJob(idx); },
-                    [] {},
-                    nd.coreAffinity_, nd.priority_, nd.stackBytes_);
+                finishJob(idx, nd, result, errorText, submitting);
 #if defined(__cpp_exceptions) || defined(_CPPUNWIND)
             }
             catch (...)
             {
-                submissionFailed(idx);
-                return false;
+                if (submitting == kNoSubmission) throw;
+                submissionFailed(submitting);
             }
 #endif
-            return true;
         }
 
 
@@ -1349,7 +1371,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
             auto& slot = *nd.deferred_;
             if (nd.stopSource_.stop_requested())
             {
-                finishJob(idx, nd, std::unexpected(PipelineError::kCancelled), {});
+                finishCold(idx, nd, std::unexpected(PipelineError::kCancelled), {});
                 return;
             }
             slot.outcome.store(detail::DeferredSlot::kNone, std::memory_order_relaxed);
@@ -1369,7 +1391,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 if (!service || !service->arm(*slot.deadline, nd.timeout_))
                 {
                     slot.deadline.reset();
-                    finishJob(idx, nd, std::unexpected(PipelineError::kDeadlineUnavailable), {});
+                    finishCold(idx, nd, std::unexpected(PipelineError::kDeadlineUnavailable), {});
                     return;
                 }
                 slot.deadlineService = service;
@@ -1404,6 +1426,13 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 return;
             }
             auto& nd = impl.nodes_[idx];
+            // An executor may still use its own state after accepting the
+            // continuation, so the run must not end, and the caller must not
+            // destroy the executor, until this foreign call has returned.
+            {
+                std::lock_guard lock{impl.deferredMtx_};
+                ++deferredInFlight;
+            }
 #if defined(__cpp_exceptions) || defined(_CPPUNWIND)
             try
             {
@@ -1419,6 +1448,9 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 finishDeferred(idx, false);
             }
 #endif
+            std::lock_guard lock{impl.deferredMtx_};
+            --deferredInFlight;
+            impl.deferredCv_.notify_all();
         }
 
         void finishDeferred(uint32_t idx, bool releaseRegistrations) noexcept
@@ -1428,7 +1460,7 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
             if (releaseRegistrations) slot.releaseRegistrations();
             if (slot.outcome.load(std::memory_order_acquire) == detail::DeferredSlot::kStopped)
                 slot.orphanIfHeld();
-            finishJob(idx, nd, slot.result, slot.message);
+            finishCold(idx, nd, slot.result, slot.message);
             std::lock_guard lock{impl.deferredMtx_};
             --deferredInFlight;
             impl.deferredCv_.notify_all();
