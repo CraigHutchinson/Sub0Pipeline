@@ -639,3 +639,40 @@ TEST_CASE("Deferred: destroying the pipeline waits for a late completion still r
         pipe.reset(); // must not tear down the ledger under the releasing thread
     }
 }
+
+TEST_CASE("Deferred: run does not return while a completing thread is still inside dispatch")
+{
+    // Lingers inside dispatch() after accepting the continuation, as an
+    // executor that notifies its workers after publishing the job does.
+    class LingeringExecutor final : public IExecutor
+    {
+    public:
+        ~LingeringExecutor() override { parent_.waitAll(); }
+        void dispatch(std::string_view name, std::function<void()> fn, std::function<void()> onComplete,
+                      int affinity, uint8_t priority, uint32_t stack) override
+        {
+            const bool continuation = name == "fetch" && seen_.fetch_add(1) == 1;
+            parent_.dispatch(name, std::move(fn), std::move(onComplete), affinity, priority, stack);
+            if (!continuation) return;
+            inside = true;
+            std::this_thread::sleep_for(50ms);
+            inside = false;
+        }
+        void waitAll() override { parent_.waitAll(); }
+        [[nodiscard]] int concurrency() const noexcept override { return 2; }
+        std::atomic<bool> inside{false};
+    private:
+        DesktopExecutor  parent_;
+        std::atomic<int> seen_{0};
+    } executor;
+
+    Pipeline pipe;
+    Parked parked;
+    (void)pipe.emplaceDeferred([&](Completion done) { parked.park(std::move(done)); }).name("fetch");
+    std::jthread completer{[&] {
+        if (waitUntil([&] { return parked.count() == 1U; }))
+            for (auto& done : parked.take()) done.succeed();
+    }};
+    REQUIRE(pipe.run(executor).has_value());
+    CHECK_FALSE(executor.inside.load());
+}

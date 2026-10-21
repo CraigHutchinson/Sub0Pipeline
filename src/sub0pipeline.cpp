@@ -1158,10 +1158,11 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         std::mutex&         fatalMtx;
         std::vector<uint32_t>* inlineReady; ///< Set when the run calls jobs itself; else nullptr.
 
-        // Deferred jobs started and not yet finished, guarded by
-        // impl.deferredMtx_. A finish decrements it last, after dispatching
-        // successors, so zero means the executor has already accounted for
-        // every dispatch those jobs caused.
+        // Deferred jobs started and not yet finished, plus continuation
+        // dispatches still inside executor.dispatch() on a foreign thread;
+        // guarded by impl.deferredMtx_. A finish decrements it last, after
+        // dispatching successors, so zero means the executor has already
+        // accounted for every dispatch those jobs caused.
         uint32_t deferredInFlight = 0U;
 
         std::mutex skipMutex{};
@@ -1425,6 +1426,13 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 return;
             }
             auto& nd = impl.nodes_[idx];
+            // An executor may still use its own state after accepting the
+            // continuation, so the run must not end, and the caller must not
+            // destroy the executor, until this foreign call has returned.
+            {
+                std::lock_guard lock{impl.deferredMtx_};
+                ++deferredInFlight;
+            }
 #if defined(__cpp_exceptions) || defined(_CPPUNWIND)
             try
             {
@@ -1440,6 +1448,9 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
                 finishDeferred(idx, false);
             }
 #endif
+            std::lock_guard lock{impl.deferredMtx_};
+            --deferredInFlight;
+            impl.deferredCv_.notify_all();
         }
 
         void finishDeferred(uint32_t idx, bool releaseRegistrations) noexcept
