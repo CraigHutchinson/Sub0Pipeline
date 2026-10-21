@@ -622,8 +622,6 @@ struct Pipeline::Impl : detail::PipelineAnchor
 
     bool joinOrphans()
     {
-        // Every run starts here: with nothing orphaned, take no lock.
-        if (!hasOrphans()) return false;
         const bool reaped = joinOrphanThreads();
         return deferredOrphans_.wait() || reaped;
     }
@@ -1096,7 +1094,9 @@ auto Pipeline::runImpl(IExecutor& executor, std::stop_token external, IObserver*
         ~RunGuard() { running.clear(std::memory_order_release); }
     } running{impl_->running_};
     // A new epoch must not reuse borrowed state while an old job still runs.
-    impl_->joinOrphans();
+    // Skipping the join's lock is safe only here: a releaser may still be
+    // leaving DeferredOrphans::release(), which teardown must wait out.
+    if (impl_->hasOrphans()) impl_->joinOrphans();
     const auto total = impl_->nodes_.size();
     impl_->completedCount_.store(0U, std::memory_order_relaxed);
     impl_->skipped_.clear();

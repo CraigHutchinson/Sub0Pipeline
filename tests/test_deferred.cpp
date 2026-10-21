@@ -617,3 +617,25 @@ TEST_CASE("Deferred: a refused successor of a deferred job fails the run")
     CHECK(pipe.status(after) == JobStatus::kSkipped);
     CHECK(pipe.firstFailureName() == "use");
 }
+
+TEST_CASE("Deferred: destroying the pipeline waits for a late completion still releasing its orphan")
+{
+    // Repeated to widen the window between the release and the destructor.
+    for (int round = 0; round < 50; ++round)
+    {
+        std::optional<Pipeline> pipe{std::in_place};
+        Parked parked;
+        (void)pipe->emplaceDeferred([&](Completion done) { parked.park(std::move(done)); });
+        std::stop_source stop;
+        std::jthread canceller{[&] {
+            if (waitUntil([&] { return parked.count() == 1U; })) stop.request_stop();
+        }};
+        (void)pipe->runInline(stop.get_token());
+        canceller.join();
+        auto late = parked.take();
+        REQUIRE(late.size() == 1U);
+        std::jthread releaser{[done = std::move(late[0])]() mutable { done.succeed(); }};
+        while (pipe->hasPendingOrphans()) std::this_thread::yield();
+        pipe.reset(); // must not tear down the ledger under the releasing thread
+    }
+}
